@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* ========================================================= */
+/* 1. LOCAL FONT DEFINITIONS (Loaded from public/fonts/)      */
+/* ========================================================= */
+@font-face {
+  font-family: 'Press Start 2P';
+  src: url('/fonts/PressStart2P-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'VT323';
+  src: url('/fonts/VT323-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* ========================================================= */
+/* 2. EXACT FONT UTILITY CLASSES MATCHING YOUR ORIGINAL STYLES */
+/* ========================================================= */
+/* Maps to Press Start 2P */
+.font-pressstart {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* Maps to VT323 (matching your style.css definition) */
+.font-pixel {
+  font-family: 'VT323', monospace;
+}
+
+/* Dedicated VT323 helper */
+.font-vt {
+  font-family: 'VT323', monospace;
+}
+
+/* ========================================================= */
+/* 3. RETRO SHADOWS & GRADIENTS FROM STYLE.CSS               */
+/* ========================================================= */
+.retro-shadow {
+  border-color: #3D2013 !important;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+}
+
+.retro-shadow:hover {
+  box-shadow: 4px 4px 0px #3D2013;
+  transform: translate(-2px, -2px);
+}
+
+.retro-shadow:active {
+  box-shadow: 0px 0px 0px #3D2013;
+  transform: translate(2px, 2px);
+}
+
+.level-up-gradient {
+  background: linear-gradient(to bottom, #DD6E36 0%, #511B00 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+.tagline-gradient {
+  background: linear-gradient(to right, #DD6E36 0%, #DDDDDD 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+/* ========================================================= */
+/* 4. ANIMATIONS FROM STYLE.CSS                              */
+/* ========================================================= */
+@keyframes slideUpFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(80px);
+  }
+  100% {
+    opacity: 0.9;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes float-delayed {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+.animate-checklist-appear {
+  animation: 
+    slideUpFadeIn 2s cubic-bezier(0.16, 1, 0.3, 1) forwards, 
+    float 4s ease-in-out infinite 1.2s;
+}
+
+.animate-pomodoro-appear {
+  animation: 
+    slideUpFadeIn 2s cubic-bezier(0.16, 1, 0.3, 1) forwards, 
+    float-delayed 4s ease-in-out infinite 1.4s;
+}
+
+/* Scrollbar Utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
