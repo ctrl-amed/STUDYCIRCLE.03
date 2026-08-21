@@ -1,6 +1,23 @@
 @import "tailwindcss";
 
 /* ========================================================= */
+/* COLOR PALETTE & THEME VARIABLES                           */
+/* ========================================================= */
+:root {
+  /* Solid Colors */
+  --color-primary: #E87339;       /* Primary Accent */
+  --color-dark: #3D2013;          /* Dark Chocolate (Borders, Text, Shadows) */
+  --color-surface: #FEF4E0;       /* Base White / Light Card BG */
+  --color-surface-muted: #FAE9CE; /* Darker White / Cream BG */
+  --color-danger: #A53914;        /* Negative Actions (Sign out, Leave room, Delete) */
+  --color-safe: #788D55;
+
+  /* Gradients */
+  --gradient-highlight-card: linear-gradient(180deg, #FDE4D0 0%, #FFD2AE 100%);
+  --gradient-highlight-text: linear-gradient(90deg, #E87339 0%, #3D2013 100%);
+}
+
+/* ========================================================= */
 /* 1. LOCAL FONT DEFINITIONS (Loaded from public/fonts/)      */
 /* ========================================================= */
 @font-face {
@@ -36,26 +53,75 @@
 }
 
 /* ========================================================= */
-/* 3. RETRO SHADOWS & GRADIENTS FROM STYLE.CSS               */
+/* 3. COLOR PALETTE UTILITY CLASSES                          */
+/* ========================================================= */
+.text-theme-dark { color: var(--color-dark); }
+.text-theme-primary { color: var(--color-primary); }
+.text-theme-danger { color: var(--color-danger); }
+.text-theme-safe { color: var(--color-safe); } /* <-- ADD THIS */
+.text-theme-surface { color: var(--color-surface); } /* <-- ADD THIS */
+
+
+.border-theme-dark { border-color: var(--color-dark); }
+.border-theme-safe { border-color: var(--color-safe); } /* <-- ADD THIS (optional) */
+.border-theme-surface { border-color: var(--color-surface); }
+
+.bg-theme-surface { background-color: var(--color-surface); }
+.bg-theme-muted { background-color: var(--color-surface-muted); }
+.bg-theme-primary { background-color: var(--color-primary); }
+.bg-theme-danger { background-color: var(--color-danger); }
+.bg-theme-safe { background-color: var(--color-safe); } /* <-- ADD THIS */
+
+.card-highlight {
+  background: var(--gradient-highlight-card);
+}
+
+.text-gradient-highlight {
+  background: var(--gradient-highlight-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}
+
+/* ========================================================= */
+/* 4. RETRO SHADOWS, BUTTONS & GRADIENTS                    */
 /* ========================================================= */
 .retro-shadow {
-  border-color: #3D2013 !important;
+  border-color: var(--color-dark) !important;
   border-radius: 10px;
   transition: all 0.15s ease;
 }
 
 .retro-shadow:hover {
-  box-shadow: 4px 4px 0px #3D2013;
+  box-shadow: 4px 4px 0px var(--color-dark);
   transform: translate(-2px, -2px);
 }
 
 .retro-shadow:active {
-  box-shadow: 0px 0px 0px #3D2013;
+  box-shadow: 0px 0px 0px var(--color-dark);
   transform: translate(2px, 2px);
 }
 
+.btn {
+  height: 2rem;
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-dark);
+  padding-left: 0.375rem;
+  padding-right: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background-color: var(--color-surface-muted);
+}
+
 .level-up-gradient {
-  background: linear-gradient(to bottom, #DD6E36 0%, #511B00 100%);
+  background: linear-gradient(to Right, #DD6E36 0%, #511B00 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;
@@ -69,7 +135,7 @@
 }
 
 /* ========================================================= */
-/* 4. ANIMATIONS FROM STYLE.CSS                              */
+/* 5. ANIMATIONS FROM STYLE.CSS                              */
 /* ========================================================= */
 @keyframes slideUpFadeIn {
   0% {

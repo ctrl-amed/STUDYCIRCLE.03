@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 
 // Data array for carousel cards
 const CAROUSEL_CARDS = [
@@ -71,9 +72,13 @@ export default function App() {
   const containerRef = useRef(null);
   const isTransitioning = useRef(false);
 
+  // Mouse Drag Tracking Refs
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollLeftStart = useRef(0);
+
   const totalOriginals = CAROUSEL_CARDS.length;
 
-  // Quadruple the array to achieve seamless infinite loop scrolling
   const displayCards = [
     ...CAROUSEL_CARDS,
     ...CAROUSEL_CARDS,
@@ -117,7 +122,35 @@ export default function App() {
     }, 400);
   };
 
-  // Set initial position
+  const handleMouseDown = (e) => {
+    isDragging.current = true;
+    setIsHovered(true);
+    startX.current = e.pageX - containerRef.current.offsetLeft;
+    scrollLeftStart.current = containerRef.current.scrollLeft;
+  };
+
+  const handleMouseLeave = () => {
+    if (isDragging.current) {
+      isDragging.current = false;
+    }
+    setIsHovered(false);
+  };
+
+  const handleMouseUp = () => {
+    if (isDragging.current) {
+      isDragging.current = false;
+    }
+    setIsHovered(false);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging.current || !containerRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - containerRef.current.offsetLeft;
+    const walk = (x - startX.current) * 1.5;
+    containerRef.current.scrollLeft = scrollLeftStart.current - walk;
+  };
+
   useEffect(() => {
     if (containerRef.current) {
       const container = containerRef.current;
@@ -129,7 +162,6 @@ export default function App() {
     }
   }, []);
 
-  // Auto-slide interval timer
   useEffect(() => {
     const interval = setInterval(() => {
       if (!isHovered && !isTransitioning.current) {
@@ -140,78 +172,87 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeIndex, isHovered]);
 
-  // Handle manual scrolling & pagination tracking
   const handleScroll = () => {
     if (isTransitioning.current || !containerRef.current) return;
-    const container = containerRef.current;
-    const cardWidth = getCardWidth() + getGapSize();
-    const activePosIdx = Math.round((container.scrollLeft + (container.offsetWidth / 2) - (getCardWidth() / 2)) / cardWidth) - totalOriginals;
 
-    if (activePosIdx >= 0 && activePosIdx < totalOriginals) {
-      setActiveIndex(activePosIdx);
+    const container = containerRef.current;
+    const cardWidth = getCardWidth();
+    const gap = getGapSize();
+    const totalWidthPerCard = cardWidth + gap;
+
+    if (totalWidthPerCard <= 0) return;
+
+    const centerPos = container.scrollLeft + (container.offsetWidth / 2) - (cardWidth / 2);
+    const rawIndex = Math.round(centerPos / totalWidthPerCard);
+    const normalizedIndex = ((rawIndex % totalOriginals) + totalOriginals) % totalOriginals;
+
+    if (normalizedIndex !== activeIndex) {
+      setActiveIndex(normalizedIndex);
+    }
+
+    const set0End = totalWidthPerCard * totalOriginals;
+    const set3Start = totalWidthPerCard * totalOriginals * 3;
+
+    if (container.scrollLeft < set0End / 2) {
+      container.style.scrollBehavior = 'auto';
+      container.scrollLeft += totalWidthPerCard * totalOriginals;
+    } else if (container.scrollLeft > set3Start - container.offsetWidth / 2) {
+      container.style.scrollBehavior = 'auto';
+      container.scrollLeft -= totalWidthPerCard * totalOriginals;
     }
   };
 
   return (
     <div className="bg-gray-100 antialiased scroll-smooth">
 
-      {/* ========================================================= */}
-      {/* HEADER SECTION                                            */}
-      {/* ========================================================= */}
+      {/* HEADER SECTION */}
       <header 
-        className="fixed top-0 left-0 w-full z-50"
+        className="fixed top-0 left-0 w-full z-50 bg-theme-surface"
         style={{
-          backgroundColor: '#FBF2E3',
           backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.08) 1px, transparent 1px)',
           backgroundSize: '100% 5px'
         }}
       >
         <div className="max-w-6xl mx-auto px-4 py-3 md:py-4 flex flex-wrap items-center justify-between gap-2 md:gap-4">
           
-          {/* Left Side: Logo & Brand Name */}
           <a href="#" className="flex items-center gap-2 no-underline">
             <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-8 sm:h-9 md:h-10 w-auto block" />
-            <span className="font-pressstart text-[11px] md:text-[15px] text-[#4A2E21] hidden sm:block">
+            <span className="font-pressstart text-[11px] md:text-[15px] text-theme-dark hidden sm:block">
               StudyCircle
             </span>
           </a>
 
-          {/* Right Side: Auth Buttons */}
           <div className="flex items-center gap-2 sm:gap-3 order-2 md:order-3">
-            <a 
-              href="authentication.html#login" 
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] bg-[#F8E9D2] border-2 md:border-[3px] border-[#3D2013] px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow"
+            <Link 
+              to="/auth#login" 
+              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 md:border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow"
             >
               LOGIN
-            </a>
-            <a 
-              href="authentication.html#signup" 
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-white bg-[#E87339] border-2 md:border-[3px] border-[#3D2013] px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow"
+            </Link>
+            <Link 
+              to="/auth#signup" 
+              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-surface bg-theme-primary border-2 md:border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow"
             >
               SIGN UP
-            </a>
+            </Link>
           </div>
 
-          {/* Middle: Navigation Links */}
-          <nav className="w-full md:w-auto flex justify-center gap-4 sm:gap-5 md:gap-6 order-3 md:order-2 pt-2 md:pt-0 border-t-2 border-dashed border-[#4A2E21] md:border-none">
-            <a href="#" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] hover:text-[#E87339] no-underline transition-colors">Home</a>
-            <a href="#section-2" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] hover:text-[#E87339] no-underline transition-colors">Features</a>
-            <a href="#section-3" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] hover:text-[#E87339] no-underline transition-colors">FAQs</a>
+          <nav className="w-full md:w-auto flex justify-center gap-4 sm:gap-5 md:gap-6 order-3 md:order-2 pt-2 md:pt-0 border-t-2 border-dashed border-theme-dark md:border-none">
+            <a href="#" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">Home</a>
+            <a href="#section-2" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">Features</a>
+            <a href="#section-3" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">FAQs</a>
           </nav>
 
         </div>
       </header>
 
 
-      {/* ========================================================= */}
-      {/* UNIFIED HERO & FEATURES SECTION                           */}
-      {/* ========================================================= */}
+      {/* UNIFIED HERO & FEATURES SECTION */}
       <section 
         id="hero-and-showcase" 
         className="relative w-full min-h-screen bg-linear-to-b from-[#FBF2E3] from-45% to-[#3D2013] to-70% pt-28 md:pt-36 flex flex-col items-center overflow-hidden"
       >  
         
-        {/* Background Horizontal Line Texture */}
         <div 
           className="absolute inset-0 w-full h-full pointer-events-none z-0" 
           style={{
@@ -220,7 +261,6 @@ export default function App() {
           }}
         />
           
-        {/* Floating Background Glows & Side Feature Images */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-screen sm:h-[110vh] z-0 pointer-events-none">
           <div 
             className="absolute right-[20%] sm:right-[25%] md:right-[90%] top-[10%] sm:top-[8%] w-[250px] h-[250px] sm:w-[450px] sm:h-[600px] rounded-full opacity-50 filter blur-3xl mix-blend-screen"
@@ -245,44 +285,41 @@ export default function App() {
           />
         </div>
 
-        {/* Foreground Hero Content Layer */}
         <div className="relative z-10 max-w-6xl w-full px-6 flex flex-col items-center">
           
           <div className="w-full flex flex-col items-center text-center md:pt-10">
-            <h1 className="font-pressstart mt-12 md:mt-20 text-[24px] sm:text-[36px] md:text-[46px] lg:text-[54px] text-[#3D2013] leading-[1.1] sm:leading-[1.1] md:leading-[1.2] tracking-normal mb-8 select-none">
+            <h1 className="font-pressstart mt-12 md:mt-20 text-[24px] sm:text-[36px] md:text-[46px] lg:text-[54px] text-theme-dark leading-[1.1] sm:leading-[1.1] md:leading-[1.2] tracking-normal mb-8 select-none">
               Study with<br />
               Friends.<br />
-              <span className="level-up-gradient">Level up</span><br />
+              <span className="level-up-gradient">Level up</span><br/>
               Together.
             </h1>
 
-            <p className="font-vt text-[15px] sm:text-[22px] md:text-[24px] text-[#3D2013] leading-[1.1] max-w-2xl mx-auto mb-10 opacity-95">
+            <p className="font-vt text-[15px] sm:text-[22px] md:text-[24px] text-theme-dark leading-[1.1] max-w-2xl mx-auto mb-10 opacity-95">
               StudyCircle is a cozy, AI-powered learning RPG. Upload your notes, generate pre &amp; post-tests, hop into pressstart-art study rooms, and earn XP, badges, and decorations along the way.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 w-full">
-              <a href="authentication.html#signup" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-white bg-[#788D55] border-2 md:border-[3px] border-[#3D2013] px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
+              <Link to="/auth#signup" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-surface bg-theme-safe border-2 md:border-2 border-theme-dark px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
                 START STUDYING &rarr;
-              </a>
-              <a href="authentication.html#login" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] bg-[#F8E9D2] border-2 md:border-[3px] border-[#3D2013] px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
+              </Link>
+              <Link to="/auth#login" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 md:border-2 border-theme-dark px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
                 I HAVE AN ACCOUNT
-              </a>
+              </Link>
             </div>
           </div>
 
-          {/* Student Counter */}
           <div className="w-full flex flex-col sm:flex-row items-center justify-center gap-3 mt-12 mb-20 md:mb-32">
             <div className="flex flex-row items-center -space-x-3">
-              <img src="media/profile1.png" alt="Student 1" className="w-10 h-10 rounded-full border-[3px] border-[#3D2013] object-cover relative z-10 bg-gray-200" />
-              <img src="media/profile2.png" alt="Student 2" className="w-10 h-10 rounded-full border-[3px] border-[#3D2013] object-cover relative z-20 bg-gray-200" />
-              <img src="media/profile3.png" alt="Student 3" className="w-10 h-10 rounded-full border-[3px] border-[#3D2013] object-cover relative z-30 bg-gray-200" />
+              <img src="media/profile1.png" alt="Student 1" className="w-10 h-10 rounded-full border-2 border-theme-dark object-cover relative z-10 bg-gray-200" />
+              <img src="media/profile2.png" alt="Student 2" className="w-10 h-10 rounded-full border-2 border-theme-dark object-cover relative z-20 bg-gray-200" />
+              <img src="media/profile3.png" alt="Student 3" className="w-10 h-10 rounded-full border-2 border-theme-dark object-cover relative z-30 bg-gray-200" />
             </div>
-            <p className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013] tracking-wide text-center sm:text-left">
+            <p className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark tracking-wide text-center sm:text-left">
               <span className="font-bold">1,245</span> students leveling up today
             </p>
           </div>
 
-          {/* Room Showcase */}
           <div className="w-full flex flex-col items-center">
             <div id="section-2" className="w-full flex justify-center px-4">
               <div className="relative w-full max-w-xs sm:max-w-md md:max-w-xl lg:max-w-2xl flex justify-center items-center">
@@ -295,9 +332,9 @@ export default function App() {
             </div>
 
             <div className="flex items-center justify-center gap-2 mt-16 md:mt-24 select-none">
-              <span className="font-pressstart text-[10px] sm:text-[12px] text-white">&#9733;</span>
-              <h2 className="font-pressstart text-[10px] sm:text-[12px] text-white tracking-widest">FEATURES</h2>
-              <span className="font-pressstart text-[10px] sm:text-[12px] text-white">&#9733;</span>
+              <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-surface">&#9733;</span>
+              <h2 className="font-pressstart text-[10px] sm:text-[12px] text-theme-surface tracking-widest">FEATURES</h2>
+              <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-surface">&#9733;</span>
             </div>
 
             <p className="font-pressstart text-[10px] sm:text-[14px] md:text-[18px] lg:text-[22px] tagline-gradient text-center leading-[1.8] mt-4 max-w-3xl mx-auto select-none">
@@ -308,12 +345,17 @@ export default function App() {
 
         </div>
 
-        {/* Carousel Section */}
         <div className="relative w-full overflow-hidden mt-4 mb-16 before:absolute before:left-0 before:top-0 before:z-10 before:h-full before:w-[10%] sm:before:w-[15%] before:bg-linear-to-r before:from-[#3D2013] before:to-transparent before:pointer-events-none after:absolute after:right-0 after:top-0 after:z-10 after:h-full after:w-[10%] sm:after:w-[15%] after:bg-linear-to-l after:from-[#3D2013] after:to-transparent after:pointer-events-none">
           <div 
             ref={containerRef}
             onScroll={handleScroll}
-            className="flex gap-4 sm:gap-6 overflow-x-auto py-4 w-full scrollbar-hide"
+            onMouseDown={handleMouseDown}
+            onMouseLeave={handleMouseLeave}
+            onMouseUp={handleMouseUp}
+            onMouseMove={handleMouseMove}
+            onTouchStart={() => setIsHovered(true)}
+            onTouchEnd={() => setIsHovered(false)}
+            className="flex gap-4 sm:gap-6 overflow-x-auto py-4 w-full scrollbar-hide cursor-grab active:cursor-grabbing select-none"
             style={{ scrollSnapType: 'x mandatory', msOverflowStyle: 'none', scrollbarWidth: 'none' }}
           >
             {displayCards.map((card, idx) => (
@@ -321,18 +363,18 @@ export default function App() {
                 key={`${card.id}-${idx}`}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="card-item w-[260px] h-[175px] sm:w-[300px] sm:h-[190px] bg-[#482A1D] border-[3px] border-[#F8E9D2] rounded-[20px] p-4 snap-center flex flex-col justify-between transition-all duration-150 hover:-translate-y-1 hover:-translate-x-1 cursor-pointer shrink-0"
+                className="card-item w-[260px] h-[175px] sm:w-[300px] sm:h-[190px] bg-[#482A1D] border-2 border-theme-surface rounded-[20px] p-4 snap-center flex flex-col justify-between transition-all duration-150 hover:-translate-y-1 hover:-translate-x-1 cursor-pointer shrink-0 select-none"
                 style={{ boxShadow: '6px 6px 0px #E6751B' }}
               >
-                <div className="flex flex-col h-full justify-between">
+                <div className="flex flex-col h-full justify-between pointer-events-none">
                   <div>
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-[#788D55] border-[3px] border-[#F8E9D2] flex items-center justify-center text-[#F8E9D2] mb-2">
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-safe border-2 border-theme-surface flex items-center justify-center text-theme-surface mb-2">
                       {card.icon}
                     </div>
-                    <h3 className="font-pressstart text-[15px] sm:text-[16px] text-white tracking-wide mb-1 select-none">
+                    <h3 className="font-pressstart text-[15px] sm:text-[16px] text-theme-surface tracking-wide mb-1 select-none">
                       {card.title}
                     </h3>
-                    <p className="font-vt text-[16px] sm:text-[19px] text-white leading-tight opacity-90">
+                    <p className="font-vt text-[16px] sm:text-[19px] text-theme-surface leading-tight opacity-90 select-none">
                       {card.description}
                     </p>
                   </div>
@@ -341,13 +383,12 @@ export default function App() {
             ))}
           </div>
 
-          {/* Pagination Dots */}
           <div className="flex items-center justify-center gap-3 mt-4">
             {CAROUSEL_CARDS.map((_, idx) => (
               <span
                 key={idx}
                 onClick={() => scrollToCard(idx)}
-                className={`w-2.5 h-2.5 rounded-full bg-[#F8E9D2] cursor-pointer transition-all duration-200 ${
+                className={`w-2.5 h-2.5 rounded-full bg-theme-surface cursor-pointer transition-all duration-200 ${
                   idx === activeIndex ? 'opacity-100 scale-125' : 'opacity-40'
                 }`}
               />
@@ -358,10 +399,8 @@ export default function App() {
       </section>
 
 
-      {/* ========================================================= */}
-      {/* SECTION 2: FEATURES / INFORMATION SECTION                 */}
-      {/* ========================================================= */}
-      <section id="section-2" className="relative bg-[#E6751B] flex items-center justify-center py-12 md:py-16 overflow-hidden">
+      {/* SECTION 2: FEATURES / INFORMATION SECTION */}
+      <section className="relative bg-[#E6751B] flex items-center justify-center py-12 md:py-16 overflow-hidden">
         
         <div className="absolute inset-0 w-full h-full pointer-events-none z-0">
           <div 
@@ -380,38 +419,35 @@ export default function App() {
 
         <div className="relative max-w-4xl mx-auto w-full px-6 z-10 flex flex-col items-center text-center">
           <div className="flex items-center justify-center gap-2 select-none mt-0 sm:mt-12">
-            <span className="font-pressstart text-[10px] sm:text-[12px] text-white">&#9733;</span>
-            <h2 className="font-pressstart text-[7px] sm:text-[12px] text-white tracking-widest uppercase">
+            <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-surface">&#9733;</span>
+            <h2 className="font-pressstart text-[7px] sm:text-[12px] text-theme-surface tracking-widest uppercase">
               IMPROVE LEARNING TODAY
             </h2>
-            <span className="font-pressstart text-[10px] sm:text-[12px] text-white">&#9733;</span>
+            <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-surface">&#9733;</span>
           </div>
 
-          <h1 className="font-pressstart text-[10px] sm:text-[14px] md:text-[18px] lg:text-[32px] text-white leading-normal md:leading-[1.1] mt-4 sm:mt-9 max-w-3xl select-none">
+          <h1 className="font-pressstart text-[10px] sm:text-[14px] md:text-[18px] lg:text-[32px] text-theme-surface leading-normal md:leading-[1.1] mt-4 sm:mt-9 max-w-3xl select-none">
             Ready to level up your learning journey?
           </h1>
 
-          <p className="font-vt text-[15px] sm:text-[20px] md:text-[32px] text-[#3D2013] leading-none mt-4 sm:mt-8 select-none">
+          <p className="font-vt text-[15px] sm:text-[20px] md:text-[32px] text-theme-dark leading-none mt-4 sm:mt-8 select-none">
             Upload notes, generate quizzes with AI, study with friends, and earn rewards as you progress toward your academic goals.
           </p>
 
           <div className="mt-8">
-            <a href="authentication.html#signup" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-[#4A2E21] bg-[#F8E9D2] border-2 md:border-[3px] border-[#3D2013] px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
+            <Link to="/auth#signup" className="w-full max-w-[130px] sm:max-w-none sm:w-auto font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 md:border-2 border-theme-dark px-3 py-2 sm:px-4 sm:py-2.5 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
               JOIN STUDYCIRCLE
-            </a>
+            </Link>
           </div>
         </div>
       </section>
 
 
-      {/* ========================================================= */}
-      {/* SECTION 3: FAQS SECTION                                   */}
-      {/* ========================================================= */}
+      {/* SECTION 3: FAQS SECTION */}
       <section 
         id="section-3" 
-        className="relative min-h-screen flex items-center justify-center py-16 sm:py-20 md:py-24 overflow-hidden"
+        className="relative min-h-screen flex items-center justify-center py-16 sm:py-20 md:py-24 overflow-hidden bg-theme-muted"
         style={{
-          backgroundColor: '#FBF2E3',
           backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.08) 1px, transparent 1px)',
           backgroundSize: '100% 5px'
         }}
@@ -419,70 +455,70 @@ export default function App() {
         <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 flex flex-col items-center gap-10 sm:gap-14 select-none">
           
           <div className="text-center flex flex-col gap-3 max-w-2xl mx-auto">
-            <div className="flex items-center justify-center gap-2 text-[#FD923E]">
+            <div className="flex items-center justify-center gap-2 text-theme-primary">
               <span className="font-pressstart text-[10px] sm:text-[12px]">&#9733;</span>
               <h2 className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] tracking-widest uppercase">
                 FREQUENTLY ASKED QUESTIONS
               </h2>
               <span className="font-pressstart text-[10px] sm:text-[12px]">&#9733;</span>
             </div>
-            <h3 className="font-pressstart text-[10px] sm:text-[14px] md:text-[18px] text-[#482A1D] tracking-wide leading-tight">
+            <h3 className="font-pressstart text-[10px] sm:text-[14px] md:text-[18px] text-theme-dark tracking-wide leading-tight">
               The questions you're probably asking.
             </h3>
           </div>
 
           <div className="w-full flex flex-col gap-5 sm:gap-6">
             
-            <details className="group w-full block bg-[#FBF2E3] border-[3px] sm:border-4 border-[#3D2013] text-[#3D2013] transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
+            <details className="group w-full block bg-theme-muted border-2 sm:border-4 border-theme-dark text-theme-dark transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
               <summary className="list-none flex items-center justify-between p-4 sm:p-5 cursor-pointer font-pressstart text-[10px] sm:text-[14px] md:text-[18px] tracking-wide focus:outline-none select-none">
                 <span>Is StudyCircle Free?</span>
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
                   <path strokeLinecap="square" strokeLinejoin="miter" d="M19 9l-7 7-7-7" />
                 </svg>
               </summary>
-              <div className="border-t-[3px] sm:border-t-4 border-[#3D2013] p-4 sm:p-5 bg-[#FBF2E3]/40">
+              <div className="border-t-[3px] sm:border-t-4 border-theme-dark p-4 sm:p-5 bg-theme-muted/40">
                 <p className="font-vt text-[18px] sm:text-[22px] md:text-[24px] text-[#996749] leading-[1.3] text-left">
                   Yes! StudyCircle is completely free to use. We believe in providing students with the best tools to enhance their learning experience without any cost.
                 </p>
               </div>
             </details>
 
-            <details className="group w-full block bg-[#FBF2E3] border-[3px] sm:border-4 border-[#3D2013] text-[#3D2013] transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
+            <details className="group w-full block bg-theme-muted border-2 sm:border-4 border-theme-dark text-theme-dark transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
               <summary className="list-none flex items-center justify-between p-4 sm:p-5 cursor-pointer font-pressstart text-[10px] sm:text-[14px] md:text-[18px] tracking-wide focus:outline-none select-none">
                 <span>How does the AI Learning Assistant work?</span>
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
                   <path strokeLinecap="square" strokeLinejoin="miter" d="M19 9l-7 7-7-7" />
                 </svg>
               </summary>
-              <div className="border-t-[3px] sm:border-t-4 border-[#3D2013] p-4 sm:p-5 bg-[#FBF2E3]/40">
+              <div className="border-t-[3px] sm:border-t-4 border-theme-dark p-4 sm:p-5 bg-theme-muted/40">
                 <p className="font-vt text-[18px] sm:text-[22px] md:text-[24px] text-[#996749] leading-[1.3] text-left">
                   Upload your notes, PDFs, or simply enter a topic, and let AI transform your study materials into personalized summaries, interactive flashcards, and engaging quizzes designed to help you learn faster, retain more information, and prepare effectively for exams.
                 </p>
               </div>
             </details>
 
-            <details className="group w-full block bg-[#FBF2E3] border-[3px] sm:border-4 border-[#3D2013] text-[#3D2013] transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
+            <details className="group w-full block bg-theme-muted border-2 sm:border-4 border-theme-dark text-theme-dark transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
               <summary className="list-none flex items-center justify-between p-4 sm:p-5 cursor-pointer font-pressstart text-[10px] sm:text-[14px] md:text-[18px] tracking-wide focus:outline-none select-none">
                 <span>Can I study alone?</span>
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
                   <path strokeLinecap="square" strokeLinejoin="miter" d="M19 9l-7 7-7-7" />
                 </svg>
               </summary>
-              <div className="border-t-[3px] sm:border-t-4 border-[#3D2013] p-4 sm:p-5 bg-[#FBF2E3]/40">
+              <div className="border-t-[3px] sm:border-t-4 border-theme-dark p-4 sm:p-5 bg-theme-muted/40">
                 <p className="font-vt text-[18px] sm:text-[22px] md:text-[24px] text-[#996749] leading-[1.3] text-left">
                   Absolutely! You can create a private study room just for yourself and use all of StudyCircle's features, including the AI Learning Assistant, flashcards, summaries, and quizzes. Whether you prefer solo studying or collaborating with others, StudyCircle is designed to support both.
                 </p>
               </div>
             </details>
 
-            <details className="group w-full block bg-[#FBF2E3] border-[3px] sm:border-4 border-[#3D2013] text-[#3D2013] transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
+            <details className="group w-full block bg-theme-muted border-2 sm:border-4 border-theme-dark text-theme-dark transition-all duration-150 transform hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_#3D2013] shadow-[4px_4px_0px_0px_#3D2013]">
               <summary className="list-none flex items-center justify-between p-4 sm:p-5 cursor-pointer font-pressstart text-[10px] sm:text-[14px] md:text-[18px] tracking-wide focus:outline-none select-none">
                 <span>What’s the max room size?</span>
                 <svg className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 transition-transform duration-200 group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
                   <path strokeLinecap="square" strokeLinejoin="miter" d="M19 9l-7 7-7-7" />
                 </svg>
               </summary>
-              <div className="border-t-[3px] sm:border-t-4 border-[#3D2013] p-4 sm:p-5 bg-[#FBF2E3]/40">
+              <div className="border-t-[3px] sm:border-t-4 border-theme-dark p-4 sm:p-5 bg-theme-muted/40">
                 <p className="font-vt text-[18px] sm:text-[22px] md:text-[24px] text-[#996749] leading-[1.3] text-left">
                   Each study room can have up to 6 players at a time. This keeps sessions interactive, organized, and productive while giving everyone a chance to participate.
                 </p>
@@ -495,7 +531,7 @@ export default function App() {
             <h4 className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FD923E] tracking-wider uppercase">
               Still have questions?
             </h4>
-            <a href="mailto:studycircle@gmail.com" className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#3D2013] tracking-wide underline decoration-2 underline-offset-4 hover:text-[#FD923E] transition-colors duration-150">
+            <a href="mailto:studycircle@gmail.com" className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-dark tracking-wide underline decoration-2 underline-offset-4 hover:text-[#FD923E] transition-colors duration-150">
               Contact us at studycircle@gmail.com
             </a>
           </div>
@@ -504,11 +540,9 @@ export default function App() {
       </section>
 
 
-      {/* ========================================================= */}
-      {/* FOOTER SECTION                                            */}
-      {/* ========================================================= */}
+      {/* FOOTER SECTION */}
       <footer 
-        className="text-white border-t-4 border-[#3D2013]"
+        className="text-theme-surface border-t-4 border-theme-dark"
         style={{
           backgroundColor: '#482A1D',
           backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.25) 1px, transparent 1px)',
@@ -517,81 +551,78 @@ export default function App() {
       >
         <div className="w-full px-6 md:px-12">
           
-          {/* Row 1: Brand CTA */}
           <div className="flex flex-row items-center justify-between gap-4 w-full border-b border-[#E16F37]/10 pb-8 py-5 sm:py-8 md:py-10 select-none">
             <div className="flex items-center gap-3 sm:gap-5 md:gap-6">
               <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-10 w-auto sm:h-16 md:h-20 lg:h-24 block shrink-0" />
               <div className="flex flex-col gap-1 sm:gap-2">
                 <div className="flex items-center gap-1">
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#E16F37]">&#9733;</span>
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#E16F37] tracking-wider uppercase">JOIN THE CIRCLE</span>
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#E16F37]">&#9733;</span>
+                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary">&#9733;</span>
+                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">JOIN THE CIRCLE</span>
+                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary">&#9733;</span>
                 </div>
-                <h3 className="font-pressstart text-[11px] sm:text-lg md:text-[24px] text-[#FBF2E3] leading-none">
+                <h3 className="font-pressstart text-[11px] sm:text-lg md:text-[24px] text-theme-muted leading-none">
                   Kitsu is waiting.
                 </h3>
-                <p className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-white leading-none select-none">
+                <p className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-none select-none">
                   Level up your learning with AI-powered study adventures.
                 </p>
               </div>
             </div>
 
             <div className="shrink-0">
-              <a href="authentication.html#signup" className="font-pressstart text-[7px] sm:text-[10px] md:text-[12px] text-white bg-[#788D55] border-2 md:border-[3px] border-[#3D2013] px-3 py-2 sm:px-5 sm:py-3 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
+              <Link to="/auth#signup" className="font-pressstart text-[7px] sm:text-[10px] md:text-[12px] text-theme-surface bg-theme-safe border-2 md:border-2 border-theme-dark px-3 py-2 sm:px-5 sm:py-3 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow">
                 JOIN NOW!
-              </a>
+              </Link>
             </div>
           </div>
 
-          {/* Row 2: Four Columns Links */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-8 py-5 sm:py-8 md:py-10 px-4 sm:px-10 md:px-16">
             <div className="flex flex-col gap-4 lg:col-span-4">
               <div className="flex items-center gap-3">
                 <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-8 w-auto block select-none" />
-                <span className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-[#E16F37] tracking-wider uppercase">StudyCircle</span>
+                <span className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">StudyCircle</span>
               </div>
-              <p className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-white leading-[1.2] select-none">
+              <p className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-[1.2] select-none">
                 Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pressstart-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
               </p>
               <div className="flex items-center gap-2 mt-2 select-none">
                 <img src="media/coin_logo.png" alt="Coin Logo" className="w-[31px] h-[31px] object-contain block" />
-                <span className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-white leading-none select-none">12,000+ students leveling up today</span>
+                <span className="font-vt text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-none select-none">12,000+ students leveling up today</span>
               </div>
             </div>
 
             <div className="flex flex-col gap-4 lg:col-span-2 lg:col-start-7">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-[#E16F37] tracking-wider uppercase">PRODUCT</h4>
+              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">PRODUCT</h4>
               <nav className="flex flex-col gap-2">
-                <a href="#section-2" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Features</a>
-                <a href="#section-3" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">FAQs</a>
-                <a href="#learn" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Learn Now!</a>
-                <a href="authentication.html#login" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Login</a>
+                <a href="#section-2" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Features</a>
+                <a href="#section-3" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">FAQs</a>
+                <a href="#learn" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Learn Now!</a>
+                <Link to="/auth#login" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Login</Link>
               </nav>
             </div>
 
             <div className="flex flex-col gap-4 lg:col-span-2">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-[#E16F37] tracking-wider uppercase">COMMUNITY</h4>
+              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">COMMUNITY</h4>
               <nav className="flex flex-col gap-2">
-                <a href="https://discord.com" target="_blank" rel="noopener noreferrer" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Discord</a>
-                <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Facebook</a>
-                <a href="https://reddit.com" target="_blank" rel="noopener noreferrer" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Reddit</a>
+                <a href="https://discord.com" target="_blank" rel="noopener noreferrer" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Discord</a>
+                <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Facebook</a>
+                <a href="https://reddit.com" target="_blank" rel="noopener noreferrer" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Reddit</a>
               </nav>
             </div>
 
             <div className="flex flex-col gap-4 lg:col-span-2">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-[#E16F37] tracking-wider uppercase">COMPANY</h4>
+              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">COMPANY</h4>
               <nav className="flex flex-col gap-2">
-                <a href="#about" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">About</a>
-                <a href="#privacy" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Privacy</a>
-                <a href="#terms" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Terms</a>
-                <a href="#contact" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-white leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Contact</a>
+                <a href="#about" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">About</a>
+                <a href="#privacy" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Privacy</a>
+                <a href="#terms" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Terms</a>
+                <a href="#contact" className="font-vt text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Contact</a>
               </nav>
             </div>
           </div>
 
           <div className="w-full border-b border-[#E16F37]/10 select-none pb-4" />
 
-          {/* Row 3: Meta */}
           <div className="w-full py-3 sm:py-4">
             <div className="flex flex-col md:flex-row items-center justify-between select-none">
               <div className="flex items-center gap-2">

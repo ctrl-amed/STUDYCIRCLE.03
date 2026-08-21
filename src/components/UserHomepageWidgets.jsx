@@ -1,0 +1,265 @@
+import React from 'react';
+
+const activityIcons = {
+  Reading: (
+    <svg className="w-5 h-5 text-[#3D2013]" viewBox="0 0 2048 2048" fill="currentColor">
+      <path d="M1920 256v1664H0V256h256V128h384q88 0 169 27t151 81q69-54 150-81t170-27h384v128zm-640 0q-70 0-136 23t-120 69v1254q59-33 124-49t132-17h256V256zM384 1536h256q67 0 132 16t124 50V348q-54-45-120-68t-136-24H384zm-256 256h806q-32-31-65-54t-68-40t-75-25t-86-9H256V384H128zM1792 384h-128v1280h-384q-46 0-85 8t-75 25t-69 40t-65 55h806z" />
+    </svg>
+  ),
+  Writing: (
+    <svg className="w-5 h-5 text-[#3D2013]" viewBox="-2 -2 24 24" fill="currentColor">
+      <path d="m5.72 14.456l1.761-.508l10.603-10.73a.456.456 0 0 0-.003-.64l-.635-.642a.443.443 0 0 0-.632-.003L6.239 12.635zM18.703.664l.635.643c.876.887.884 2.318.016 3.196L8.428 15.561l-3.764 1.084a.9.9 0 0 1-1.11-.623.9.9 0 0 1-.002-.506l1.095-3.84L15.544.647a2.215 2.215 0 0 1 3.159.016zM7.184 1.817c.496 0 .898.407.898.909a.903.903 0 0 1-.898.909H3.592c-.992 0-1.796.814-1.796 1.817v10.906c0 1.004.804 1.818 1.796 1.818h10.776c.992 0 1.797-.814 1.797-1.818v-3.635c0-.502.402-.909.898-.909s.898.407.898.91v3.634c0 2.008-1.609 3.636-3.593 3.636H3.592C1.608 19.994 0 18.366 0 16.358V5.452c0-2.007 1.608-3.635 3.592-3.635z" />
+    </svg>
+  ),
+  Review: (
+    <svg className="w-5 h-5 text-[#3D2013]" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M7 14h1.625q.2 0 .388-.075t.337-.225l4.7-4.7q.225-.225.338-.513t.112-.562t-.125-.537t-.325-.488l-.9-.95q-.225-.225-.5-.337t-.575-.113q-.275 0-.562.113T11 5.95l-4.7 4.7q-.15.15-.225.338T6 11.375V13q0 .425.288.713T7 14m6-6.075L12.075 7zM7.5 12.5v-.95l2.525-2.525l.5.45l.45.5L8.45 12.5zm3.025-3.025l.45.5l-.95-.95zm.65 4.525H17q.425 0 .713-.288T18 13t-.288-.712T17 12h-3.825zM6 18l-2.3 2.3q-.475.475-1.088.213T2 19.575V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v12q0 .825-.587 1.413T20 18zm-.85-2H20V4H4v13.125zM4 16V4z" />
+    </svg>
+  ),
+};
+
+export function ActiveSessionWidget({
+  activeSession,
+  remainingTimeSec,
+  isTimerRunning,
+  isFocusPhase,
+  currentSessionCount,
+  totalSessions,
+  toggleTimer,
+  cancelSession,
+  toggleDocumentPiP,
+  toggleFullscreen,
+  cardRef,
+  isWidgetFloating,
+  isWidgetFullscreen,
+  streakDays = 0,
+  focusTimeFormatted = '0h 0m',
+}) {
+  const formatTime = (totalSeconds) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Default Idle Card View[cite: 35]
+  if (!activeSession) {
+    return (
+      <section className="bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h3 className="font-pressstart text-[20px] sm:text-[25px] text-[#3D2013]">READY TO FOCUS?</h3>
+          <p className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013] leading-snug">
+            Select a task category and let StudyCircle recommend the right study technique for you.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
+          <a
+            href="create-session.html"
+            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FFFFF6] bg-[#E87339] rounded-none border-2 border-[#3D2013] px-3 py-2 md:px-4 md:py-2.5 hover:bg-[#d0622c] cursor-pointer text-center"
+          >
+            START SESSION
+          </a>
+
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+              <span className="font-pixel text-[11px] sm:text-[18px] text-[#3D2013]/50 uppercase tracking-wider">Current Streak</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-[#E87339]">{streakDays} days</span>
+            </div>
+
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+              <span className="font-pixel text-[11px] sm:text-[18px] text-[#3D2013]/50 uppercase tracking-wider">Today</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-[#E87339]">{focusTimeFormatted}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Active Timer Session View[cite: 36]
+  const focusMins = activeSession.focusTime || 25;
+  const breakMins = activeSession.breakTime || 5;
+
+  let wrapperClasses =
+    'bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4';
+
+  if (isWidgetFullscreen) {
+    wrapperClasses =
+      'fixed inset-0 z-50 w-screen h-screen flex flex-col justify-between p-6 sm:p-12 bg-[#FAE9CE] overflow-y-auto';
+  } else if (isWidgetFloating) {
+    wrapperClasses = 'fixed bottom-5 right-5 w-80 sm:w-96 z-50 shadow-2xl bg-[#FEF4E0] border-2 border-[#3D2013] p-4 rounded-[12px]';
+  }
+
+  return (
+    <section ref={cardRef} className={wrapperClasses}>
+      <div className="flex flex-col gap-3 h-full justify-between w-full max-w-3xl mx-auto">
+        <div className="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
+          <div className="flex items-center gap-2">
+            <span className="font-pressstart text-[8px] sm:text-[9px] text-[#FEF4E0] bg-[#E87339] border border-[#3D2013] px-2 py-0.5 uppercase">
+              {activeSession.workType || 'GENERAL WORK'}
+            </span>
+            <span className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] opacity-80">
+              {activeSession.techniqueName || 'Technique'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => toggleDocumentPiP(cardRef.current)}
+              className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
+              title="Pop-out Widget"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 002 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+
+            <button
+              onClick={toggleFullscreen}
+              className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
+              title="Fullscreen"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+              </svg>
+            </button>
+
+            <button
+              onClick={cancelSession}
+              className="p-1 cursor-pointer text-[#A53914] hover:text-[#E87339] transition-colors"
+              title="Cancel Session"
+            >
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center justify-center my-2 text-center">
+          <span className="font-pressstart text-[10px] sm:text-[14px] text-[#E87339] tracking-wider uppercase mb-1">
+            {isFocusPhase ? 'FOCUS PHASE' : 'BREAK PHASE'}
+          </span>
+          <div className="font-pressstart text-[36px] sm:text-[56px] text-[#3D2013] tracking-tighter drop-shadow-sm">
+            {formatTime(remainingTimeSec)}
+          </div>
+        </div>
+
+        <div>
+          <button
+            onClick={toggleTimer}
+            className="w-full font-pressstart text-[11px] sm:text-[13px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
+          >
+            {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 border-t border-[#3D2013]/20 pt-3 text-center">
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{focusMins}m</span>
+            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">FOCUS</span>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 border-x border-[#3D2013]/20 px-1">
+            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{breakMins}m</span>
+            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">BREAK</span>
+          </div>
+
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">
+              {currentSessionCount}/{totalSessions}
+            </span>
+            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">SESSIONS</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export function RecentActivityWidget({
+  activeSession,
+  tasksList,
+  toggleTaskCompletion,
+  recentActivities,
+  onViewAll,
+}) {
+  if (activeSession) {
+    const completedCount = tasksList.filter((t) => t.completed).length;
+
+    return (
+      <section className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
+        <div className="flex items-center justify-between pb-2 border-b-2 border-[#3D2013]/20">
+          <h3 className="font-pressstart text-[11px] sm:text-[13px] text-[#3D2013] uppercase">SESSION TASKS</h3>
+          <span className="font-pressstart text-[9px] sm:text-[10px] text-[#E87339]">
+            {completedCount}/{tasksList.length} COMPLETED
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2 overflow-y-auto max-h-[220px] pr-1">
+          {tasksList.map((task, idx) => (
+            <label
+              key={idx}
+              className="flex items-center gap-2.5 p-2 bg-[#FAE9CE]/60 border border-[#3D2013]/30 rounded-[6px] hover:bg-[#FAE9CE] cursor-pointer transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={task.completed}
+                onChange={() => toggleTaskCompletion(idx)}
+                className="w-4 h-4 accent-[#E87339] border-[#3D2013] rounded cursor-pointer shrink-0"
+              />
+              <span
+                className={`font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] break-words ${
+                  task.completed ? 'line-through opacity-50' : ''
+                }`}
+              >
+                {task.text}
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
+      <div className="flex items-center justify-between pb-2">
+        <h3 className="font-pressstart text-[12px] sm:text-[14px] text-[#3D2013]">RECENT ACTIVITY</h3>
+        <button
+          onClick={onViewAll}
+          className="text-[#3D2013] hover:text-[#EA781C] font-pressstart text-[8px] sm:text-[9px] px-2.5 py-1.5 rounded-[6px] transition-colors cursor-pointer"
+        >
+          VIEW ALL
+        </button>
+      </div>
+
+      <div className="border-t-2 border-[#3D2013]/20" />
+
+      <div className="flex flex-col gap-1 overflow-y-auto">
+        {recentActivities.slice(0, 3).map((item, idx) => (
+          <div
+            key={idx}
+            className="flex items-center justify-between p-2 rounded-[8px] transition-colors hover:bg-[#FAE9CE]/50"
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="w-10 h-10 rounded-[6px] bg-[#FAE9CE] border-[1.5px] border-[#3D2013] flex items-center justify-center text-lg shrink-0">
+                {activityIcons[item.activity] || activityIcons.Reading}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-pressstart text-[10px] text-[#3D2013] truncate uppercase">{item.activity}</span>
+                <span className="font-pressstart text-[8px] text-[#3D2013]/60 truncate mt-0.5">
+                  {item.duration} | {item.technique}
+                </span>
+              </div>
+            </div>
+
+            <div className="shrink-0 pl-2">
+              <span className="font-pixel text-[15px] text-[#3D2013]/70 px-2 py-1 uppercase">{item.date}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
