@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useGoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
 
 // Mock database arrays for validation checks
 const mockDatabase = ['user@studycircle.app', 'acorn@studycircle.app', 'admin@studycircle.app'];
@@ -48,6 +50,11 @@ export default function Auth() {
   const [signupPasswordErr, setSignupPasswordErr] = useState('');
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
+
+  // Google OAuth Modal/Prompt States
+  const [googleUserPending, setGoogleUserPending] = useState(null); // Stores Google user profile before username entry
+  const [googleUsernameInput, setGoogleUsernameInput] = useState('');
+  const [googleUsernameErr, setGoogleUsernameErr] = useState('');
 
   // Reset Password Form States
   const [resetEmail, setResetEmail] = useState('');
@@ -154,6 +161,79 @@ export default function Auth() {
     return true;
   };
 
+  // --- GOOGLE OAUTH HANDLERS ---
+  const handleGoogleSuccess = async (credentialResponse) => {
+    let decoded;
+    if (credentialResponse.credential) {
+      decoded = jwtDecode(credentialResponse.credential);
+    } else if (credentialResponse.access_token) {
+      // Fetch user profile if using access_token
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${credentialResponse.access_token}` },
+      });
+      decoded = await res.json();
+    }
+
+    if (!decoded || !decoded.email) return;
+
+    const userEmail = decoded.email.toLowerCase();
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    const existingUser = registeredUsers.find((u) => u.email === userEmail);
+
+    if (existingUser) {
+      // Existing user -> Log in directly
+      localStorage.setItem('currentUser', JSON.stringify(existingUser));
+      navigate('/dashboard');
+    } else {
+      // New Google User -> Prompt to select a username first
+      setGoogleUserPending(decoded);
+      // Pre-fill a default username suggestion based on Google name
+      const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
+      setGoogleUsernameInput(suggestedUsername);
+    }
+  };
+
+  const googleLoginTrigger = useGoogleLogin({
+    onSuccess: handleGoogleSuccess,
+    onError: () => setLoginError('Google sign in failed. Please try again.'),
+  });
+
+  const handleGoogleUsernameSubmit = (e) => {
+    e.preventDefault();
+    const trimmedUser = googleUsernameInput.trim();
+
+    if (!trimmedUser) {
+      setGoogleUsernameErr("Username field can't be empty.");
+      return;
+    }
+
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    const isTakenInMock = mockUsernames.includes(trimmedUser.toLowerCase());
+    const isTakenInStorage = registeredUsers.some((u) => u.username.toLowerCase() === trimmedUser.toLowerCase());
+
+    if (isTakenInMock || isTakenInStorage) {
+      setGoogleUsernameErr('Username is already taken. Try another.');
+      return;
+    }
+
+    // Complete Google Registration
+    const newUser = {
+      username: trimmedUser,
+      email: googleUserPending.email,
+      avatar: googleUserPending.picture,
+      googleId: googleUserPending.sub || googleUserPending.id,
+      authProvider: 'google',
+    };
+
+    registeredUsers.push(newUser);
+    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+    localStorage.setItem('currentUser', JSON.stringify(newUser));
+    localStorage.setItem('justSignedUp', 'true');
+
+    setGoogleUserPending(null);
+    navigate('/dashboard');
+  };
+
   // --- SUBMIT HANDLERS ---
   const handleLoginSubmit = (e) => {
     e.preventDefault();
@@ -162,10 +242,19 @@ export default function Auth() {
     const emailVal = loginEmail.trim().toLowerCase();
     const passwordVal = loginPassword;
 
+    // Check localStorage registered Google/regular users
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    const foundUser = registeredUsers.find((u) => u.email === emailVal);
+
     if (emailVal === adminAccount.email && passwordVal === adminAccount.password) {
-      navigate('/dashboard');
+      navigate('/admin/dashboard');
     } else if (emailVal === userAccount.email && passwordVal === userAccount.password) {
       navigate('/dashboard');
+    } else if (foundUser && foundUser.password === passwordVal) {
+      localStorage.setItem('currentUser', JSON.stringify(foundUser));
+      navigate('/dashboard');
+    } else if (foundUser && foundUser.authProvider === 'google') {
+      setLoginError('✘ This email is registered via Google. Please click "Sign in with Google".');
     } else {
       setLoginError('✘ Invalid email or password.');
     }
@@ -180,6 +269,18 @@ export default function Auth() {
     const isConfirmValid = validateConfirmPassword();
 
     if (!isUserValid || !isEmailValid || !isPassValid || !isConfirmValid) return;
+
+    const newUser = {
+      username: signupUsername.trim(),
+      email: signupEmail.trim().toLowerCase(),
+      password: signupPassword,
+      authProvider: 'local',
+    };
+
+    const registeredUsers = JSON.parse(localStorage.getItem('registeredUsers') || '[]');
+    registeredUsers.push(newUser);
+    localStorage.setItem('registeredUsers', JSON.stringify(registeredUsers));
+    localStorage.setItem('currentUser', JSON.stringify(newUser));
 
     setSignupUsername('');
     setSignupEmail('');
@@ -231,13 +332,13 @@ export default function Auth() {
           <div className="flex items-center gap-2 sm:gap-3 order-2 md:order-3">
             <button
               onClick={() => switchView('login')}
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 md:border-[3px] border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
+              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 md:border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
             >
               LOGIN
             </button>
             <button
               onClick={() => switchView('signup')}
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-surface bg-theme-primary border-2 md:border-[3px] border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
+              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-surface bg-theme-primary border-2 md:border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
             >
               SIGN UP
             </button>
@@ -320,201 +421,253 @@ export default function Auth() {
               </div>
             )}
 
-            {/* 1. LOGIN FORM CONTEXT */}
-            {activeView === 'login' && (
-              <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
-                <h2 className="font-pressstart text-xl text-theme-dark">Welcome back!</h2>
-                <p className="font-pixel text-lg text-theme-dark">Pick up right where you left off.</p>
+{/* 1. LOGIN FORM CONTEXT */}
+{activeView === 'login' && (
+  <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
+    <h2 className="font-pressstart text-xl text-theme-dark">Welcome back!</h2>
+    <p className="font-pixel text-lg text-theme-dark">Pick up right where you left off.</p>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="you@studycircle.app"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                </div>
+    {/* EMAIL INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
+      <input
+        type="email"
+        value={loginEmail}
+        onChange={(e) => setLoginEmail(e.target.value)}
+        placeholder="you@studycircle.app"
+        className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+          loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
+        }`}
+      />
+    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showLoginPassword ? 'text' : 'password'}
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showLoginPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  {loginError && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">{loginError}</p>}
-                </div>
-
-                <button
-                  type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-4 transition-all duration-150 retro-shadow cursor-pointer"
-                >
-                  LOGIN
-                </button>
-
-                <div className="text-center mt-2">
-                  <button
-                    type="button"
-                    onClick={() => switchView('reset')}
-                    className="font-pressstart text-[11px] text-[#563B2D] hover:underline decoration-2 transition-all duration-150 bg-transparent border-none p-0 cursor-pointer"
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-              </form>
+    {/* PASSWORD INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
+      <div className="relative w-full">
+        <input
+          type={showLoginPassword ? 'text' : 'password'}
+          value={loginPassword}
+          onChange={(e) => setLoginPassword(e.target.value)}
+          placeholder="........"
+          className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+            loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
+          }`}
+        />
+        <button
+          type="button"
+          onClick={() => setShowLoginPassword(!showLoginPassword)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            {showLoginPassword ? (
+              <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
+            ) : (
+              <>
+                <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </>
             )}
+          </svg>
+        </button>
+      </div>
+      {loginError && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">{loginError}</p>}
+    </div>
 
-            {/* 2. SIGN UP FORM CONTEXT */}
-            {activeView === 'signup' && (
-              <form onSubmit={handleSignupSubmit} className="flex flex-col gap-4">
-                <h2 className="font-pressstart text-xl text-theme-dark">Join the circle!</h2>
-                <p className="font-pixel text-lg text-theme-dark">Create your StudyCircle account now.</p>
+    {/* SUBMIT BUTTON */}
+    <button
+      type="submit"
+      className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-2 transition-all duration-150 retro-shadow cursor-pointer"
+    >
+      LOGIN
+    </button>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">USERNAME</label>
-                  <input
-                    type="text"
-                    value={signupUsername}
-                    onChange={(e) => {
-                      setSignupUsername(e.target.value);
-                      validateUsername(e.target.value);
-                    }}
-                    placeholder="acorn_hero"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      signupUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {signupUsernameErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
-                </div>
+    <div className="text-center mt-1">
+      <button
+        type="button"
+        onClick={() => switchView('reset')}
+        className="font-pressstart text-[11px] text-[#563B2D] hover:underline decoration-2 transition-all duration-150 bg-transparent border-none p-0 cursor-pointer"
+      >
+        Forgot Password?
+      </button>
+    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
-                  <input
-                    type="email"
-                    value={signupEmail}
-                    onChange={(e) => {
-                      setSignupEmail(e.target.value);
-                      validateEmail(e.target.value);
-                    }}
-                    placeholder="you@studycircle.app"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {signupEmailErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
-                </div>
+    {/* OR DIVIDER */}
+    <div className="flex items-center gap-2 my-1">
+      <div className="flex-1 h-[2px] bg-theme-dark/20" />
+      <span className="font-pressstart text-[8px] text-theme-dark/60">OR</span>
+      <div className="flex-1 h-[2px] bg-theme-dark/20" />
+    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showSignupPassword ? 'text' : 'password'}
-                      value={signupPassword}
-                      onChange={(e) => {
-                        setSignupPassword(e.target.value);
-                        validatePassword(e.target.value);
-                        if (signupConfirmPassword !== '') validateConfirmPassword(signupConfirmPassword, e.target.value);
-                      }}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        signupPasswordErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showSignupPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  {signupPasswordErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
-                </div>
+    {/* GOOGLE SIGN IN BUTTON */}
+    <button
+      type="button"
+      onClick={() => googleLoginTrigger()}
+      className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-[#FEF4E0] border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+    >
+      <svg className="w-4 h-4" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+      </svg>
+      <span>SIGN IN WITH GOOGLE</span>
+    </button>
+  </form>
+)}
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">CONFIRM PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showSignupConfirmPassword ? 'text' : 'password'}
-                      value={signupConfirmPassword}
-                      onChange={(e) => {
-                        setSignupConfirmPassword(e.target.value);
-                        validateConfirmPassword(e.target.value, signupPassword);
-                      }}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        isConfirmPasswordCustomError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showSignupConfirmPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  <p
-                    className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
-                      isConfirmPasswordCustomError ? 'text-[#A94A4A] text-sm' : 'text-theme-dark text-[10px] sm:text-[12px] md:text-[14px] lg:text-[16px]'
-                    }`}
-                  >
-                    {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
-                  </p>
-                </div>
+{/* 2. SIGN UP FORM CONTEXT */}
+{activeView === 'signup' && (
+  <form onSubmit={handleSignupSubmit} className="flex flex-col gap-4">
+    <h2 className="font-pressstart text-xl text-theme-dark">Join the circle!</h2>
+    <p className="font-pixel text-lg text-theme-dark">Create your StudyCircle account now.</p>
 
-                <button
-                  type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-4 transition-all duration-150 retro-shadow cursor-pointer"
-                >
-                  SIGN UP
-                </button>
-              </form>
+    {/* USERNAME INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">USERNAME</label>
+      <input
+        type="text"
+        value={signupUsername}
+        onChange={(e) => {
+          setSignupUsername(e.target.value);
+          validateUsername(e.target.value);
+        }}
+        placeholder="acorn_hero"
+        className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+          signupUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+        }`}
+      />
+      {signupUsernameErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
+    </div>
+
+    {/* EMAIL INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
+      <input
+        type="email"
+        value={signupEmail}
+        onChange={(e) => {
+          setSignupEmail(e.target.value);
+          validateEmail(e.target.value);
+        }}
+        placeholder="you@studycircle.app"
+        className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+          signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+        }`}
+      />
+      {signupEmailErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
+    </div>
+
+    {/* PASSWORD INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
+      <div className="relative w-full">
+        <input
+          type={showSignupPassword ? 'text' : 'password'}
+          value={signupPassword}
+          onChange={(e) => {
+            setSignupPassword(e.target.value);
+            validatePassword(e.target.value);
+            if (signupConfirmPassword !== '') validateConfirmPassword(signupConfirmPassword, e.target.value);
+          }}
+          placeholder="........"
+          className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+            signupPasswordErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+          }`}
+        />
+        <button
+          type="button"
+          onClick={() => setShowSignupPassword(!showSignupPassword)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            {showSignupPassword ? (
+              <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
+            ) : (
+              <>
+                <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </>
             )}
+          </svg>
+        </button>
+      </div>
+      {signupPasswordErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
+    </div>
+
+    {/* CONFIRM PASSWORD INPUT */}
+    <div className="flex flex-col gap-1">
+      <label className="font-pressstart text-[10px] text-theme-dark">CONFIRM PASSWORD</label>
+      <div className="relative w-full">
+        <input
+          type={showSignupConfirmPassword ? 'text' : 'password'}
+          value={signupConfirmPassword}
+          onChange={(e) => {
+            setSignupConfirmPassword(e.target.value);
+            validateConfirmPassword(e.target.value, signupPassword);
+          }}
+          placeholder="........"
+          className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+            isConfirmPasswordCustomError ? 'border-[#A94A4A]' : 'border-theme-dark'
+          }`}
+        />
+        <button
+          type="button"
+          onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+            {showSignupConfirmPassword ? (
+              <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
+            ) : (
+              <>
+                <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </>
+            )}
+          </svg>
+        </button>
+      </div>
+      <p
+        className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
+          isConfirmPasswordCustomError ? 'text-[#A94A4A] text-sm' : 'text-theme-dark text-[10px] sm:text-[12px] md:text-[14px] lg:text-[16px]'
+        }`}
+      >
+        {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
+      </p>
+    </div>
+
+    {/* SUBMIT SIGN UP BUTTON */}
+    <button
+      type="submit"
+      className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-2 transition-all duration-150 retro-shadow cursor-pointer"
+    >
+      SIGN UP
+    </button>
+
+    {/* OR DIVIDER */}
+    <div className="flex items-center gap-2 my-1">
+      <div className="flex-1 h-[2px] bg-theme-dark/20" />
+      <span className="font-pressstart text-[8px] text-theme-dark/60">OR</span>
+      <div className="flex-1 h-[2px] bg-theme-dark/20" />
+    </div>
+
+    {/* GOOGLE SIGN UP BUTTON */}
+    <button
+      type="button"
+      onClick={() => googleLoginTrigger()}
+      className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-[#FEF4E0] border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+    >
+      <svg className="w-4 h-4" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+      </svg>
+      <span>SIGN UP WITH GOOGLE</span>
+    </button>
+  </form>
+)}
 
             {/* 3. RESET PASSWORD FORM CONTEXT */}
             {activeView === 'reset' && (
@@ -554,6 +707,62 @@ export default function Auth() {
             )}
           </div>
         </div>
+
+        {/* GOOGLE USERNAME SELECTION MODAL */}
+        {googleUserPending && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-sm">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                {googleUserPending.picture && (
+                  <img src={googleUserPending.picture} alt="Google Avatar" className="w-10 h-10 rounded-full border-2 border-theme-dark" />
+                )}
+                <div>
+                  <h3 className="font-pressstart text-sm text-theme-dark">Choose Username</h3>
+                  <p className="font-pixel text-xs text-theme-dark/70">{googleUserPending.email}</p>
+                </div>
+              </div>
+
+              <p className="font-pixel text-sm text-theme-dark">
+                Welcome to StudyCircle! Please pick a unique username to complete setting up your account.
+              </p>
+
+              <form onSubmit={handleGoogleUsernameSubmit} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="font-pressstart text-[10px] text-theme-dark">USERNAME</label>
+                  <input
+                    type="text"
+                    value={googleUsernameInput}
+                    onChange={(e) => {
+                      setGoogleUsernameInput(e.target.value);
+                      setGoogleUsernameErr('');
+                    }}
+                    placeholder="acorn_hero"
+                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full ${
+                      googleUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+                    }`}
+                  />
+                  {googleUsernameErr && <p className="font-pixel text-sm text-[#A94A4A]">✘ {googleUsernameErr}</p>}
+                </div>
+
+                <div className="flex gap-2 justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setGoogleUserPending(null)}
+                    className="font-pressstart text-xs bg-theme-muted border-2 border-theme-dark px-3 py-2 text-theme-dark cursor-pointer"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="submit"
+                    className="font-pressstart text-xs bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
+                  >
+                    COMPLETE
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* RETRO TOAST CONTAINER */}
         <div id="toast-container" className="fixed top-28 right-6 z-50 pointer-events-none flex flex-col gap-3">
@@ -603,7 +812,7 @@ export default function Auth() {
             <div className="shrink-0">
               <button
                 onClick={() => switchView('signup')}
-                className="font-pressstart text-[7px] sm:text-[10px] md:text-[12px] text-theme-surface bg-theme-safe border-[2px] md:border-[3px] border-theme-dark px-3 py-2 sm:px-5 sm:py-3 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
+                className="font-pressstart text-[7px] sm:text-[10px] md:text-[12px] text-theme-surface bg-theme-safe border-[2px] md:border-2 border-theme-dark px-3 py-2 sm:px-5 sm:py-3 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
               >
                 JOIN NOW!
               </button>
