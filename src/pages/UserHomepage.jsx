@@ -1,7 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { usePlayer } from '../context/PlayerContext'; // Import the PlayerContext hook
+import { usePlayer } from '../context/PlayerContext';
 import { useTimer } from '../hooks/useTimer';
 import { ActiveSessionWidget, RecentActivityWidget } from '../components/UserHomepageWidgets';
+import CustomRoom from '../components/CustomRoom';
+import CustomAvatar from '../components/CustomAvatar';
+
+// Adjust these values to position & scale the avatar manually
+const avatarConfig = {
+  scale: 0.85,    // Scale multiplier (e.g., 0.8 = 80%, 1.2 = 120%)
+  bottom: '15%',  // Height inside the room (increase % to move UP, decrease to move DOWN)
+  left: '50%',    // Horizontal alignment (50% is center)
+  offsetX: 0,     // Fine-tune horizontal position (+px moves right, -px moves left)
+  offsetY: 0,     // Fine-tune vertical position (+px moves down, -px moves up)
+};
 
 // --- MOCK DATA ---
 const initialRecentActivities = [
@@ -69,10 +80,8 @@ const userActivities = {
 };
 
 export default function UserHomepage() {
-  // Use PlayerContext to dynamically get live player details
   const { playerData } = usePlayer();
 
-  // Safely fallback defaults in case context values are undefined
   const player = {
     username: playerData?.username || 'ACORN_HERO',
     streakDays: playerData?.streakDays ?? 0,
@@ -80,6 +89,7 @@ export default function UserHomepage() {
     coins: playerData?.coins ?? 0,
   };
 
+  // Timer custom hook handles localStorage synchronization
   const timer = useTimer(player);
   const activeCardRef = useRef(null);
 
@@ -310,39 +320,65 @@ export default function UserHomepage() {
             </div>
           </div>
 
-          <div className="relative w-full flex items-center justify-center rounded-[12px] bg-theme-surface border-2 border-theme-dark p-6 min-h-[300px]">
-            <div className="text-center">
-              <div className="bg-[#000000]/20 px-3 py-1 rounded mb-4 inline-block">
-                <span className="font-pressstart text-[10px] text-[#FFFFFF] drop-shadow">
-                  {player.username}
-                </span>
+          {/* ROOM & AVATAR DISPLAY CONTAINER */}
+          <div className="relative w-full flex items-center justify-center rounded-[12px] min-h-[300px]">
+            <div className="relative flex items-center justify-center max-w-[1100px] w-full mx-auto">
+              {/* Big Cozy Ambient Glow */}
+              <div
+                className="absolute w-[80%] h-[80%] sm:w-[100%] sm:h-[100%] rounded-full pointer-events-none opacity-75 filter blur-3xl z-0"
+                style={{
+                  background:
+                    'radial-gradient(circle, rgba(253, 146, 62, 0.5) 0%, rgba(253, 146, 62, 0) 100%)',
+                }}
+              />
+
+              {/* Custom Room Component */}
+              <CustomRoom />
+
+              {/* Mock Avatars Container Placeholder for Room Teammates */}
+              <div id="mock-avatars-container" className="absolute inset-0 pointer-events-none z-10" />
+
+              {/* Overlay User Avatar Container - Manual Scale & Position */}
+              <div
+                className="absolute w-[200px] h-[200px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
+                style={{
+                  bottom: avatarConfig.bottom,
+                  left: avatarConfig.left,
+                  transform: `translate(-50%, 0) scale(${avatarConfig.scale}) translate(${avatarConfig.offsetX}px, ${avatarConfig.offsetY}px)`,
+                }}
+              >
+                {/* NAME TAG ABOVE AVATAR */}
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-[#000000]/20 px-1.5 sm:px-3 py-0.5 sm:py-1 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center z-30">
+                  <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-[#FFFFFF] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    {player.username}
+                  </span>
+                </div>
+
+                <CustomAvatar state="idle" />
               </div>
-              <p className="font-pressstart text-xs text-theme-dark/60">
-                [ Custom Room & Avatar Component ]
-              </p>
             </div>
           </div>
         </section>
 
         {/* RIGHT COLUMN: ACTIVE SESSION TIMER & RECENT ACTIVITY */}
         <div className="flex flex-col gap-5 w-full">
-          <ActiveSessionWidget
-            activeSession={timer.activeSession}
-            remainingTimeSec={timer.remainingTimeSec}
-            isTimerRunning={timer.isTimerRunning}
-            isFocusPhase={timer.isFocusPhase}
-            currentSessionCount={timer.currentSessionCount}
-            totalSessions={timer.totalSessions}
-            toggleTimer={timer.toggleTimer}
-            cancelSession={timer.cancelSession}
-            toggleDocumentPiP={timer.toggleDocumentPiP}
-            toggleFullscreen={timer.toggleFullscreen}
-            cardRef={activeCardRef}
-            isWidgetFloating={timer.isWidgetFloating}
-            isWidgetFullscreen={timer.isWidgetFullscreen}
-            streakDays={player.streakDays}
-            focusTimeFormatted={dailyFocusFormatted}
-          />
+<ActiveSessionWidget
+  activeSession={timer.activeSession}
+  remainingTimeSec={timer.remainingTimeSec}
+  isTimerRunning={timer.isTimerRunning}
+  isFocusPhase={timer.isFocusPhase}
+  currentSessionCount={timer.currentSessionCount}
+  totalSessions={timer.totalSessions}
+  toggleTimer={timer.toggleTimer}
+  cancelSession={timer.cancelSession}
+  toggleDocumentPiP={timer.toggleDocumentPiP}
+  toggleFullscreen={timer.toggleFullscreen}
+  cardRef={activeCardRef}
+  isWidgetFloating={timer.isWidgetFloating}
+  isWidgetFullscreen={timer.isWidgetFullscreen}
+  streakDays={player.streakDays}
+  focusTimeFormatted={timer.dailyFocusFormatted}
+/>
 
           <RecentActivityWidget
             activeSession={timer.activeSession}
@@ -392,7 +428,7 @@ export default function UserHomepage() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-1.5 font-pressstart text-[8px] sm:text-[9px] rounded-none border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
+                className={`flex-1 py-1.5 font-pressstart text-[8px] sm:text-[9px] rounded-none! border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
                   activeTab === tab
                     ? 'bg-theme-primary text-[#FFFFF6]'
                     : 'bg-theme-muted text-theme-dark hover:bg-[#f3dcba]'
@@ -445,7 +481,7 @@ export default function UserHomepage() {
         <section className="md:col-span-5 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 shadow-md flex flex-col gap-2.5 relative">
           <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-theme-dark/20">
             <div className="flex items-center gap-2 min-w-0">
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-dark shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-primary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark truncate">
@@ -454,6 +490,29 @@ export default function UserHomepage() {
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={handlePrevMonth} 
+                  className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                  aria-label="Previous Month"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z" />
+                  </svg>
+                </button>
+                <button 
+                  onClick={handleNextMonth} 
+                  className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                  aria-label="Next Month"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="currentColor" d="M11.273 3.687a1 1 0 1 1 1.454-1.374l8.5 9a1 1 0 0 1 0 1.374l-8.5 9.001a1 1 0 1 1-1.454-1.373L19.125 12z" />
+                  </svg>
+                </button>
+              </div>
+
               <button
                 onClick={() => setShowCalendarModal(true)}
                 className="p-1 sm:p-1.5 rounded-[6px] text-theme-dark hover:bg-theme-muted hover:text-theme-primary transition-all cursor-pointer"
@@ -463,15 +522,6 @@ export default function UserHomepage() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
                 </svg>
               </button>
-
-              <div className="flex items-center gap-1">
-                <button onClick={handlePrevMonth} className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer">
-                  ◀
-                </button>
-                <button onClick={handleNextMonth} className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer">
-                  ▶
-                </button>
-              </div>
             </div>
           </div>
 
@@ -493,7 +543,6 @@ export default function UserHomepage() {
       {showRecentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh]">
-            {/* MODAL HEADER */}
             <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
               <h3 className="font-pressstart text-[13px] sm:text-[15px] text-theme-dark">
                 ALL RECENT ACTIVITY
@@ -509,7 +558,6 @@ export default function UserHomepage() {
               </button>
             </div>
 
-            {/* FULL ACTIVITY LIST CONTAINER */}
             <div className="flex flex-col gap-1.5 overflow-y-auto pr-1 max-h-[60vh]">
               {initialRecentActivities.map((item, idx) => renderActivityItem(item, idx))}
             </div>
@@ -521,7 +569,6 @@ export default function UserHomepage() {
       {showLeaderboardModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 w-full max-w-2xl max-h-[85vh] flex flex-col gap-4 shadow-2xl">
-            {/* Modal Header */}
             <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
               <div className="flex items-center gap-2">
                 <svg className="w-5 h-5 text-theme-primary shrink-0" viewBox="0 0 24 24" fill="currentColor">
@@ -542,13 +589,12 @@ export default function UserHomepage() {
               </button>
             </div>
 
-            {/* Modal Tabs */}
             <div className="flex gap-2 p-1">
               {['all-time', 'this-month', 'streaks'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-1.5 font-pressstart text-[9px] rounded-none border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
+                  className={`flex-1 py-1.5 font-pressstart text-[9px] rounded-none! border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
                     activeTab === tab
                       ? 'bg-theme-primary text-theme-surface'
                       : 'bg-theme-muted text-theme-dark hover:bg-[#f3dcba]'
@@ -559,7 +605,6 @@ export default function UserHomepage() {
               ))}
             </div>
 
-            {/* Modal Full List */}
             <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[60vh] pr-2">
               {(leaderboardData[activeTab] || []).map((item) => {
                 const isCurrentUser = item.username === player.username;
@@ -611,6 +656,29 @@ export default function UserHomepage() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={handlePrevMonth} 
+                    className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    aria-label="Previous Month"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z" />
+                    </svg>
+                  </button>
+                  <button 
+                    onClick={handleNextMonth} 
+                    className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    aria-label="Next Month"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="currentColor" d="M11.273 3.687a1 1 0 1 1 1.454-1.374l8.5 9a1 1 0 0 1 0 1.374l-8.5 9.001a1 1 0 1 1-1.454-1.373L19.125 12z" />
+                    </svg>
+                  </button>
+                </div>
+
                 <button
                   onClick={() => setShowCalendarModal(false)}
                   className="p-1 rounded-[6px] text-theme-dark hover:bg-theme-muted hover:text-theme-primary transition-all cursor-pointer"
@@ -620,15 +688,6 @@ export default function UserHomepage() {
                     <path d="m10 15.4l-5.9 5.9q-.275.275-.7.275t-.275-.7t.275-.7L8.6 14H5q-.425 0-.712-.288T4 13t.288-.712T5 12h6q.425 0 .713.288T12 13v6q0 .425-.288.713T11 20t-.712-.288T10 19zm5.4-5.4H19q.425 0 .713.288T20 11t-.288.713T19 12h-6q-.425 0-.712-.288T12 11V5q0-.425.288-.712T13 4t.713.288T14 5v3.6l5.9-5.9q.275-.275.7-.275t.7.275t.275.7t-.275.7z" />
                   </svg>
                 </button>
-
-                <div className="flex items-center gap-1">
-                  <button onClick={handlePrevMonth} className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer">
-                    ◀
-                  </button>
-                  <button onClick={handleNextMonth} className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer">
-                    ▶
-                  </button>
-                </div>
               </div>
             </div>
 
@@ -646,6 +705,42 @@ export default function UserHomepage() {
           </div>
         </div>
       )}
+
+      {/* ==================== SESSION COMPLETE REWARD MODAL ==================== */}
+{timer.showRewardModal && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+    <div className="bg-[#FEF4E0] border-4 border-[#3D2013] rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short">
+      <div className="text-5xl">🎉</div>
+      
+      <h3 className="font-pressstart text-[16px] text-[#E87339] uppercase">
+        SESSION COMPLETE!
+      </h3>
+
+      <p className="font-pixel text-[18px] text-[#3D2013] leading-snug">
+        Awesome job! You finished all your planned study sessions.
+      </p>
+
+      <div className="bg-[#FAE9CE] border-2 border-[#3D2013] p-3 rounded-[8px] w-full flex items-center justify-around">
+        <div className="flex flex-col">
+          <span className="font-pressstart text-[12px] text-[#E87339]">+50 XP</span>
+          <span className="font-pixel text-[14px] text-[#3D2013]/70">REWARD</span>
+        </div>
+        <div className="w-[1px] h-8 bg-[#3D2013]/20" />
+        <div className="flex flex-col">
+          <span className="font-pressstart text-[12px] text-[#E87339]">+10 COINS</span>
+          <span className="font-pixel text-[14px] text-[#3D2013]/70">BONUS</span>
+        </div>
+      </div>
+
+      <button
+        onClick={timer.closeRewardModal}
+        className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
+      >
+        CLAIM REWARD
+      </button>
+    </div>
+  </div>
+)}
     </main>
   );
 }

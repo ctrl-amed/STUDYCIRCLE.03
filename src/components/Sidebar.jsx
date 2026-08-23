@@ -2,7 +2,13 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 
-export default function Sidebar({ isExpanded, setIsExpanded, isMobileOpen, setIsMobileOpen }) {
+export default function Sidebar({
+  isExpanded,
+  setIsExpanded,
+  isMobileOpen,
+  setIsMobileOpen,
+  onOpenKitsu,
+}) {
   const { playerData } = usePlayer();
   const location = useLocation();
   const [appearanceRotated, setAppearanceRotated] = useState(false);
@@ -199,14 +205,17 @@ export default function Sidebar({ isExpanded, setIsExpanded, isMobileOpen, setIs
 
         {/* FOOTER SECTION */}
         <div className="mt-auto pt-3 border-t-2 border-[#3D2013]/20 flex flex-col gap-2 shrink-0">
-          <Link
-            to="/kitsuai"
-            onClick={() => setIsMobileOpen(false)}
-            className="w-full bg-[#FDE4D0] border-2 border-[#3D2013] hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer no-underline text-[#3D2013]"
+          <button
+            type="button"
+            onClick={() => {
+              setIsMobileOpen(false);
+              if (onOpenKitsu) onOpenKitsu();
+            }}
+            className="w-full bg-[#FDE4D0] border-2 border-[#3D2013] hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-[#3D2013]"
           >
             <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-5 h-5 object-contain shrink-0" />
             {isExpanded && <span className="nav-label font-pressstart text-[10px]">KitsuAI</span>}
-          </Link>
+          </button>
 
           <div className="bg-[#FDE4D0] rounded-[8px] p-1.5 flex flex-col gap-1.5">
             <button

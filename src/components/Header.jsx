@@ -241,7 +241,7 @@ const handleConfirmRemoveFriend = () => {
             <button
               onClick={() => setShowNotifModal(!showNotifModal)}
               title="Notifications"
-              className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center transition-all duration-150 shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+              className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center transition-all duration-150 retro-shadow cursor-pointer"
             >
               <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#E87339]" viewBox="0 0 24 24">
                 <path d="M0 0h24v24H0z" fill="none" />
@@ -266,7 +266,7 @@ const handleConfirmRemoveFriend = () => {
                         <path d="M0 0h24v24H0z" fill="none" />
                         <path fill="currentColor" fillRule="evenodd" d="M2.77 17.7c.155.065.32.095.48.095l.005-.005c.32 0 .64-.125.88-.365L6.56 15h8.19a2.755 2.755 0 0 0 2.75-2.75v-6.5A2.755 2.755 0 0 0 14.75 3h-10A2.755 2.755 0 0 0 2 5.75v10.795c0 .51.3.96.77 1.155M3.5 5.75c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H5.94L3.5 15.94zm16.365 15.68c.24.24.56.365.885.365v.005A1.245 1.245 0 0 0 22 20.55V10.255a2.755 2.755 0 0 0-2.75-2.75H19v1.5h.25c.69 0 1.25.56 1.25 1.25v9.69l-1.94-1.94h-6.81c-.69 0-1.25-.56-1.25-1.25V16.5H9v.255a2.755 2.755 0 0 0 2.75 2.75h6.19z" clipRule="evenodd" />
                       </svg>
-                      <h3 className="font-pressstart text-[10px] sm:text-[12px] text-[#3D2013]">Notifications</h3>
+                      <h3 className="font-pressstart text-[10px] sm:text-[12px] text-[#3D2013]">MESSAGES</h3>
                     </div>
                     <button onClick={() => setShowNotifModal(false)} className="text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] p-1 cursor-pointer">✕</button>
                   </div>
@@ -321,7 +321,7 @@ const handleConfirmRemoveFriend = () => {
           <button
             onClick={() => setShowFriendsModal(true)}
             title="Friends"
-            className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+            className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 retro-shadow cursor-pointer"
           >
             <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#E87339]" viewBox="0 0 24 24">
               <path d="M0 0h24v24H0z" fill="none" />
@@ -367,7 +367,7 @@ const handleConfirmRemoveFriend = () => {
             <button
               onClick={() => setShowLogoutModal(true)}
               title="Logout"
-              className="h-8 sm:h-11 bg-[#A53914] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 shrink-0 cursor-pointer hover:bg-[#832c0f]"
+              className="h-8 sm:h-11 bg-[#A53914] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 retro-shadow cursor-pointer"
             >
               <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#FEF4E0]" viewBox="0 0 24 24">
                 <path d="M0 0h24v24H0z" fill="none" />

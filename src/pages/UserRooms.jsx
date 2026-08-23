@@ -5,6 +5,7 @@ import { usePlayer } from '../context/PlayerContext';
 // --- CONFIGURATIONS ---
 const MAX_ROOM_LIMIT = 3;
 const REQUEST_TIMEOUT_SEC = 15;
+const MAX_ROOM_NAME_LENGTH = 50; // Easily adjust room name character limit here
 
 // --- INITIAL MOCK DATA ---
 const initialRoomsData = {
@@ -193,6 +194,7 @@ export default function UserRooms() {
 
   // Modal Form Inputs & Selected Items
   const [privateCodeInput, setPrivateCodeInput] = useState('');
+  const [privateCodeErr, setPrivateCodeErr] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomPrivacy, setNewRoomPrivacy] = useState('public');
   const [newRoomMaxMembers, setNewRoomMaxMembers] = useState('');
@@ -249,7 +251,7 @@ export default function UserRooms() {
 
   // Handle Create Room Submission
   const handleConfirmCreate = () => {
-    if (!newRoomName.trim() || !newRoomMaxMembers) return;
+    if (!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers) return;
 
     if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
       setShowCreateModal(false);
@@ -293,7 +295,7 @@ export default function UserRooms() {
   const handleConfirmPrivateJoin = () => {
     const code = privateCodeInput.trim().toUpperCase();
     if (!code) {
-      alert('Please enter a room code.');
+      setPrivateCodeErr('Please enter a room code.');
       return;
     }
 
@@ -302,10 +304,11 @@ export default function UserRooms() {
     );
 
     if (!matchedRoom) {
-      alert('Invalid room code. Please check and try again.');
+      setPrivateCodeErr('Invalid room code. Please check and try again.');
       return;
     }
 
+    setPrivateCodeErr('');
     setPrivateCodeInput('');
     setShowJoinModal(false);
 
@@ -556,15 +559,28 @@ export default function UserRooms() {
               <input
                 type="text"
                 value={privateCodeInput}
-                onChange={(e) => setPrivateCodeInput(e.target.value)}
+                onChange={(e) => {
+                  setPrivateCodeInput(e.target.value);
+                  setPrivateCodeErr('');
+                }}
                 placeholder="ABCD123"
-                className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] p-3 font-pressstart text-[10px] text-center text-[#3D2013] placeholder-[#3D2013]/40 focus:outline-none tracking-widest uppercase"
+                className={`w-full bg-[#FAE9CE] border-[2px] rounded-[8px] p-3 font-pressstart text-[10px] text-center text-[#3D2013] placeholder-[#3D2013]/40 focus:outline-none tracking-widest uppercase transition-colors duration-150 ${
+                  privateCodeErr ? 'border-[#A53914]' : 'border-[#3D2013]'
+                }`}
               />
+              {privateCodeErr && (
+                <p className="font-pixel text-sm text-[#A53914] text-center mt-0.5">
+                  ✘ {privateCodeErr}
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3 w-full pt-2">
               <button
-                onClick={() => setShowJoinModal(false)}
+                onClick={() => {
+                  setPrivateCodeErr('');
+                  setShowJoinModal(false);
+                }}
                 className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] bg-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FAE9CE]"
               >
                 CANCEL
@@ -592,13 +608,19 @@ export default function UserRooms() {
 
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
-                <label className="font-pressstart text-[10px] text-[#3D2013]">ROOM NAME</label>
+                <div className="flex items-center justify-between">
+                  <label className="font-pressstart text-[10px] text-[#3D2013]">ROOM NAME</label>
+                  <span className="font-pressstart text-[8px] text-[#3D2013]/60">
+                    {newRoomName.length}/{MAX_ROOM_NAME_LENGTH}
+                  </span>
+                </div>
                 <input
                   type="text"
                   value={newRoomName}
+                  maxLength={MAX_ROOM_NAME_LENGTH}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   placeholder="Enter room name..."
-                  className="w-full bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
+                  className="w-full bg-theme-muted border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
                 />
               </div>
 
@@ -639,7 +661,7 @@ export default function UserRooms() {
                   <select
                     value={newRoomMaxMembers}
                     onChange={(e) => setNewRoomMaxMembers(e.target.value)}
-                    className="w-full bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] focus:outline-none cursor-pointer appearance-none"
+                    className="w-full bg-theme-muted border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] focus:outline-none cursor-pointer appearance-none"
                   >
                     <option value="" disabled>
                       Select maximum members
@@ -672,9 +694,9 @@ export default function UserRooms() {
               </button>
               <button
                 onClick={handleConfirmCreate}
-                disabled={!newRoomName.trim() || !newRoomMaxMembers}
+                disabled={!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers}
                 className={`font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow ${
-                  newRoomName.trim() && newRoomMaxMembers
+                  newRoomName.trim() && newRoomName.length <= MAX_ROOM_NAME_LENGTH && newRoomMaxMembers
                     ? 'cursor-pointer hover:bg-[#d66530]'
                     : 'opacity-50 cursor-not-allowed'
                 }`}

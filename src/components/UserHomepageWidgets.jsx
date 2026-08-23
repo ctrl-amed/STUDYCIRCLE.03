@@ -1,4 +1,5 @@
 import React from 'react';
+import { useOutletContext } from 'react-router-dom';
 
 const activityIcons = {
   Reading: (
@@ -35,13 +36,15 @@ export function ActiveSessionWidget({
   streakDays = 0,
   focusTimeFormatted = '0h 0m',
 }) {
+  const context = useOutletContext();
+
   const formatTime = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Default Idle Card View[cite: 35]
+  // Default Idle Card View
   if (!activeSession) {
     return (
       <section className="bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
@@ -53,12 +56,13 @@ export function ActiveSessionWidget({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
-          <a
-            href="create-session.html"
-            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FFFFF6] bg-[#E87339] rounded-none border-2 border-[#3D2013] px-3 py-2 md:px-4 md:py-2.5 hover:bg-[#d0622c] cursor-pointer text-center"
+          <button
+            type="button"
+            onClick={() => context?.openCreateSessionModal?.()}
+            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
           >
             START SESSION
-          </a>
+          </button>
 
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
@@ -76,7 +80,7 @@ export function ActiveSessionWidget({
     );
   }
 
-  // Active Timer Session View[cite: 36]
+  // Active Timer Session View
   const focusMins = activeSession.focusTime || 25;
   const breakMins = activeSession.breakTime || 5;
 

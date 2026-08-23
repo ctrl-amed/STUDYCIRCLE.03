@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { usePlayer } from '../context/PlayerContext';
 
-export function useTimer(playerData) {
+export function useTimer() {
+  const { addFocusTime, incrementTotalSessions } = usePlayer() || {};
   const [activeSession, setActiveSession] = useState(null);
-  const [remainingTimeSec, setRemainingTimeSec] = useState(25 * 60);
+  const [remainingTimeSec, setRemainingTimeSec] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [isFocusPhase, setIsFocusPhase] = useState(true);
   const [currentSessionCount, setCurrentSessionCount] = useState(0);
@@ -10,28 +12,84 @@ export function useTimer(playerData) {
   const [tasksList, setTasksList] = useState([]);
   const [isWidgetFloating, setIsWidgetFloating] = useState(false);
   const [isWidgetFullscreen, setIsWidgetFullscreen] = useState(false);
+  const [showRewardModal, setShowRewardModal] = useState(false);
+  const [dailyFocusFormatted, setDailyFocusFormatted] = useState('0h 0m');
 
   const timerRef = useRef(null);
   const pipWindowRef = useRef(null);
 
-  // Load session from localStorage on mount[cite: 36]
-  useEffect(() => {
-    const savedSession = localStorage.getItem('activeSession');
-    if (savedSession) {
-      try {
-        const session = JSON.parse(savedSession);
-        setActiveSession(session);
-        setTotalSessions(parseInt(session.sessionCount, 10) || 1);
-        const fSec = (parseInt(session.focusTime, 10) || 25) * 60;
-        setRemainingTimeSec(fSec);
-        setTasksList((session.tasks || []).map((t) => ({ text: t, completed: false })));
-      } catch (e) {
-        console.error('Failed to parse activeSession:', e);
-      }
+  const parseNum = (val, fallback) => {
+    const num = parseInt(val, 10);
+    return isNaN(num) || num <= 0 ? fallback : num;
+  };
+
+  const calculateDailyFocusText = useCallback(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const lastSavedDate = localStorage.getItem('tracker_date');
+
+    if (lastSavedDate !== today) {
+      localStorage.setItem('tracker_date', today);
+      localStorage.setItem('daily_focus_seconds', '0');
+      localStorage.setItem('daily_break_seconds', '0');
     }
+
+    const dailySecs = parseNum(localStorage.getItem('daily_focus_seconds'), 0);
+    const hrs = Math.floor(dailySecs / 3600);
+    const mins = Math.floor((dailySecs % 3600) / 60);
+    setDailyFocusFormatted(`${hrs}h ${mins}m`);
   }, []);
 
-  // Update Daily & Lifetime Stats in localStorage[cite: 36]
+  // Load active session from localStorage
+  useEffect(() => {
+    calculateDailyFocusText();
+
+    const loadSession = () => {
+      const savedSession = localStorage.getItem('activeSession');
+      if (savedSession) {
+        try {
+          const session = JSON.parse(savedSession);
+          const focusMins = parseNum(session.focusTime, 25);
+          const breakMins = parseNum(session.breakTime, 5);
+
+          setActiveSession({
+            ...session,
+            focusTime: focusMins,
+            breakTime: breakMins,
+          });
+
+          setTotalSessions(parseNum(session.sessionCount, 1));
+          setRemainingTimeSec(focusMins * 60);
+          setIsFocusPhase(true);
+          setCurrentSessionCount(0);
+          setIsTimerRunning(false);
+
+          setTasksList((session.tasks || []).map((t) => ({ text: t, completed: false })));
+        } catch (e) {
+          console.error('Failed to parse activeSession:', e);
+        }
+      } else {
+        setActiveSession(null);
+      }
+    };
+
+    loadSession();
+
+    const handleMessage = (e) => {
+      if (e.data === 'CLOSE_CREATE_SESSION_MODAL' || e.data === 'SESSION_CREATED') {
+        loadSession();
+      }
+    };
+
+    window.addEventListener('storage', loadSession);
+    window.addEventListener('message', handleMessage);
+
+    return () => {
+      window.removeEventListener('storage', loadSession);
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [calculateDailyFocusText]);
+
+  // Record focus/break duration
   const recordCompletedSession = useCallback((durationSec, type) => {
     const today = new Date().toISOString().split('T')[0];
     const lastDate = localStorage.getItem('tracker_date');
@@ -42,21 +100,49 @@ export function useTimer(playerData) {
       localStorage.setItem('daily_break_seconds', '0');
     }
 
-    const dailyFocus = parseInt(localStorage.getItem('daily_focus_seconds') || '0', 10);
-    const dailyBreak = parseInt(localStorage.getItem('daily_break_seconds') || '0', 10);
-    const totalFocus = parseInt(localStorage.getItem('total_focus_seconds') || '0', 10);
-    const totalBreak = parseInt(localStorage.getItem('total_break_seconds') || '0', 10);
-
     if (type === 'focus') {
-      localStorage.setItem('daily_focus_seconds', (dailyFocus + durationSec).toString());
-      localStorage.setItem('total_focus_seconds', (totalFocus + durationSec).toString());
+      const dailyFocus = parseNum(localStorage.getItem('daily_focus_seconds'), 0);
+      const newDailyFocus = dailyFocus + durationSec;
+
+      localStorage.setItem('daily_focus_seconds', newDailyFocus.toString());
+
+      if (addFocusTime) {
+        addFocusTime(durationSec);
+      }
+
+      const hrs = Math.floor(newDailyFocus / 3600);
+      const mins = Math.floor((newDailyFocus % 3600) / 60);
+      setDailyFocusFormatted(`${hrs}h ${mins}m`);
     } else {
+      const dailyBreak = parseNum(localStorage.getItem('daily_break_seconds'), 0);
+      const totalBreak = parseNum(localStorage.getItem('total_break_seconds'), 0);
+
       localStorage.setItem('daily_break_seconds', (dailyBreak + durationSec).toString());
       localStorage.setItem('total_break_seconds', (totalBreak + durationSec).toString());
     }
-  }, []);
+  }, [addFocusTime]);
 
-  // Timer Tick Loop[cite: 36]
+  const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
+    try {
+      const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+      const finishedEntry = {
+        id: Date.now(),
+        workType: sessionObj.workType || 'General Work',
+        techniqueName: sessionObj.techniqueName || 'Custom',
+        focusTime: sessionObj.focusTime,
+        breakTime: sessionObj.breakTime,
+        sessionCount: sessionObj.sessionCount,
+        completedTasks: completedTasks,
+        finishedAt: new Date().toISOString(),
+      };
+      existingHistory.unshift(finishedEntry);
+      localStorage.setItem('completed_sessions_history', JSON.stringify(existingHistory));
+    } catch (err) {
+      console.error('Failed to save session history:', err);
+    }
+  };
+
+  // 1. COUNTDOWN TICKER
   useEffect(() => {
     if (isTimerRunning) {
       timerRef.current = setInterval(() => {
@@ -64,21 +150,7 @@ export function useTimer(playerData) {
           if (prev <= 1) {
             clearInterval(timerRef.current);
             setIsTimerRunning(false);
-
-            if (isFocusPhase) {
-              const fSec = (parseInt(activeSession?.focusTime, 10) || 25) * 60;
-              recordCompletedSession(fSec, 'focus');
-              setIsFocusPhase(false);
-              const bSec = (parseInt(activeSession?.breakTime, 10) || 5) * 60;
-              return bSec;
-            } else {
-              const bSec = (parseInt(activeSession?.breakTime, 10) || 5) * 60;
-              recordCompletedSession(bSec, 'break');
-              setCurrentSessionCount((c) => c + 1);
-              setIsFocusPhase(true);
-              const fSec = (parseInt(activeSession?.focusTime, 10) || 25) * 60;
-              return fSec;
-            }
+            return 0;
           }
           return prev - 1;
         });
@@ -88,7 +160,51 @@ export function useTimer(playerData) {
     }
 
     return () => clearInterval(timerRef.current);
-  }, [isTimerRunning, isFocusPhase, activeSession, recordCompletedSession]);
+  }, [isTimerRunning]);
+
+  // 2. PHASE SWITCHING & STATS RECORDING
+  useEffect(() => {
+    if (remainingTimeSec === 0 && !isTimerRunning && activeSession) {
+      const focusSecs = parseNum(activeSession.focusTime, 25) * 60;
+      const breakSecs = parseNum(activeSession.breakTime, 5) * 60;
+
+      if (isFocusPhase) {
+        recordCompletedSession(focusSecs, 'focus');
+        setIsFocusPhase(false);
+        setRemainingTimeSec(breakSecs);
+      } else {
+        recordCompletedSession(breakSecs, 'break');
+        const nextCount = currentSessionCount + 1;
+        setCurrentSessionCount(nextCount);
+
+        if (nextCount >= totalSessions) {
+          saveFinishedSessionToHistory(activeSession, tasksList);
+
+          // Inflate total sessions count in PlayerContext
+          if (incrementTotalSessions) {
+            incrementTotalSessions(totalSessions);
+          }
+
+          localStorage.removeItem('activeSession');
+          setActiveSession(null);
+          setShowRewardModal(true);
+        } else {
+          setIsFocusPhase(true);
+          setRemainingTimeSec(focusSecs);
+        }
+      }
+    }
+  }, [
+    remainingTimeSec,
+    isTimerRunning,
+    isFocusPhase,
+    activeSession,
+    currentSessionCount,
+    totalSessions,
+    recordCompletedSession,
+    tasksList,
+    incrementTotalSessions,
+  ]);
 
   const toggleTimer = () => setIsTimerRunning((prev) => !prev);
 
@@ -108,7 +224,8 @@ export function useTimer(playerData) {
     }
   };
 
-  // Document Picture-in-Picture Toggle[cite: 36]
+  const closeRewardModal = () => setShowRewardModal(false);
+
   const toggleDocumentPiP = async (cardElement) => {
     if (pipWindowRef.current && !pipWindowRef.current.closed) {
       pipWindowRef.current.close();
@@ -176,6 +293,9 @@ export function useTimer(playerData) {
     tasksList,
     isWidgetFloating,
     isWidgetFullscreen,
+    showRewardModal,
+    dailyFocusFormatted,
+    closeRewardModal,
     toggleTimer,
     toggleTaskCompletion,
     cancelSession,
@@ -183,3 +303,5 @@ export function useTimer(playerData) {
     toggleFullscreen,
   };
 }
+
+export default useTimer;
