@@ -61,24 +61,6 @@ const leaderboardData = {
   ],
 };
 
-const userActivities = {
-  '2026-08-01': [
-    { name: 'Reading', duration: '1h 00m', technique: 'Pomodoro' },
-    { name: 'Practice', duration: '45m', technique: '52-17' },
-  ],
-  '2026-08-05': [{ name: 'Writing', duration: '2h 15m', technique: '90m' }],
-  '2026-08-12': [{ name: 'Creation', duration: '1h 30m', technique: 'Pomodoro' }],
-  '2026-08-15': [{ name: 'Memorize', duration: '30m', technique: '52-17' }],
-  '2026-08-17': [
-    { name: 'Review', duration: '45m', technique: 'Pomodoro' },
-    { name: 'Practice', duration: '1h 10m', technique: '90m' },
-  ],
-  '2026-08-18': [
-    { name: 'Reading', duration: '1h 45m', technique: '52-17' },
-    { name: 'Writing', duration: '2h 15m', technique: '90m' },
-  ],
-};
-
 export default function UserHomepage() {
   const { playerData } = usePlayer();
 
@@ -89,6 +71,9 @@ export default function UserHomepage() {
     coins: playerData?.coins ?? 0,
   };
 
+  // Directly derive userActivities from PlayerContext state for instant reactive updates
+  const userActivities = playerData?.userActivities || {};
+
   // Timer custom hook handles localStorage synchronization
   const timer = useTimer(player);
   const activeCardRef = useRef(null);
@@ -96,7 +81,6 @@ export default function UserHomepage() {
   // Dynamic Date Greeting
   const [greetingText, setGreetingText] = useState('Good Afternoon');
   const [currentDateStr, setCurrentDateStr] = useState('');
-  const [dailyFocusFormatted, setDailyFocusFormatted] = useState('0h 0m');
 
   // Modal Visibility Controls
   const [showRecentModal, setShowRecentModal] = useState(false);
@@ -128,10 +112,6 @@ export default function UserHomepage() {
       localStorage.setItem('tracker_date', today);
       localStorage.setItem('daily_focus_seconds', '0');
     }
-    const dailySecs = parseInt(localStorage.getItem('daily_focus_seconds') || '0', 10);
-    const hrs = Math.floor(dailySecs / 3600);
-    const mins = Math.floor((dailySecs % 3600) / 60);
-    setDailyFocusFormatted(`${hrs}h ${mins}m`);
   }, []);
 
   // Dismiss popovers when clicking outside
@@ -260,37 +240,40 @@ export default function UserHomepage() {
             />
           )}
 
-          {/* Activity Popover */}
-          {hasActivity && (
-            <div
-              className={`cal-popover absolute ${verticalPos} ${horizontalPos} ${
-                isPopoverActive ? 'flex' : 'hidden sm:group-hover:flex'
-              } flex-col gap-1.5 w-40 sm:w-48 bg-theme-surface border-2 border-theme-dark rounded-[8px] p-2 shadow-xl z-50 pointer-events-none transition-all`}
-            >
-              {dayActivities.map((act, index) => {
-                const isLast = index === dayActivities.length - 1;
-                return (
-                  <div
-                    key={index}
-                    className={`flex flex-col gap-0.5 ${
-                      !isLast ? 'border-b border-theme-dark/20 pb-1.5' : ''
-                    }`}
-                  >
-                    <span className="font-pressstart text-[8px] sm:text-[9px] text-theme-primary font-bold truncate">
-                      {act.name}
-                    </span>
-                    <div className="flex items-center justify-between font-pressstart text-[6px] sm:text-[7px] text-theme-dark/80">
-                      <span>{act.duration}</span>
-                      <span className="bg-theme-dark/10 px-1 py-0.5 rounded text-theme-dark">
-                        {act.technique}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-              <div className={`absolute ${arrowPos}`} />
-            </div>
-          )}
+{/* Activity Popover displaying Activity Name, Focus Duration, and Technique */}
+{hasActivity && (
+  <div
+    className={`cal-popover absolute ${verticalPos} ${horizontalPos} ${
+      isPopoverActive ? 'flex' : 'hidden sm:group-hover:flex'
+    } flex-col gap-1.5 w-48 sm:w-56 bg-theme-muted rounded-[8px] p-2.5 shadow-xl z-50 pointer-events-none transition-all`}
+  >
+    {dayActivities.map((act, index) => {
+      const isLast = index === dayActivities.length - 1;
+      return (
+        <div
+          key={index}
+          className={`flex flex-col gap-1 ${
+            !isLast ? 'border-b border-theme-dark/20 pb-1.5' : ''
+          }`}
+        >
+          {/* Top row: Name */}
+          <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary font-bold truncate">
+            {act.name}
+          </span>
+          
+          {/* Bottom row: Duration & Technique */}
+          <div className="flex items-center justify-between w-full font-pressstart text-[7px] sm:text-[8px] text-theme-dark/80">
+            <span className="font-bold text-theme-dark">{act.duration}</span>
+            <span className="bg-theme-dark/10 px-1.5 py-0.5 rounded text-theme-dark shrink-0">
+              {act.technique}
+            </span>
+          </div>
+        </div>
+      );
+    })}
+    <div className={`absolute ${arrowPos}`} />
+  </div>
+)}
         </div>
       );
     }
@@ -323,7 +306,6 @@ export default function UserHomepage() {
           {/* ROOM & AVATAR DISPLAY CONTAINER */}
           <div className="relative w-full flex items-center justify-center rounded-[12px] min-h-[300px]">
             <div className="relative flex items-center justify-center max-w-[1100px] w-full mx-auto">
-              {/* Big Cozy Ambient Glow */}
               <div
                 className="absolute w-[80%] h-[80%] sm:w-[100%] sm:h-[100%] rounded-full pointer-events-none opacity-75 filter blur-3xl z-0"
                 style={{
@@ -332,13 +314,10 @@ export default function UserHomepage() {
                 }}
               />
 
-              {/* Custom Room Component */}
               <CustomRoom />
 
-              {/* Mock Avatars Container Placeholder for Room Teammates */}
               <div id="mock-avatars-container" className="absolute inset-0 pointer-events-none z-10" />
 
-              {/* Overlay User Avatar Container - Manual Scale & Position */}
               <div
                 className="absolute w-[200px] h-[200px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
                 style={{
@@ -347,7 +326,6 @@ export default function UserHomepage() {
                   transform: `translate(-50%, 0) scale(${avatarConfig.scale}) translate(${avatarConfig.offsetX}px, ${avatarConfig.offsetY}px)`,
                 }}
               >
-                {/* NAME TAG ABOVE AVATAR */}
                 <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-[#000000]/20 px-1.5 sm:px-3 py-0.5 sm:py-1 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center z-30">
                   <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-[#FFFFFF] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
                     {player.username}
@@ -362,23 +340,23 @@ export default function UserHomepage() {
 
         {/* RIGHT COLUMN: ACTIVE SESSION TIMER & RECENT ACTIVITY */}
         <div className="flex flex-col gap-5 w-full">
-<ActiveSessionWidget
-  activeSession={timer.activeSession}
-  remainingTimeSec={timer.remainingTimeSec}
-  isTimerRunning={timer.isTimerRunning}
-  isFocusPhase={timer.isFocusPhase}
-  currentSessionCount={timer.currentSessionCount}
-  totalSessions={timer.totalSessions}
-  toggleTimer={timer.toggleTimer}
-  cancelSession={timer.cancelSession}
-  toggleDocumentPiP={timer.toggleDocumentPiP}
-  toggleFullscreen={timer.toggleFullscreen}
-  cardRef={activeCardRef}
-  isWidgetFloating={timer.isWidgetFloating}
-  isWidgetFullscreen={timer.isWidgetFullscreen}
-  streakDays={player.streakDays}
-  focusTimeFormatted={timer.dailyFocusFormatted}
-/>
+          <ActiveSessionWidget
+            activeSession={timer.activeSession}
+            remainingTimeSec={timer.remainingTimeSec}
+            isTimerRunning={timer.isTimerRunning}
+            isFocusPhase={timer.isFocusPhase}
+            currentSessionCount={timer.currentSessionCount}
+            totalSessions={timer.totalSessions}
+            toggleTimer={timer.toggleTimer}
+            cancelSession={timer.cancelSession}
+            toggleDocumentPiP={timer.toggleDocumentPiP}
+            toggleFullscreen={timer.toggleFullscreen}
+            cardRef={activeCardRef}
+            isWidgetFloating={timer.isWidgetFloating}
+            isWidgetFullscreen={timer.isWidgetFullscreen}
+            streakDays={player.streakDays}
+            focusTimeFormatted={timer.dailyFocusFormatted}
+          />
 
           <RecentActivityWidget
             activeSession={timer.activeSession}
@@ -539,7 +517,7 @@ export default function UserHomepage() {
         </section>
       </div>
 
-      {/* ==================== RECENT ACTIVITIES ALL-IN-ONE MODAL ==================== */}
+      {/* RECENT ACTIVITIES MODAL */}
       {showRecentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh]">
@@ -565,7 +543,7 @@ export default function UserHomepage() {
         </div>
       )}
 
-      {/* ==================== FULLSCREEN LEADERBOARD MODAL ==================== */}
+      {/* FULLSCREEN LEADERBOARD MODAL */}
       {showLeaderboardModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 w-full max-w-2xl max-h-[85vh] flex flex-col gap-4 shadow-2xl">
@@ -641,13 +619,13 @@ export default function UserHomepage() {
         </div>
       )}
 
-      {/* ==================== FULLSCREEN CALENDAR OVERLAY ==================== */}
+      {/* FULLSCREEN CALENDAR OVERLAY */}
       {showCalendarModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-all duration-300">
           <div className="w-full max-w-2xl h-[75vh] bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-2xl flex flex-col p-3 sm:p-4 gap-2">
             <div className="flex items-center justify-between gap-2 pb-2 shrink-0 border-b border-theme-dark/20">
               <div className="flex items-center gap-2 min-w-0">
-                <svg className="w-5 h-5 text-theme-dark shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-theme-primary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
                 <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark truncate">
@@ -706,41 +684,41 @@ export default function UserHomepage() {
         </div>
       )}
 
-      {/* ==================== SESSION COMPLETE REWARD MODAL ==================== */}
-{timer.showRewardModal && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
-    <div className="bg-[#FEF4E0] border-4 border-[#3D2013] rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short">
-      <div className="text-5xl">🎉</div>
-      
-      <h3 className="font-pressstart text-[16px] text-[#E87339] uppercase">
-        SESSION COMPLETE!
-      </h3>
+      {/* SESSION COMPLETE REWARD MODAL */}
+      {timer.showRewardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-[#FEF4E0] border-4 border-[#3D2013] rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short">
+            <div className="text-5xl">🎉</div>
+            
+            <h3 className="font-pressstart text-[16px] text-[#E87339] uppercase">
+              SESSION COMPLETE!
+            </h3>
 
-      <p className="font-pixel text-[18px] text-[#3D2013] leading-snug">
-        Awesome job! You finished all your planned study sessions.
-      </p>
+            <p className="font-pixel text-[18px] text-[#3D2013] leading-snug">
+              Awesome job! You finished all your planned study sessions.
+            </p>
 
-      <div className="bg-[#FAE9CE] border-2 border-[#3D2013] p-3 rounded-[8px] w-full flex items-center justify-around">
-        <div className="flex flex-col">
-          <span className="font-pressstart text-[12px] text-[#E87339]">+50 XP</span>
-          <span className="font-pixel text-[14px] text-[#3D2013]/70">REWARD</span>
+            <div className="bg-[#FAE9CE] border-2 border-[#3D2013] p-3 rounded-[8px] w-full flex items-center justify-around">
+              <div className="flex flex-col">
+                <span className="font-pressstart text-[12px] text-[#E87339]">+50 XP</span>
+                <span className="font-pixel text-[14px] text-[#3D2013]/70">REWARD</span>
+              </div>
+              <div className="w-[1px] h-8 bg-[#3D2013]/20" />
+              <div className="flex flex-col">
+                <span className="font-pressstart text-[12px] text-[#E87339]">+10 COINS</span>
+                <span className="font-pixel text-[14px] text-[#3D2013]/70">BONUS</span>
+              </div>
+            </div>
+
+            <button
+              onClick={timer.closeRewardModal}
+              className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
+            >
+              CLAIM REWARD
+            </button>
+          </div>
         </div>
-        <div className="w-[1px] h-8 bg-[#3D2013]/20" />
-        <div className="flex flex-col">
-          <span className="font-pressstart text-[12px] text-[#E87339]">+10 COINS</span>
-          <span className="font-pixel text-[14px] text-[#3D2013]/70">BONUS</span>
-        </div>
-      </div>
-
-      <button
-        onClick={timer.closeRewardModal}
-        className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
-      >
-        CLAIM REWARD
-      </button>
-    </div>
-  </div>
-)}
+      )}
     </main>
   );
 }

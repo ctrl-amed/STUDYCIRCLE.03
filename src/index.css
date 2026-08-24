@@ -37,17 +37,14 @@
 /* ========================================================= */
 /* 2. EXACT FONT UTILITY CLASSES MATCHING YOUR ORIGINAL STYLES */
 /* ========================================================= */
-/* Maps to Press Start 2P */
 .font-pressstart {
   font-family: 'Press Start 2P', monospace;
 }
 
-/* Maps to VT323 (matching your style.css definition) */
 .font-pixel {
   font-family: 'VT323', monospace;
 }
 
-/* Dedicated VT323 helper */
 .font-vt {
   font-family: 'VT323', monospace;
 }
@@ -58,19 +55,18 @@
 .text-theme-dark { color: var(--color-dark); }
 .text-theme-primary { color: var(--color-primary); }
 .text-theme-danger { color: var(--color-danger); }
-.text-theme-safe { color: var(--color-safe); } /* <-- ADD THIS */
-.text-theme-surface { color: var(--color-surface); } /* <-- ADD THIS */
-
+.text-theme-safe { color: var(--color-safe); }
+.text-theme-surface { color: var(--color-surface); }
 
 .border-theme-dark { border-color: var(--color-dark); }
-.border-theme-safe { border-color: var(--color-safe); } /* <-- ADD THIS (optional) */
+.border-theme-safe { border-color: var(--color-safe); }
 .border-theme-surface { border-color: var(--color-surface); }
 
 .bg-theme-surface { background-color: var(--color-surface); }
 .bg-theme-muted { background-color: var(--color-surface-muted); }
 .bg-theme-primary { background-color: var(--color-primary); }
 .bg-theme-danger { background-color: var(--color-danger); }
-.bg-theme-safe { background-color: var(--color-safe); } /* <-- ADD THIS */
+.bg-theme-safe { background-color: var(--color-safe); }
 
 .card-highlight {
   background: var(--gradient-highlight-card);
@@ -177,4 +173,21 @@
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* ========================================================= */
+/* 6. TOAST PROGRESS BAR ANIMATION                           */
+/* ========================================================= */
+@keyframes shrinkToCenter {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.animate-progress-center {
+  transform-origin: center;
+  animation: shrinkToCenter 4s linear forwards;
 }

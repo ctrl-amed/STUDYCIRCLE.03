@@ -185,7 +185,7 @@ export function RecentActivityWidget({
   activeSession,
   tasksList,
   toggleTaskCompletion,
-  recentActivities,
+  recentActivities = [],
   onViewAll,
 }) {
   if (activeSession) {
@@ -226,6 +226,50 @@ export function RecentActivityWidget({
     );
   }
 
+  // --- FETCH & COMBINE LOCAL SESSION HISTORY ---
+  let mergedActivities = [...recentActivities];
+
+  try {
+    const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const userSavedItems = savedHistory.map((item) => {
+      const focusMins = parseInt(item.focusTime || 25, 10);
+      const rounds = parseInt(item.sessionCount || 1, 10);
+      const totalMins = focusMins * rounds;
+
+      const hrs = Math.floor(totalMins / 60);
+      const remMins = totalMins % 60;
+      let durationStr = `${remMins}m`;
+      if (hrs > 0) {
+        durationStr = `${hrs}h ${String(remMins).padStart(2, '0')}m`;
+      }
+
+      // Relative Date formatting
+      const finishDateStr = item.finishedAt ? item.finishedAt.split('T')[0] : todayStr;
+      let dateDisplay = 'Today';
+      if (finishDateStr !== todayStr) {
+        const finishedDateObj = new Date(item.finishedAt);
+        dateDisplay = finishedDateObj.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+      }
+
+      return {
+        activity: item.workType || 'Reading',
+        technique: item.techniqueName || 'Pomodoro',
+        duration: durationStr,
+        date: dateDisplay,
+      };
+    });
+
+    // Put new completed activities at the top
+    mergedActivities = [...userSavedItems, ...recentActivities];
+  } catch (err) {
+    console.error('Error parsing session history for widget:', err);
+  }
+
   return (
     <section className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
       <div className="flex items-center justify-between pb-2">
@@ -241,7 +285,7 @@ export function RecentActivityWidget({
       <div className="border-t-2 border-[#3D2013]/20" />
 
       <div className="flex flex-col gap-1 overflow-y-auto">
-        {recentActivities.slice(0, 3).map((item, idx) => (
+        {mergedActivities.slice(0, 3).map((item, idx) => (
           <div
             key={idx}
             className="flex items-center justify-between p-2 rounded-[8px] transition-colors hover:bg-[#FAE9CE]/50"

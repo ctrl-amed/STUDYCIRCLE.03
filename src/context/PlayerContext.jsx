@@ -3,6 +3,25 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const COINS_KEY = 'player_user_coins';
 const TOTAL_FOCUS_KEY = 'total_focus_seconds';
 const TOTAL_SESSIONS_KEY = 'total_completed_sessions';
+const ACTIVITIES_KEY = 'user_activities';
+
+const defaultUserActivities = {
+  '2026-08-01': [
+    { name: 'Reading', duration: '1h 00m', technique: 'Pomodoro' },
+    { name: 'Practice', duration: '45m', technique: '52-17' },
+  ],
+  '2026-08-05': [{ name: 'Writing', duration: '2h 15m', technique: '90m' }],
+  '2026-08-12': [{ name: 'Creation', duration: '1h 30m', technique: 'Pomodoro' }],
+  '2026-08-15': [{ name: 'Memorize', duration: '30m', technique: '52-17' }],
+  '2026-08-17': [
+    { name: 'Review', duration: '45m', technique: 'Pomodoro' },
+    { name: 'Practice', duration: '1h 10m', technique: '90m' },
+  ],
+  '2026-08-18': [
+    { name: 'Reading', duration: '1h 45m', technique: '52-17' },
+    { name: 'Writing', duration: '2h 15m', technique: '90m' },
+  ],
+};
 
 const initialPlayerData = {
   username: "ACORN_HERO",
@@ -13,16 +32,17 @@ const initialPlayerData = {
   coins: localStorage.getItem(COINS_KEY) ? parseInt(localStorage.getItem(COINS_KEY), 10) : 1250,
   totalFocusSeconds: localStorage.getItem(TOTAL_FOCUS_KEY) ? parseInt(localStorage.getItem(TOTAL_FOCUS_KEY), 10) : 0,
   totalSessions: localStorage.getItem(TOTAL_SESSIONS_KEY) ? parseInt(localStorage.getItem(TOTAL_SESSIONS_KEY), 10) : 0,
+  userActivities: localStorage.getItem(ACTIVITIES_KEY) ? JSON.parse(localStorage.getItem(ACTIVITIES_KEY)) : defaultUserActivities,
   friendsCount: 0,
   streakDays: 9,
   bestStreak: 14,
   notifCount: 0,
   weeklyActivity: [
-    { day: 'MON', count: 3, completed: true },
-    { day: 'TUE', count: 5, completed: true },
-    { day: 'WED', count: 2, completed: true },
-    { day: 'THU', count: 4, completed: true },
-    { day: 'FRI', count: 6, completed: true },
+    { day: 'MON', count: 0, completed: true },
+    { day: 'TUE', count: 0, completed: true },
+    { day: 'WED', count: 0, completed: true },
+    { day: 'THU', count: 0, completed: true },
+    { day: 'FRI', count: 0, completed: true },
     { day: 'SAT', count: 0, completed: false },
     { day: 'SUN', count: 0, completed: false },
   ],
@@ -68,6 +88,19 @@ export function PlayerProvider({ children }) {
     });
   };
 
+  const addUserActivity = (dateKey, activityObj) => {
+    setPlayerData((prev) => {
+      const updatedActivities = { ...prev.userActivities };
+      if (!updatedActivities[dateKey]) {
+        updatedActivities[dateKey] = [];
+      }
+      updatedActivities[dateKey] = [...updatedActivities[dateKey], activityObj];
+
+      localStorage.setItem(ACTIVITIES_KEY, JSON.stringify(updatedActivities));
+      return { ...prev, userActivities: updatedActivities };
+    });
+  };
+
   // Sync state if localStorage changes from another tab
   useEffect(() => {
     const handleStorageChange = (e) => {
@@ -79,6 +112,12 @@ export function PlayerProvider({ children }) {
       }
       if (e.key === TOTAL_SESSIONS_KEY) {
         setPlayerData((prev) => ({ ...prev, totalSessions: parseInt(e.newValue, 10) || 0 }));
+      }
+      if (e.key === ACTIVITIES_KEY) {
+        setPlayerData((prev) => ({
+          ...prev,
+          userActivities: e.newValue ? JSON.parse(e.newValue) : defaultUserActivities,
+        }));
       }
     };
     window.addEventListener('storage', handleStorageChange);
@@ -94,6 +133,7 @@ export function PlayerProvider({ children }) {
         updateStreak,
         addFocusTime,
         incrementTotalSessions,
+        addUserActivity,
       }}
     >
       {children}

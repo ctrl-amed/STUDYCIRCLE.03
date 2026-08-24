@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 export function useTimer() {
-  const { addFocusTime, incrementTotalSessions } = usePlayer() || {};
+  const { addFocusTime, incrementTotalSessions, addUserActivity } = usePlayer() || {};
   const [activeSession, setActiveSession] = useState(null);
   const [remainingTimeSec, setRemainingTimeSec] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -122,8 +122,9 @@ export function useTimer() {
     }
   }, [addFocusTime]);
 
-  const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
+const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
     try {
+      // 1. Array-based history log
       const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
       const finishedEntry = {
         id: Date.now(),
@@ -137,8 +138,42 @@ export function useTimer() {
       };
       existingHistory.unshift(finishedEntry);
       localStorage.setItem('completed_sessions_history', JSON.stringify(existingHistory));
+
+      // 2. Calendar Activities grouped by date (YYYY-MM-DD)
+      const todayKey = new Date().toISOString().split('T')[0];
+      
+      const singleFocusMins = parseNum(sessionObj.focusTime, 25);
+      const rounds = parseNum(sessionObj.sessionCount, 1);
+      
+      const totalFocusMins = singleFocusMins * rounds;
+      const focusHrs = Math.floor(totalFocusMins / 60);
+      const focusRemMins = totalFocusMins % 60;
+
+      // --- FORMAT MATCHING YOUR MOCK DATA ---
+      let formattedDuration = '';
+      if (focusHrs > 0) {
+        const paddedMins = String(focusRemMins).padStart(2, '0');
+        formattedDuration = `${focusHrs}h ${paddedMins}m`; // e.g., '1h 00m' or '1h 30m'
+      } else {
+        formattedDuration = `${focusRemMins}m`; // e.g., '45m' or '01m' if padded: `${String(focusRemMins).padStart(2, '0')}m`
+      }
+
+      // Capitalize activity name for consistency with mock data
+      const rawName = sessionObj.workType || 'Reading';
+      const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
+
+      const newActivity = {
+        name: formattedName,
+        duration: formattedDuration,
+        technique: sessionObj.techniqueName || 'Pomodoro',
+      };
+
+      // Instantly push to PlayerContext & localStorage
+      if (addUserActivity) {
+        addUserActivity(todayKey, newActivity);
+      }
     } catch (err) {
-      console.error('Failed to save session history:', err);
+      console.error('Failed to save session activity:', err);
     }
   };
 

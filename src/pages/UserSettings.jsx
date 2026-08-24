@@ -230,24 +230,30 @@ export default function UserSettings() {
 
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5 pb-10">
-      {/* RETRO TOAST NOTIFICATION */}
-      {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 pointer-events-none flex flex-col gap-3">
-          <div className="bg-[#FBF2E3] border-4 border-[#3D2013] p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto rounded-none overflow-hidden">
-            <div className="flex items-center gap-3 pr-2">
-              <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none">
-                <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
-              </svg>
-              <span className="font-pressstart text-[11px] sm:text-[12px] text-[#482A1D] tracking-wide">
-                {toastMessage}
-              </span>
-            </div>
-            <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
-              <div className="w-full h-full bg-[#788D55] animate-pulse" />
-            </div>
-          </div>
-        </div>
-      )}
+{/* RETRO TOAST NOTIFICATION */}
+{toastMessage && (
+  <div className="fixed top-20 right-6 z-50 pointer-events-none flex flex-col gap-3">
+    <div
+      key={toastMessage}
+      className="bg-[#FEF4E0] border-4 border-[#3D2013] p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
+      style={{ boxShadow: '4px 4px 0px #3D2013' }}
+    >
+      {/* Align icon to start for multi-line text */}
+      <div className="flex items-start gap-3 pr-2">
+        <svg className="w-6 h-6 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
+        </svg>
+        {/* Allow wrapping with break-words */}
+        <span className="font-pressstart text-[11px] sm:text-[12px] text-[#482A1D] tracking-wide break-words leading-relaxed">
+          {toastMessage}
+        </span>
+      </div>
+      <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
+        <div className="w-full h-full bg-[#788D55] animate-progress-center" />
+      </div>
+    </div>
+  </div>
+)}
 
       {/* ROW 1: TITLE & SUBTEXT */}
       <div className="flex flex-col gap-1">
@@ -291,24 +297,25 @@ export default function UserSettings() {
               </button>
             </div>
 
-            {/* EMAIL ROW */}
-            <div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-              <div className="flex flex-col min-w-0 pr-2">
-                <span className="font-pixel text-[14px] text-[#3D2013]/70 uppercase">Email</span>
-                <span className="font-pressstart text-[12px] text-[#3D2013] truncate mt-1">
-                  {settingsData.email}
-                </span>
-              </div>
-              <button
-                onClick={handleOpenEmailModal}
-                className="h-8 sm:h-11 bg-[#FAE9CE] border-[2px] border-[#3D2013] px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
-              >
-                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[#3D2013]" viewBox="0 0 24 24" fill="none">
-                  <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
-                </svg>
-                <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013]">EDIT</span>
-              </button>
-            </div>
+{/* EMAIL ROW */}
+<div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-[#3D2013]/30">
+  <div className="flex flex-col min-w-0 pr-2">
+    <span className="font-pixel text-[14px] text-[#3D2013]/70 uppercase">Email</span>
+    {/* Replaced truncate with break-all & added responsive font sizing */}
+    <span className="font-pressstart text-[9px] sm:text-[12px] text-[#3D2013] break-all leading-tight sm:leading-normal mt-1">
+      {settingsData.email}
+    </span>
+  </div>
+  <button
+    onClick={handleOpenEmailModal}
+    className="h-8 sm:h-11 bg-[#FAE9CE] border-[2px] border-[#3D2013] px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+  >
+    <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[#3D2013]" viewBox="0 0 24 24" fill="none">
+      <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
+    </svg>
+    <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013]">EDIT</span>
+  </button>
+</div>
 
             {/* CHANGE PASSWORD ROW */}
             <button

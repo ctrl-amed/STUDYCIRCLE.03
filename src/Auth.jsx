@@ -772,7 +772,7 @@ export default function Auth() {
                 <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
                 </svg>
-                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-nowrap tracking-wide">{toast.message}</span>
+                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-snug tracking-wide">{toast.message}</span>
               </div>
               <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
                 <div className="w-full h-full bg-theme-safe animate-progress-center"></div>
