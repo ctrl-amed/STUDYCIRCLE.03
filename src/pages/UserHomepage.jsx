@@ -47,7 +47,7 @@ const memberPositionsByCount = {
     { bottom: '25%', left: '18%', scale: 0.85 },
     { bottom: '30%', left: '31%', scale: 0.85 },
     { bottom: '25%', left: '44%', scale: 0.85 },
-    { bottom: '25%', left: '56%', scale: 0.85 },
+    { bottom: '35%', left: '56%', scale: 0.85 },
     { bottom: '30%', left: '69%', scale: 0.85 },
     { bottom: '25%', left: '82%', scale: 0.85 }
   ]
@@ -60,6 +60,7 @@ const mockPlayerList = [
     username: "PIXEL_SAM", 
     level: 5,
     status: "IN SESSION",
+    totalFocusTime: "124h 15m",
     config: { body: "BODY1", face: "FACE2", tops: "TOP3", bottoms: "BOTTOM2", hair: "HAIR1" }
   },
   { 
@@ -67,6 +68,7 @@ const mockPlayerList = [
     username: "LOFI_LUNA", 
     level: 12,
     status: "ONLINE",
+    totalFocusTime: "88h 40m",
     config: { body: "BODY1", face: "FACE1", tops: "TOP5", bottoms: "BOTTOM4", hair: "HAIR3" }
   },
   { 
@@ -74,6 +76,7 @@ const mockPlayerList = [
     username: "STUDY_BEAR", 
     level: 3,
     status: "IN SESSION",
+    totalFocusTime: "45h 10m",
     config: { body: "BODY1", face: "FACE3", tops: "TOP1", bottoms: "BOTTOM1" }
   },
   { 
@@ -81,6 +84,7 @@ const mockPlayerList = [
     username: "COZY_CAT",  
     level: 8,
     status: "ONLINE",
+    totalFocusTime: "92h 05m",
     config: { body: "BODY1", face: "FACE4", tops: "TOP2", bottoms: "BOTTOM3", hair: "HAIR2" }
   },
   { 
@@ -88,6 +92,7 @@ const mockPlayerList = [
     username: "NIGHT_OWL", 
     level: 15,
     status: "IN SESSION",
+    totalFocusTime: "210h 30m",
     config: { body: "BODY1", face: "FACE1", tops: "TOP4", bottoms: "BOTTOM6", hair: "HAIR4" }
   }
 ];
@@ -185,6 +190,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
+  // Active Member Profile Popover State
+  const [activeProfileId, setActiveProfileId] = useState(null);
+  const [sentFriendRequests, setSentFriendRequests] = useState([]);
+
   // Leaderboard Tab Selection
   const [activeTab, setActiveTab] = useState('all-time');
 
@@ -260,6 +269,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         status: "IN SESSION",
         avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${player.username}`,
         level: player.level,
+        totalFocusTime: "150h 20m",
         isCurrentUser: true,
       };
 
@@ -329,8 +339,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   }, []);
 
+  // Dismiss calendar popovers or active avatar profiles when clicking outside
   useEffect(() => {
-    const handleDocumentClick = () => setActivePopoverDate(null);
+    const handleDocumentClick = () => {
+      setActivePopoverDate(null);
+      setActiveProfileId(null);
+    };
     document.addEventListener('click', handleDocumentClick);
     return () => document.removeEventListener('click', handleDocumentClick);
   }, []);
@@ -369,6 +383,31 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const handleEmojiSelect = (emojiData) => {
     setChatInput((prev) => prev + emojiData.emoji);
     setShowEmojiPicker(false);
+  };
+
+  // Kick member function for room hosts
+  const handleKickMember = (memberId, memberUsername) => {
+    setRoomData((prev) => ({
+      ...prev,
+      members: prev.members.filter((m) => m.id !== memberId),
+      auditLogs: [
+        {
+          id: Date.now(),
+          user: player.username,
+          action: `kicked ${memberUsername} from the room`,
+          time: 'Just now',
+        },
+        ...prev.auditLogs,
+      ],
+    }));
+    setActiveProfileId(null);
+  };
+
+  // Toggle friend request state
+  const handleAddFriend = (memberId) => {
+    if (!sentFriendRequests.includes(memberId)) {
+      setSentFriendRequests((prev) => [...prev, memberId]);
+    }
   };
 
   const renderActivityItem = (item, idx) => {
@@ -527,6 +566,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const memberCountKey = Math.min(Math.max(roomData.members.length, 1), 6);
   const activePositionMap = memberPositionsByCount[memberCountKey] || memberPositionsByCount[1];
 
+  // Identify if current logged user is room host
+  const isCurrentUserHost = roomData.members.some((m) => m.isCurrentUser && m.isHost);
+
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5">
       {/* 1ST ROW: 2 COLUMNS */}
@@ -580,24 +622,139 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               {isMultiplayer ? (
                 roomData.members.map((member, index) => {
                   const pos = activePositionMap[index % activePositionMap.length];
+                  const memberKey = member.id || member.username || index;
+                  const isProfileOpen = activeProfileId === memberKey;
+                  const isFriendRequestSent = sentFriendRequests.includes(memberKey);
+
                   return (
-                    <div
-                      key={member.id || index}
-                      className="absolute w-[180px] h-[180px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
-                      style={{
-                        bottom: pos.bottom,
-                        left: pos.left,
-                        transform: `translate(-50%, 0) scale(${pos.scale})`,
-                      }}
-                    >
-                      <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-1.5 py-0.5 whitespace-nowrap rounded shadow-md flex items-center gap-1 z-30">
-                        {member.isHost && (
-                          <span className="text-[8px]" title="Host">👑</span>
-                        )}
-                        <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
-                          {member.username} {member.isCurrentUser && "(YOU)"}
-                        </span>
-                      </div>
+<div
+  key={memberKey}
+  onClick={(e) => {
+    e.stopPropagation();
+    setActiveProfileId((prev) => (prev === memberKey ? null : memberKey));
+  }}
+  className={`absolute w-[180px] h-[180px] origin-bottom pointer-events-auto transition-all duration-150 cursor-pointer group ${
+    isProfileOpen ? 'z-50' : 'z-20'
+  }`}
+  style={{
+    bottom: pos.bottom,
+    left: pos.left,
+    transform: `translate(-50%, 0) scale(${pos.scale})`,
+  }}
+>
+{/* PLAYER NAMETAG */}
+<div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
+  {member.isHost && (
+    <svg
+      className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      title="Host"
+    >
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
+    </svg>
+  )}
+  <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
+    {member.username} {member.isCurrentUser}
+  </span>
+</div>
+
+{/* AVATAR PROFILE POPOVER */}
+                      {isProfileOpen && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute bottom-[105%] left-1/2 -translate-x-1/2 w-56 sm:w-64 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2.5 shadow-2xl z-50 flex items-center gap-3 cursor-default animate-fade-in"
+                        >
+                          {/* ROUND AVATAR WITH OVERLAPPING LEVEL BADGE */}
+                          <div className="relative shrink-0 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full border-[2px] border-[#3D2013] bg-[#FAE9CE] overflow-hidden flex items-center justify-center">
+                              <img
+                                src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
+                                alt="Player Avatar"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-[#3D2013] px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
+                              <span className="font-pressstart text-[8px] text-[#3D2013] font-bold">
+                                {member.level || 1}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* USER DETAILS */}
+                          <div className="flex-1 min-w-0 flex flex-col gap-1 overflow-hidden">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <h2 className="font-pressstart text-[11px] text-[#3D2013] tracking-tight truncate leading-none">
+                                {member.username}
+                              </h2>
+                              {member.isHost && (
+                                <span className="bg-[#E87339] text-[#FFFFF6] font-pressstart text-[5px] px-1 py-0.5 rounded shrink-0">
+                                  HOST
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 text-[#3D2013]/70">
+                              <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M0 0h24v24H0z" fill="none" />
+                                <path d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10a10 10 0 0 0 10-10A10 10 0 0 0 12 2m4.2 14.2L11 13V7h1.5v5.2l4.5 2.7z" />
+                              </svg>
+                              <span className="font-pressstart text-[8px] text-[#3D2013]">
+                                {member.totalFocusTime || '12h 00m'}
+                              </span>
+                            </div>
+
+                            {/* ADD FRIEND BUTTON */}
+                            {!member.isCurrentUser && (
+                              <button
+                                onClick={() => handleAddFriend(memberKey)}
+                                disabled={isFriendRequestSent}
+                                className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
+                                  isFriendRequestSent
+                                    ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
+                                    : 'bg-[#E87339] text-[#FFFFF6] border-[#3D2013] hover:bg-[#d0622c]'
+                                }`}
+                              >
+                                {isFriendRequestSent ? 'SENT' : '+ ADD'}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* RIGHT SIDE ACTIONS: KICK & CLOSE */}
+                          <div className="flex flex-col items-end gap-2 shrink-0 self-start">
+                            {/* CLOSE BUTTON */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveProfileId(null);
+                              }}
+                              className="font-pressstart text-[8px] text-[#3D2013] hover:text-[#E87339] cursor-pointer p-0.5 leading-none"
+                              title="Close profile"
+                            >
+                              ✕
+                            </button>
+
+                            {/* KICK BUTTON */}
+                            {isCurrentUserHost && !member.isCurrentUser && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleKickMember(member.id, member.username);
+                                }}
+                                className="bg-[#A53914] text-[#FFFFF6] font-pressstart text-[6px] px-2 py-1 rounded border border-[#3D2013] hover:bg-red-800 transition-colors cursor-pointer"
+                                title="Kick player from room"
+                              >
+                                KICK
+                              </button>
+                            )}
+                          </div>
+
+                          {/* POPOVER ARROW */}
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-x-8 border-x-transparent border-t-8 border-t-[#3D2013]" />
+                        </div>
+                      )}
+
                       <CustomAvatar
                         config={member.config}
                         state={member.status === 'IN SESSION' ? 'focus' : 'idle'}
@@ -659,7 +816,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     </span>
                   ) : (
                     <>
-                      <span className="font-pressstart text-[8px] text-theme-primary animate-pulse">● LIVE</span>
                       <button
                         onClick={() => setShowRoomActivityModal(true)}
                         className="p-1 text-theme-dark hover:text-theme-primary transition-colors cursor-pointer"
