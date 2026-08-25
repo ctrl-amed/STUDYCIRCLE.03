@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useOutletContext } from 'react-router-dom';
 
 const activityIcons = {
@@ -37,6 +38,101 @@ export function ActiveSessionWidget({
   focusTimeFormatted = '0h 0m',
 }) {
   const context = useOutletContext();
+  const dragPosRef = useRef({ isDragging: false, startX: 0, startY: 0, initialLeft: 0, initialTop: 0 });
+
+  // Enable smooth dragging when widget is in floating mode
+  useEffect(() => {
+    const card = cardRef?.current;
+    if (!card || !isWidgetFloating) return;
+
+    const handleDragStart = (e) => {
+      if (e.target.closest('button, input, label, a, svg')) return;
+
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+      const rect = card.getBoundingClientRect();
+      dragPosRef.current = {
+        isDragging: true,
+        startX: clientX,
+        startY: clientY,
+        initialLeft: rect.left,
+        initialTop: rect.top,
+      };
+
+      card.style.position = 'fixed';
+      card.style.left = `${rect.left}px`;
+      card.style.top = `${rect.top}px`;
+      card.style.bottom = 'auto';
+      card.style.right = 'auto';
+      card.style.cursor = 'grabbing';
+      card.style.userSelect = 'none';
+
+      document.addEventListener('mousemove', handleDragMove);
+      document.addEventListener('mouseup', handleDragEnd);
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('touchend', handleDragEnd);
+    };
+
+    const handleDragMove = (e) => {
+      if (!dragPosRef.current.isDragging) return;
+      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+      const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+
+      const deltaX = clientX - dragPosRef.current.startX;
+      const deltaY = clientY - dragPosRef.current.startY;
+
+      let newX = dragPosRef.current.initialLeft + deltaX;
+      let newY = dragPosRef.current.initialTop + deltaY;
+
+      const maxX = window.innerWidth - card.offsetWidth;
+      const maxY = window.innerHeight - card.offsetHeight;
+
+      newX = Math.max(10, Math.min(newX, maxX - 10));
+      newY = Math.max(10, Math.min(newY, maxY - 10));
+
+      card.style.left = `${newX}px`;
+      card.style.top = `${newY}px`;
+    };
+
+    const handleTouchMove = (e) => {
+      if (!dragPosRef.current.isDragging) return;
+      e.preventDefault();
+      handleDragMove(e);
+    };
+
+    const handleDragEnd = () => {
+      if (!dragPosRef.current.isDragging) return;
+      dragPosRef.current.isDragging = false;
+      if (card) {
+        card.style.cursor = '';
+        card.style.userSelect = '';
+      }
+
+      document.removeEventListener('mousemove', handleDragMove);
+      document.removeEventListener('mouseup', handleDragEnd);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleDragEnd);
+    };
+
+    card.addEventListener('mousedown', handleDragStart);
+    card.addEventListener('touchstart', handleDragStart);
+
+    return () => {
+      card.removeEventListener('mousedown', handleDragStart);
+      card.removeEventListener('touchstart', handleDragStart);
+      handleDragEnd();
+      if (card) {
+        card.style.position = '';
+        card.style.left = '';
+        card.style.top = '';
+        card.style.bottom = '';
+        card.style.right = '';
+        card.style.cursor = '';
+        card.style.userSelect = '';
+      }
+    };
+  }, [isWidgetFloating, cardRef]);
 
   const formatTime = (totalSeconds) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -44,13 +140,12 @@ export function ActiveSessionWidget({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Default Idle Card View
   if (!activeSession) {
     return (
       <section className="bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h3 className="font-pressstart text-[20px] sm:text-[25px] text-[#3D2013]">READY TO FOCUS?</h3>
-          <p className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013] leading-snug">
+          <h3 className="font-pressstart text-[20px] sm:text-[30px] text-[#3D2013]">READY TO FOCUS?</h3>
+          <p className="font-pixel text-[20px] sm:text-[24px] text-[#3D2013] leading-snug">
             Select a task category and let StudyCircle recommend the right study technique for you.
           </p>
         </div>
@@ -66,12 +161,12 @@ export function ActiveSessionWidget({
 
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-              <span className="font-pixel text-[11px] sm:text-[18px] text-[#3D2013]/50 uppercase tracking-wider">Current Streak</span>
+              <span className="font-pixel text-[20px] sm:text-[24px] text-[#3D2013]/50 uppercase tracking-wider">Current Streak</span>
               <span className="font-pressstart text-[11px] sm:text-[13px] text-[#E87339]">{streakDays} days</span>
             </div>
 
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-              <span className="font-pixel text-[11px] sm:text-[18px] text-[#3D2013]/50 uppercase tracking-wider">Today</span>
+              <span className="font-pixel text-[20px] sm:text-[24px] text-[#3D2013]/50 uppercase tracking-wider">Today</span>
               <span className="font-pressstart text-[11px] sm:text-[13px] text-[#E87339]">{focusTimeFormatted}</span>
             </div>
           </div>
@@ -80,7 +175,6 @@ export function ActiveSessionWidget({
     );
   }
 
-  // Active Timer Session View
   const focusMins = activeSession.focusTime || 25;
   const breakMins = activeSession.breakTime || 5;
 
@@ -89,12 +183,12 @@ export function ActiveSessionWidget({
 
   if (isWidgetFullscreen) {
     wrapperClasses =
-      'fixed inset-0 z-50 w-screen h-screen flex flex-col justify-between p-6 sm:p-12 bg-[#FAE9CE] overflow-y-auto';
+      'fixed inset-0 z-[9999] w-screen h-screen flex flex-col justify-between p-6 sm:p-12 bg-[#FAE9CE] overflow-y-auto';
   } else if (isWidgetFloating) {
-    wrapperClasses = 'fixed bottom-5 right-5 w-80 sm:w-96 z-50 shadow-2xl bg-[#FEF4E0] border-2 border-[#3D2013] p-4 rounded-[12px]';
+    wrapperClasses = 'fixed bottom-5 right-5 w-80 sm:w-96 z-50 shadow-2xl bg-[#FEF4E0] border-2 border-[#3D2013] p-4 rounded-[12px] cursor-grab active:cursor-grabbing';
   }
 
-  return (
+  const content = (
     <section ref={cardRef} className={wrapperClasses}>
       <div className="flex flex-col gap-3 h-full justify-between w-full max-w-3xl mx-auto">
         <div className="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
@@ -109,9 +203,9 @@ export function ActiveSessionWidget({
 
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => toggleDocumentPiP(cardRef.current)}
+              onClick={toggleDocumentPiP}
               className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
-              title="Pop-out Widget"
+              title="Pop-out Widget / Fallback Float"
             >
               <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 002 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
@@ -179,6 +273,12 @@ export function ActiveSessionWidget({
       </div>
     </section>
   );
+
+  if (isWidgetFullscreen) {
+    return ReactDOM.createPortal(content, document.body);
+  }
+
+  return content;
 }
 
 export function RecentActivityWidget({
@@ -226,7 +326,6 @@ export function RecentActivityWidget({
     );
   }
 
-  // --- FETCH & COMBINE LOCAL SESSION HISTORY ---
   let mergedActivities = [...recentActivities];
 
   try {
@@ -245,7 +344,6 @@ export function RecentActivityWidget({
         durationStr = `${hrs}h ${String(remMins).padStart(2, '0')}m`;
       }
 
-      // Relative Date formatting
       const finishDateStr = item.finishedAt ? item.finishedAt.split('T')[0] : todayStr;
       let dateDisplay = 'Today';
       if (finishDateStr !== todayStr) {
@@ -264,7 +362,6 @@ export function RecentActivityWidget({
       };
     });
 
-    // Put new completed activities at the top
     mergedActivities = [...userSavedItems, ...recentActivities];
   } catch (err) {
     console.error('Error parsing session history for widget:', err);
@@ -295,15 +392,15 @@ export function RecentActivityWidget({
                 {activityIcons[item.activity] || activityIcons.Reading}
               </div>
               <div className="flex flex-col min-w-0">
-                <span className="font-pressstart text-[10px] text-[#3D2013] truncate uppercase">{item.activity}</span>
-                <span className="font-pressstart text-[8px] text-[#3D2013]/60 truncate mt-0.5">
+                <span className="font-pressstart text-[10px] sm:text-[15px] text-[#3D2013] truncate uppercase">{item.activity}</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013]/60 truncate mt-0.5">
                   {item.duration} | {item.technique}
                 </span>
               </div>
             </div>
 
             <div className="shrink-0 pl-2">
-              <span className="font-pixel text-[15px] text-[#3D2013]/70 px-2 py-1 uppercase">{item.date}</span>
+              <span className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013]/70 px-2 py-1 uppercase">{item.date}</span>
             </div>
           </div>
         ))}

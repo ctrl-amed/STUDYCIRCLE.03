@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import EmojiPicker from 'emoji-picker-react';
 import { usePlayer } from '../context/PlayerContext';
 
@@ -54,9 +54,19 @@ const initialChatHistory = {
   ]
 };
 
-export default function Header({ onMobileToggle, isRoomState = false }) {
+export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propIsRoomState = false }) {
   const { playerData } = usePlayer();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Dynamic state checking for active room session
+  const [isRoomState, setIsRoomState] = useState(false);
+
+  useEffect(() => {
+    const hasActiveSession = Boolean(localStorage.getItem('activeRoomSession'));
+    const isStateMultiplayer = Boolean(location.state?.isMultiplayer);
+    setIsRoomState(hasActiveSession || isStateMultiplayer || propIsRoomState);
+  }, [location, propIsRoomState]);
 
   // Modals visibility state
   const [showNotifModal, setShowNotifModal] = useState(false);
@@ -84,6 +94,7 @@ export default function Header({ onMobileToggle, isRoomState = false }) {
   const [currentChatFriend, setCurrentChatFriend] = useState(null);
   const [chatInputText, setChatInputText] = useState('');
   const [pendingRemoveFriend, setPendingRemoveFriend] = useState(null);
+  const [removingFriendId, setRemovingFriendId] = useState(null);
 
   // DOM Refs
   const chatMessagesContainerRef = useRef(null);
@@ -96,7 +107,13 @@ export default function Header({ onMobileToggle, isRoomState = false }) {
     }
   }, [chatHistory, showChatModal, currentChatFriend]);
 
-  // Handle Scroll Detection inside Chat Window
+  const handleLeaveRoom = () => {
+    localStorage.removeItem('activeRoomSession');
+    setShowLeaveRoomModal(false);
+    setIsRoomState(false);
+    navigate('/dashboard', { replace: true, state: { isMultiplayer: false } });
+  };
+
   const handleChatScroll = () => {
     const container = chatMessagesContainerRef.current;
     if (!container) return;
@@ -113,7 +130,6 @@ export default function Header({ onMobileToggle, isRoomState = false }) {
     }
   };
 
-  // Insert Emoji from emoji-picker-react at Cursor Position
   const handleEmojiSelect = (emojiData) => {
     const emoji = emojiData.emoji;
     const input = chatInputRef.current;
@@ -134,10 +150,8 @@ export default function Header({ onMobileToggle, isRoomState = false }) {
     setShowEmojiPicker(false);
   };
 
-  // Unread badge count
   const unreadNotifCount = notifications.filter((n) => n.isUnread).length;
 
-  // Actions
   const handleOpenChat = (friendId) => {
     const friend = myFriends.find((f) => f.id === friendId) || notifications.find((n) => n.id === friendId);
     if (!friend) return;
@@ -192,30 +206,23 @@ export default function Header({ onMobileToggle, isRoomState = false }) {
     }, 1000);
   };
 
-  const [removingFriendId, setRemovingFriendId] = useState(null);
-const handleConfirmRemoveFriend = () => {
-  if (!pendingRemoveFriend) return;
+  const handleConfirmRemoveFriend = () => {
+    if (!pendingRemoveFriend) return;
+    const targetId = pendingRemoveFriend.id;
 
-  const targetId = pendingRemoveFriend.id;
+    setShowRemoveModal(false);
+    setRemovingFriendId(targetId);
 
-  // 1. Close modal immediately
-  setShowRemoveModal(false);
-
-  // 2. Mark this friend as being removed to trigger the CSS fade animation
-  setRemovingFriendId(targetId);
-
-  // 3. Wait for the 300ms transition to complete before removing from state
-  setTimeout(() => {
-    setMyFriends((prev) => prev.filter((f) => f.id !== targetId));
-    setRemovingFriendId(null);
-    setPendingRemoveFriend(null);
-  }, 300);
-};
+    setTimeout(() => {
+      setMyFriends((prev) => prev.filter((f) => f.id !== targetId));
+      setRemovingFriendId(null);
+      setPendingRemoveFriend(null);
+    }, 300);
+  };
 
   return (
     <>
       <header className="relative z-10 pt-4 sm:pt-6 flex items-center justify-between md:justify-end w-full px-3 sm:px-6 shrink-0">
-        {/* MOBILE TOP-LEFT TOGGLE BUTTON */}
         <button
           onClick={onMobileToggle}
           aria-label="Open Mobile Navigation"
@@ -226,9 +233,7 @@ const handleConfirmRemoveFriend = () => {
           </svg>
         </button>
 
-        {/* UPPER RIGHT HEADER CONTROLS */}
         <div className="flex items-center gap-1 sm:gap-3 flex-nowrap justify-end max-w-full py-2 px-1">
-          {/* COIN COUNTER */}
           <div className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[30px] flex items-center justify-center gap-1 sm:gap-2 shrink-0 shadow-sm">
             <img src="media/coin_logo.png" alt="Coin" className="w-3.5 h-3.5 sm:w-6 sm:h-6 object-contain shrink-0" />
             <span className="font-pressstart text-[8px] sm:text-[12px] text-[#3D2013]">
@@ -236,7 +241,6 @@ const handleConfirmRemoveFriend = () => {
             </span>
           </div>
 
-          {/* NOTIFICATION BUTTON */}
           <div className="relative shrink-0">
             <button
               onClick={() => setShowNotifModal(!showNotifModal)}
@@ -249,14 +253,12 @@ const handleConfirmRemoveFriend = () => {
               </svg>
             </button>
 
-            {/* NOTIFICATION BADGE */}
             {unreadNotifCount > 0 && (
               <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-[#E87339] border-[1.5px] sm:border-2 border-[#3D2013] text-[#FFFFF6] font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none">
                 {unreadNotifCount}
               </div>
             )}
 
-            {/* NOTIFICATION POPOVER */}
             {showNotifModal && (
               <div className="fixed inset-x-3 top-16 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 z-50">
                 <div className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-3 sm:p-4 w-full sm:w-[360px] h-[70vh] sm:h-[420px] max-h-[500px] shadow-2xl flex flex-col gap-3 text-left">
@@ -317,7 +319,6 @@ const handleConfirmRemoveFriend = () => {
             )}
           </div>
 
-          {/* FRIENDS BUTTON */}
           <button
             onClick={() => setShowFriendsModal(true)}
             title="Friends"
@@ -330,7 +331,6 @@ const handleConfirmRemoveFriend = () => {
             <span className="font-pressstart text-[8px] sm:text-[12px] text-[#3D2013]">{myFriends.length}</span>
           </button>
 
-          {/* STREAK COUNTER */}
           <div className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-0.5 sm:gap-1.5 shrink-0 shadow-sm">
             <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#ED8C00]" viewBox="0 0 24 24">
               <path d="M0 0h24v24H0z" fill="none" />
@@ -341,21 +341,24 @@ const handleConfirmRemoveFriend = () => {
             </span>
           </div>
 
-          {/* ACTION BUTTONS (ROOM vs SOLO) */}
+          {/* DYNAMIC ROOM STATE ACTION BUTTONS */}
           {isRoomState ? (
             <>
-              <Link
-                to="/kitsuai"
-                className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] transition-colors px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer no-underline text-[#3D2013] shrink-0 hover:bg-[#FDE4D0]"
+              <button
+                type="button"
+                onClick={() => {
+                  if (onOpenKitsu) onOpenKitsu();
+                }}
+                className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] transition-all duration-150 retro-shadow cursor-pointer px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer text-[#3D2013] shrink-0"
               >
                 <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" />
                 <span className="nav-label font-pressstart text-[8px] sm:text-[10px]">KitsuAI</span>
-              </Link>
+              </button>
 
               <button
                 onClick={() => setShowLeaveRoomModal(true)}
                 title="Leave Room"
-                className="h-8 sm:h-11 bg-[#A53914] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 shrink-0 cursor-pointer hover:bg-[#832c0f]"
+                className="h-8 sm:h-11 bg-[#A53914] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 shrink-0 cursor-pointer transition-all duration-150 retro-shadow cursor-pointer"
               >
                 <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#FEF4E0]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -387,7 +390,7 @@ const handleConfirmRemoveFriend = () => {
             <h3 className="font-pressstart text-[14px] text-[#3D2013]">Leave Room</h3>
             <p className="font-pressstart text-[10px] text-[#3D2013]/80 leading-normal">Are you sure you want to leave this study room?</p>
             <div className="flex gap-3 justify-center mt-2">
-              <button onClick={() => navigate('/dashboard')} className="bg-[#A53914] text-[#FEF4E0] border-2 border-[#3D2013] px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:bg-[#832c0f]">Leave</button>
+              <button onClick={handleLeaveRoom} className="bg-[#A53914] text-[#FEF4E0] border-2 border-[#3D2013] px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:bg-[#832c0f]">Leave</button>
               <button onClick={() => setShowLeaveRoomModal(false)} className="bg-[#FAE9CE] text-[#3D2013] border-2 border-[#3D2013] px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:bg-[#f3d3a8]">Cancel</button>
             </div>
           </div>
@@ -423,7 +426,6 @@ const handleConfirmRemoveFriend = () => {
               <button onClick={() => setShowFriendsModal(false)} className="text-[#3D2013] hover:text-[#A53914] font-pressstart text-[14px] cursor-pointer">✕</button>
             </div>
 
-            {/* TAB CONTROLS */}
             <div className="flex items-center gap-2 p-1.5 rounded-[8px] shrink-0">
               {['my-friends', 'add-friends', 'requests'].map((tab) => (
                 <button
@@ -440,67 +442,63 @@ const handleConfirmRemoveFriend = () => {
               ))}
             </div>
 
-            {/* TAB CONTENTS */}
             <div className="overflow-y-auto pr-1 flex-1 min-h-0">
-              {/* TAB 1: MY FRIENDS */}
-{/* TAB 1: MY FRIENDS */}
-{activeFriendsTab === 'my-friends' && (
-  <div className="flex flex-col gap-2.5">
-    {myFriends.length === 0 ? (
-      <div className="text-center font-pressstart text-[10px] text-[#3D2013]/60 py-6">No friends added yet.</div>
-    ) : (
-      myFriends.map((friend) => {
-        let statusBg = "bg-[#788D55]";
-        let statusTextColor = "text-[#788D55]";
-        if (friend.status === "GROUPED") {
-          statusBg = "bg-[#E87339]";
-          statusTextColor = "text-[#E87339]";
-        } else if (friend.status === "OFFLINE") {
-          statusBg = "bg-[#6F655D]";
-          statusTextColor = "text-[#6F655D]";
-        }
+              {activeFriendsTab === 'my-friends' && (
+                <div className="flex flex-col gap-2.5">
+                  {myFriends.length === 0 ? (
+                    <div className="text-center font-pressstart text-[10px] text-[#3D2013]/60 py-6">No friends added yet.</div>
+                  ) : (
+                    myFriends.map((friend) => {
+                      let statusBg = "bg-[#788D55]";
+                      let statusTextColor = "text-[#788D55]";
+                      if (friend.status === "GROUPED") {
+                        statusBg = "bg-[#E87339]";
+                        statusTextColor = "text-[#E87339]";
+                      } else if (friend.status === "OFFLINE") {
+                        statusBg = "bg-[#6F655D]";
+                        statusTextColor = "text-[#6F655D]";
+                      }
 
-        const isRemoving = removingFriendId === friend.id;
+                      const isRemoving = removingFriendId === friend.id;
 
-        return (
-          <div 
-            key={friend.id} 
-            className={`flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-0 items-center bg-[#FEF4E0] border-2 border-[#3D2013] p-2.5 transition-all duration-300 ${
-              isRemoving ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0 w-full">
-              <div className="relative w-9 h-9 shrink-0">
-                <img src={friend.avatar} alt={friend.username} className="w-full h-full rounded-full border-2 border-[#3D2013] object-cover bg-[#FEF4E0]" />
-                <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-[1.5px] border-[#3D2013] ${statusBg}`} />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-pressstart text-[10px] text-[#3D2013] truncate">{friend.username}</span>
-                <span className="font-pressstart text-[8px] text-[#3D2013]/70">LVL {friend.level}</span>
-              </div>
-            </div>
+                      return (
+                        <div 
+                          key={friend.id} 
+                          className={`flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-0 items-center bg-[#FEF4E0] border-2 border-[#3D2013] p-2.5 transition-all duration-300 ${
+                            isRemoving ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 w-full">
+                            <div className="relative w-9 h-9 shrink-0">
+                              <img src={friend.avatar} alt={friend.username} className="w-full h-full rounded-full border-2 border-[#3D2013] object-cover bg-[#FEF4E0]" />
+                              <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-[1.5px] border-[#3D2013] ${statusBg}`} />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-pressstart text-[10px] text-[#3D2013] truncate">{friend.username}</span>
+                              <span className="font-pressstart text-[8px] text-[#3D2013]/70">LVL {friend.level}</span>
+                            </div>
+                          </div>
 
-            <div className="flex items-center justify-between w-full sm:contents">
-              <div className="flex justify-start sm:justify-center">
-                <span className={`font-pressstart text-[8px] ${statusTextColor}`}>{friend.status}</span>
-              </div>
-              <div className="flex items-center justify-end gap-1.5">
-                <button onClick={() => { setShowFriendsModal(false); handleOpenChat(friend.id); }} title="Message" className="p-1.5 text-[#3D2013] hover:text-[#FD923E] cursor-pointer">
-                  💬
-                </button>
-                <button onClick={() => { setPendingRemoveFriend(friend); setShowRemoveModal(true); }} title="Remove" className="p-1.5 text-[#3D2013] hover:text-[#A53914] cursor-pointer">
-                  🗑️
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })
-    )}
-  </div>
-)}
+                          <div className="flex items-center justify-between w-full sm:contents">
+                            <div className="flex justify-start sm:justify-center">
+                              <span className={`font-pressstart text-[8px] ${statusTextColor}`}>{friend.status}</span>
+                            </div>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button onClick={() => { setShowFriendsModal(false); handleOpenChat(friend.id); }} title="Message" className="p-1.5 text-[#3D2013] hover:text-[#FD923E] cursor-pointer">
+                                💬
+                              </button>
+                              <button onClick={() => { setPendingRemoveFriend(friend); setShowRemoveModal(true); }} title="Remove" className="p-1.5 text-[#3D2013] hover:text-[#A53914] cursor-pointer">
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
 
-              {/* TAB 2: ADD FRIENDS (FULL CARD DETAILS) */}
               {activeFriendsTab === 'add-friends' && (
                 <div className="flex flex-col gap-4">
                   <input
@@ -536,7 +534,6 @@ const handleConfirmRemoveFriend = () => {
 
                           <div className="border-t border-[#3D2013]/20"></div>
 
-                          {/* STATS BADGES GRID */}
                           <div className="grid grid-cols-3 divide-x divide-[#3D2013]/20 font-pixel text-[#3D2013]">
                             <div className="flex items-center justify-center gap-1 px-1">
                               <svg className="w-3.5 h-3.5 text-[#ED8C00] shrink-0" viewBox="0 0 24 24">
@@ -581,63 +578,59 @@ const handleConfirmRemoveFriend = () => {
                 </div>
               )}
 
-              {/* TAB 3: REQUESTS */}
-{/* TAB 3: REQUESTS */}
-{activeFriendsTab === 'requests' && (
-  <div className="flex flex-col gap-2.5">
-    {requests.length === 0 ? (
-      <div className="text-center font-pressstart text-[10px] text-[#3D2013]/60 py-6">No friend requests.</div>
-    ) : (
-      requests.map((req) => {
-        const isHandled = Boolean(req.status);
+              {activeFriendsTab === 'requests' && (
+                <div className="flex flex-col gap-2.5">
+                  {requests.length === 0 ? (
+                    <div className="text-center font-pressstart text-[10px] text-[#3D2013]/60 py-6">No friend requests.</div>
+                  ) : (
+                    requests.map((req) => {
+                      const isHandled = Boolean(req.status);
 
-        return (
-          <div
-            key={req.id}
-            className={`flex items-center justify-between bg-[#FEF4E0] border-2 border-[#3D2013] p-2.5 transition-all duration-500 ease-in-out ${
-              isHandled
-                ? 'opacity-0 scale-95 delay-500 pointer-events-none'
-                : 'opacity-100 scale-100'
-            }`}
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <img src={req.avatar} alt={req.username} className="w-8 h-8 rounded-full border-2 border-[#3D2013] bg-[#FEF4E0] object-cover shrink-0" />
-              <div className="flex flex-col min-w-0">
-                <span className="font-pressstart text-[10px] text-[#3D2013] truncate">{req.username}</span>
-                <span className="font-pressstart text-[8px] text-[#3D2013]/70">LVL {req.level}</span>
-              </div>
-            </div>
+                      return (
+                        <div
+                          key={req.id}
+                          className={`flex items-center justify-between bg-[#FEF4E0] border-2 border-[#3D2013] p-2.5 transition-all duration-500 ease-in-out ${
+                            isHandled
+                              ? 'opacity-0 scale-95 delay-500 pointer-events-none'
+                              : 'opacity-100 scale-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <img src={req.avatar} alt={req.username} className="w-8 h-8 rounded-full border-2 border-[#3D2013] bg-[#FEF4E0] object-cover shrink-0" />
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-pressstart text-[10px] text-[#3D2013] truncate">{req.username}</span>
+                              <span className="font-pressstart text-[8px] text-[#3D2013]/70">LVL {req.level}</span>
+                            </div>
+                          </div>
 
-            <span className="font-pressstart text-[8px] text-[#3D2013]/60 shrink-0 px-2">{req.timeAgo}</span>
+                          <span className="font-pressstart text-[8px] text-[#3D2013]/60 shrink-0 px-2">{req.timeAgo}</span>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              {req.status === 'ACCEPTED' ? (
-                <span className="font-pressstart text-[9px] text-[#788D55] animate-pulse">ACCEPTED</span>
-              ) : req.status === 'REJECTED' ? (
-                <span className="font-pressstart text-[9px] text-[#A53914] animate-pulse">REJECTED</span>
-              ) : (
-                <>
-                  <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="p-1 text-[#788D55] hover:text-[#637545] cursor-pointer font-bold">✓</button>
-                  <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="p-1 text-[#A53914] hover:text-[#832c0f] cursor-pointer font-bold">✕</button>
-                </>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {req.status === 'ACCEPTED' ? (
+                              <span className="font-pressstart text-[9px] text-[#788D55] animate-pulse">ACCEPTED</span>
+                            ) : req.status === 'REJECTED' ? (
+                              <span className="font-pressstart text-[9px] text-[#A53914] animate-pulse">REJECTED</span>
+                            ) : (
+                              <>
+                                <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="p-1 text-[#788D55] hover:text-[#637545] cursor-pointer font-bold">✓</button>
+                                <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="p-1 text-[#A53914] hover:text-[#832c0f] cursor-pointer font-bold">✕</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               )}
-            </div>
-          </div>
-        );
-      })
-    )}
-  </div>
-)}
             </div>
           </div>
         </div>
       )}
 
-      {/* CHAT MODAL WITH REACT EMOJI PICKER & FLOATING SCROLL BUTTON */}
       {showChatModal && currentChatFriend && (
         <div className="fixed bottom-4 right-4 z-50 p-0">
-          <div className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[10px] max-w-md w-80 sm:w-96 shadow-xl flex flex-col overflow-hidden relative">
-            {/* CHAT HEADER */}
+          <div className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[10px] max-w-md w-80 sm:w-96 shadow-xl flex flex-col relative">
             <div className="flex items-center justify-between p-3 bg-[#FAE9CE] border-b-2 border-[#3D2013]">
               <div className="flex items-center gap-2.5 min-w-0">
                 <img src={currentChatFriend.avatar} alt="PFP" className="w-8 h-8 rounded-full border-2 border-[#3D2013] object-cover bg-[#FEF4E0] shrink-0" />
@@ -650,7 +643,6 @@ const handleConfirmRemoveFriend = () => {
             </div>
 
             <div className="p-3 flex flex-col gap-3 relative">
-              {/* MESSAGES CONTAINER WITH SCROLL LOGIC */}
               <div className="relative">
                 <div
                   ref={chatMessagesContainerRef}
@@ -674,7 +666,6 @@ const handleConfirmRemoveFriend = () => {
                   ))}
                 </div>
 
-                {/* FLOATING SCROLL TO BOTTOM BUTTON */}
                 {showScrollBottomBtn && (
                   <button
                     onClick={scrollToBottom}
@@ -688,7 +679,6 @@ const handleConfirmRemoveFriend = () => {
                 )}
               </div>
 
-              {/* REACT EMOJI PICKER POPUP */}
               {showEmojiPicker && (
                 <div className="absolute bottom-16 left-3 z-50 shadow-2xl">
                   <EmojiPicker
@@ -699,7 +689,6 @@ const handleConfirmRemoveFriend = () => {
                 </div>
               )}
 
-              {/* INPUT FORM WITH EMOJI TRIGGER */}
               <form onSubmit={handleSendChatMessage} className="flex gap-2 items-center">
                 <div className="flex-1 flex items-center bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[8px] px-2 py-1">
                   <input
@@ -735,7 +724,6 @@ const handleConfirmRemoveFriend = () => {
         </div>
       )}
 
-      {/* REMOVE FRIEND WARNING MODAL */}
       {showRemoveModal && pendingRemoveFriend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/50">
           <div className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-3 text-center items-center">

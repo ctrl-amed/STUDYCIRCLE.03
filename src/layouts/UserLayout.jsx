@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 
@@ -8,6 +8,25 @@ export default function UserLayout() {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isKitsuOpen, setIsKitsuOpen] = useState(false);
   const [isCreateSessionOpen, setIsCreateSessionOpen] = useState(false);
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
+
+  const location = useLocation();
+
+  // Detect whether the user is in multiplayer mode
+  useEffect(() => {
+    const checkMultiplayer = () => {
+      const storedSession = localStorage.getItem('activeRoomSession');
+      const stateIsMultiplayer = location.state?.isMultiplayer;
+      
+      setIsMultiplayer(Boolean(storedSession || stateIsMultiplayer));
+    };
+
+    checkMultiplayer();
+
+    // Listen for storage changes in case room session is removed or updated
+    window.addEventListener('storage', checkMultiplayer);
+    return () => window.removeEventListener('storage', checkMultiplayer);
+  }, [location]);
 
   // Listen for iframe close requests posted from KitsuAI & CreateSession
   useEffect(() => {
@@ -74,21 +93,31 @@ export default function UserLayout() {
         />
       </div>
 
-      <Sidebar
-        isExpanded={isExpanded}
-        setIsExpanded={setIsExpanded}
-        isMobileOpen={isMobileOpen}
-        setIsMobileOpen={setIsMobileOpen}
-        onOpenKitsu={openKitsuModal}
-      />
+      {/* RENDER SIDEBAR ONLY WHEN NOT IN MULTIPLAYER */}
+      {!isMultiplayer && (
+        <Sidebar
+          isExpanded={isExpanded}
+          setIsExpanded={setIsExpanded}
+          isMobileOpen={isMobileOpen}
+          setIsMobileOpen={setIsMobileOpen}
+          onOpenKitsu={openKitsuModal}
+        />
+      )}
 
       <div
         id="main-wrapper"
         className={`relative z-10 flex-1 flex flex-col transition-all duration-300 ${
-          isExpanded ? 'md:pl-64' : 'md:pl-20'
+          isMultiplayer
+            ? 'pl-0'
+            : isExpanded
+            ? 'md:pl-64'
+            : 'md:pl-20'
         }`}
       >
-        <Header onMobileToggle={() => setIsMobileOpen(!isMobileOpen)} />
+        <Header 
+          onMobileToggle={() => setIsMobileOpen(!isMobileOpen)} 
+          onOpenKitsu={openKitsuModal}
+        />
 
         <main className="flex-1 p-4 sm:p-6">
           <Outlet context={{ openKitsuModal, openCreateSessionModal }} />

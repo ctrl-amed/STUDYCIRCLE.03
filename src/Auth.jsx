@@ -53,10 +53,21 @@ export default function Auth() {
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
 
+  // Sign Up Terms Consent Modal States (Manual Form)
+  const [signupConsentPending, setSignupConsentPending] = useState(false);
+  const [signupAgeTermsChecked, setSignupAgeTermsChecked] = useState(false);
+  const [signupTermsErr, setSignupTermsErr] = useState('');
+
   // Google OAuth Modal/Prompt States
   const [googleUserPending, setGoogleUserPending] = useState(null);
   const [googleUsernameInput, setGoogleUsernameInput] = useState('');
   const [googleUsernameErr, setGoogleUsernameErr] = useState('');
+  const [googleAgeTermsChecked, setGoogleAgeTermsChecked] = useState(false);
+  const [googleTermsErr, setGoogleTermsErr] = useState('');
+
+  // Legal Content Modal States
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // Reset Password Form States
   const [resetEmail, setResetEmail] = useState('');
@@ -190,6 +201,9 @@ export default function Auth() {
       setGoogleUserPending(decoded);
       const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
       setGoogleUsernameInput(suggestedUsername);
+      setGoogleAgeTermsChecked(false);
+      setGoogleTermsErr('');
+      setGoogleUsernameErr('');
     }
   };
 
@@ -201,9 +215,20 @@ export default function Auth() {
   const handleGoogleUsernameSubmit = (e) => {
     e.preventDefault();
     const trimmedUser = googleUsernameInput.trim();
+    const usernameRegex = /^[a-zA-Z0-9_-]{1,20}$/;
 
     if (!trimmedUser) {
       setGoogleUsernameErr("Username field can't be empty.");
+      return;
+    }
+
+    if (!usernameRegex.test(trimmedUser)) {
+      setGoogleUsernameErr('Username must be 1 to 20 characters and contain only letters, numbers, hyphens, or underscores.');
+      return;
+    }
+
+    if (!googleAgeTermsChecked) {
+      setGoogleTermsErr('You must confirm you are at least 18 years old and agree to the Terms and Privacy Policy.');
       return;
     }
 
@@ -277,6 +302,20 @@ export default function Auth() {
 
     if (!isUserValid || !isEmailValid || !isPassValid || !isConfirmValid) return;
 
+    // Open consent modal before saving account
+    setSignupConsentPending(true);
+    setSignupAgeTermsChecked(false);
+    setSignupTermsErr('');
+  };
+
+  const handleConfirmSignupConsent = (e) => {
+    e.preventDefault();
+
+    if (!signupAgeTermsChecked) {
+      setSignupTermsErr('You must confirm you are at least 18 years old and agree to the Terms and Privacy Policy.');
+      return;
+    }
+
     const newUser = {
       username: signupUsername.trim(),
       email: signupEmail.trim().toLowerCase(),
@@ -293,6 +332,7 @@ export default function Auth() {
     setSignupEmail('');
     setSignupPassword('');
     setSignupConfirmPassword('');
+    setSignupConsentPending(false);
 
     localStorage.setItem('justSignedUp', 'true');
 
@@ -400,10 +440,10 @@ export default function Auth() {
           />
         </div>
 
-        <div className="relative z-10 max-w-6xl w-full px-6 flex flex-col items-center justify-center pt-12 md:pt-20 pb-6">
+        <div className="relative z-10 max-w-6xl w-full px-6 flex flex-col items-center justify-center pt-12 md:pt-20 pb-30">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-md">
             {activeView !== 'reset' && (
-              <div id="modal-tabs" className="flex border-2 border-theme-dark rounded-xl p-1 bg-transparent mb-6 font-pressstart text-xs">
+              <div id="modal-tabs" className="flex border-2 border-theme-dark rounded-xl p-1 bg-transparent mb-6 font-pressstart text-[15px] sm:text-[15px] leading-4">
                 <button
                   type="button"
                   onClick={() => switchView('login')}
@@ -477,7 +517,7 @@ export default function Auth() {
                       </svg>
                     </button>
                   </div>
-                  {loginError && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">{loginError}</p>}
+                  {loginError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">{loginError}</p>}
                 </div>
 
                 <button
@@ -498,9 +538,9 @@ export default function Auth() {
                 </div>
 
                 <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 h-[2px] bg-theme-dark/20" />
-                  <span className="font-pressstart text-[8px] text-theme-dark/60">OR</span>
-                  <div className="flex-1 h-[2px] bg-theme-dark/20" />
+                  <div className="flex-1 h-[2px] bg-theme-dark" />
+                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
+                  <div className="flex-1 h-[2px] bg-theme-dark" />
                 </div>
 
                 <button
@@ -539,7 +579,7 @@ export default function Auth() {
                       signupUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {signupUsernameErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
+                  {signupUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -556,7 +596,7 @@ export default function Auth() {
                       signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {signupEmailErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
+                  {signupEmailErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -592,7 +632,7 @@ export default function Auth() {
                       </svg>
                     </button>
                   </div>
-                  {signupPasswordErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
+                  {signupPasswordErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -629,24 +669,43 @@ export default function Auth() {
                   </div>
                   <p
                     className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
-                      isConfirmPasswordCustomError ? 'text-[#A94A4A] text-sm' : 'text-theme-dark text-[10px] sm:text-[12px] md:text-[14px] lg:text-[16px]'
+                      isConfirmPasswordCustomError ? 'text-[#A94A4A] text-[15px] sm:text-[15px]' : 'text-theme-dark text-[15px] sm:text-[15px]'
                     }`}
                   >
                     {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
                   </p>
                 </div>
 
+                <p className="font-pixel text-[15px] sm:text-[15px] text-theme-dark leading-4">
+                  By clicking Sign Up or continuing with Google, you agree to StudyCircle's{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="text-theme-primary underline cursor-pointer hover:opacity-80 inline"
+                  >
+                    Terms & Conditions
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowPrivacyModal(true)}
+                    className="text-theme-primary underline cursor-pointer hover:opacity-80 inline"
+                  >
+                    Privacy Policy
+                  </button>.
+                </p>
+
                 <button
                   type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-2 transition-all duration-150 retro-shadow cursor-pointer"
+                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-1 transition-all duration-150 retro-shadow cursor-pointer"
                 >
                   SIGN UP
                 </button>
 
                 <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 h-[2px] bg-theme-dark/20" />
-                  <span className="font-pressstart text-[8px] text-theme-dark/60">OR</span>
-                  <div className="flex-1 h-[2px] bg-theme-dark/20" />
+                  <div className="flex-1 h-[2px] bg-theme-dark" />
+                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
+                  <div className="flex-1 h-[2px] bg-theme-dark" />
                 </div>
 
                 <button
@@ -690,7 +749,7 @@ export default function Auth() {
                     placeholder="you@studycircle.app"
                     className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
                   />
-                  {resetError && <p className="font-pixel text-sm text-theme-primary mt-0.5">{resetError}</p>}
+                  {resetError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-primary mt-0.5">{resetError}</p>}
                 </div>
 
                 <button
@@ -704,21 +763,89 @@ export default function Auth() {
           </div>
         </div>
 
+        {/* MANUAL SIGNUP CONFIRMATION MODAL */}
+        {signupConsentPending && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-sm">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Confirm Registration</h3>
+
+              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
+                You are almost ready to start learning with StudyCircle! Please confirm your agreement to continue.
+              </p>
+
+              <form onSubmit={handleConfirmSignupConsent} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1 mt-1">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={signupAgeTermsChecked}
+                      onChange={(e) => {
+                        setSignupAgeTermsChecked(e.target.checked);
+                        if (e.target.checked) setSignupTermsErr('');
+                      }}
+                      className="mt-1 accent-theme-primary cursor-pointer w-4 h-4 shrink-0"
+                    />
+                    <span className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark leading-4">
+                      You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsModal(true)}
+                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
+                      >
+                        Terms of Service
+                      </button>{' '}
+                      and{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowPrivacyModal(true)}
+                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
+                      >
+                        Privacy Policy
+                      </button>.
+                    </span>
+                  </label>
+                  {signupTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {signupTermsErr}</p>}
+                </div>
+
+                <div className="flex gap-2 justify-end mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignupConsentPending(false);
+                      setSignupAgeTermsChecked(false);
+                      setSignupTermsErr('');
+                    }}
+                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-muted border-2 border-theme-dark px-3 py-2 text-theme-dark cursor-pointer"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    type="submit"
+                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
+                  >
+                    COMPLETE SIGNUP
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* GOOGLE USERNAME MODAL */}
         {googleUserPending && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-sm">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center gap-3">
                 {googleUserPending.picture && (
                   <img src={googleUserPending.picture} alt="Google Avatar" className="w-10 h-10 rounded-full border-2 border-theme-dark" />
                 )}
                 <div>
-                  <h3 className="font-pressstart text-sm text-theme-dark">Choose Username</h3>
-                  <p className="font-pixel text-xs text-theme-dark/70">{googleUserPending.email}</p>
+                  <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Choose Username</h3>
+                  <p className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark">{googleUserPending.email}</p>
                 </div>
               </div>
 
-              <p className="font-pixel text-sm text-theme-dark">
+              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
                 Welcome to StudyCircle! Please pick a unique username to complete setting up your account.
               </p>
 
@@ -737,25 +864,109 @@ export default function Auth() {
                       googleUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {googleUsernameErr && <p className="font-pixel text-sm text-[#A94A4A]">✘ {googleUsernameErr}</p>}
+                  <p className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark mt-1">
+                    Usernames can be changed at any time. They must be 1 to 20 characters, containing only letters a to z, numbers 0 to 9, hyphens, or underscores.
+                  </p>
+                  {googleUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleUsernameErr}</p>}
                 </div>
 
-                <div className="flex gap-2 justify-end mt-2">
+                <div className="flex flex-col gap-1 mt-1">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={googleAgeTermsChecked}
+                      onChange={(e) => {
+                        setGoogleAgeTermsChecked(e.target.checked);
+                        if (e.target.checked) setGoogleTermsErr('');
+                      }}
+                      className="mt-1 accent-theme-primary cursor-pointer w-4 h-4 shrink-0"
+                    />
+                    <span className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark leading-4">
+                      You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowTermsModal(true)}
+                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
+                      >
+                        Terms of Service
+                      </button>{' '}
+                      and{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowPrivacyModal(true)}
+                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
+                      >
+                        Privacy Policy
+                      </button>.
+                    </span>
+                  </label>
+                  {googleTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleTermsErr}</p>}
+                </div>
+
+                <div className="flex gap-2 justify-center mt-2">
                   <button
                     type="button"
-                    onClick={() => setGoogleUserPending(null)}
-                    className="font-pressstart text-xs bg-theme-muted border-2 border-theme-dark px-3 py-2 text-theme-dark cursor-pointer"
+                    onClick={() => {
+                      setGoogleUserPending(null);
+                      setGoogleAgeTermsChecked(false);
+                      setGoogleTermsErr('');
+                    }}
+                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
                   >
                     CANCEL
                   </button>
                   <button
                     type="submit"
-                    className="font-pressstart text-xs bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
+                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
                   >
                     COMPLETE
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* TERMS OF SERVICE MODAL */}
+        {showTermsModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3D2013]/70 backdrop-blur-xs">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
+              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Terms of Service</h3>
+              <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">
+                <p>By using StudyCircle, you agree to follow our community guidelines and code of conduct.</p>
+                <p>1. Account Responsibility: You are responsible for all activity under your username.</p>
+                <p>2. Respectful Behavior: Be supportive to fellow study circle members.</p>
+                <p>3. Age Limit: You must be at least 18 years old to register an account.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(false)}
+                className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 self-end cursor-pointer retro-shadow mt-2"
+              >
+                CLOSE
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* PRIVACY POLICY MODAL */}
+        {showPrivacyModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3D2013]/70 backdrop-blur-xs">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
+              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Privacy Policy</h3>
+              <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">
+                <p>We value your personal privacy and process data responsibly.</p>
+                <p>1. Data Collection: We collect your email address and username for authentication.</p>
+                <p>2. Data Usage: Your study data is used strictly to power your StudyCircle dashboard and rewards.</p>
+                <p>3. Security: We do not sell your personal data to third-party services.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrivacyModal(false)}
+                className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 self-end cursor-pointer retro-shadow mt-2"
+              >
+                CLOSE
+              </button>
             </div>
           </div>
         )}
@@ -772,7 +983,7 @@ export default function Auth() {
                 <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
                 </svg>
-                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-snug tracking-wide">{toast.message}</span>
+                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-4 tracking-wide">{toast.message}</span>
               </div>
               <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
                 <div className="w-full h-full bg-theme-safe animate-progress-center"></div>
@@ -853,8 +1064,8 @@ export default function Auth() {
               <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">COMPANY</h4>
               <nav className="flex flex-col gap-2">
                 <Link to="/#about" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">About</Link>
-                <Link to="/#privacy" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Privacy</Link>
-                <Link to="/#terms" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Terms</Link>
+                <button onClick={() => setShowPrivacyModal(true)} className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit text-left cursor-pointer">Privacy</button>
+                <button onClick={() => setShowTermsModal(true)} className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit text-left cursor-pointer">Terms</button>
                 <Link to="/#contact" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Contact</Link>
               </nav>
             </div>

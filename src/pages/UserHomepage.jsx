@@ -1,20 +1,119 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 import { useTimer } from '../hooks/useTimer';
 import { ActiveSessionWidget, RecentActivityWidget } from '../components/UserHomepageWidgets';
 import CustomRoom from '../components/CustomRoom';
 import CustomAvatar from '../components/CustomAvatar';
+import EmojiPicker from 'emoji-picker-react';
 
-// Adjust these values to position & scale the avatar manually
+// --- MULTIPLAYER & SINGLEPLAYER AVATAR POSITIONS ---
 const avatarConfig = {
-  scale: 0.85,    // Scale multiplier (e.g., 0.8 = 80%, 1.2 = 120%)
-  bottom: '15%',  // Height inside the room (increase % to move UP, decrease to move DOWN)
-  left: '50%',    // Horizontal alignment (50% is center)
-  offsetX: 0,     // Fine-tune horizontal position (+px moves right, -px moves left)
-  offsetY: 0,     // Fine-tune vertical position (+px moves down, -px moves up)
+  scale: 0.85,
+  bottom: '15%',
+  left: '50%',
+  offsetX: 0,
+  offsetY: 0,
 };
 
-// --- MOCK DATA ---
+// Dynamic position maps based on total member count in the room
+const memberPositionsByCount = {
+  1: [
+    { bottom: '25%', left: '50%', scale: 0.85 } // Center
+  ],
+  2: [
+    { bottom: '25%', left: '38%', scale: 0.85 },
+    { bottom: '25%', left: '62%', scale: 0.85 }
+  ],
+  3: [
+    { bottom: '28%', left: '32%', scale: 0.85 },
+    { bottom: '25%', left: '50%', scale: 0.85 }, // Center User
+    { bottom: '28%', left: '68%', scale: 0.85 }
+  ],
+  4: [
+    { bottom: '28%', left: '26%', scale: 0.85 },
+    { bottom: '25%', left: '42%', scale: 0.85 },
+    { bottom: '25%', left: '58%', scale: 0.85 },
+    { bottom: '28%', left: '74%', scale: 0.85 }
+  ],
+  5: [
+    { bottom: '25%', left: '22%', scale: 0.85 },
+    { bottom: '30%', left: '36%', scale: 0.85 },
+    { bottom: '25%', left: '50%', scale: 0.85 }, // Center User
+    { bottom: '30%', left: '64%', scale: 0.85 },
+    { bottom: '25%', left: '78%', scale: 0.85 }
+  ],
+  6: [
+    { bottom: '25%', left: '18%', scale: 0.85 },
+    { bottom: '30%', left: '31%', scale: 0.85 },
+    { bottom: '25%', left: '44%', scale: 0.85 },
+    { bottom: '25%', left: '56%', scale: 0.85 },
+    { bottom: '30%', left: '69%', scale: 0.85 },
+    { bottom: '25%', left: '82%', scale: 0.85 }
+  ]
+};
+
+// Mock pool of available players
+const mockPlayerList = [
+  { 
+    id: 1, 
+    username: "PIXEL_SAM", 
+    level: 5,
+    status: "IN SESSION",
+    config: { body: "BODY1", face: "FACE2", tops: "TOP3", bottoms: "BOTTOM2", hair: "HAIR1" }
+  },
+  { 
+    id: 2, 
+    username: "LOFI_LUNA", 
+    level: 12,
+    status: "ONLINE",
+    config: { body: "BODY1", face: "FACE1", tops: "TOP5", bottoms: "BOTTOM4", hair: "HAIR3" }
+  },
+  { 
+    id: 3, 
+    username: "STUDY_BEAR", 
+    level: 3,
+    status: "IN SESSION",
+    config: { body: "BODY1", face: "FACE3", tops: "TOP1", bottoms: "BOTTOM1" }
+  },
+  { 
+    id: 4, 
+    username: "COZY_CAT",  
+    level: 8,
+    status: "ONLINE",
+    config: { body: "BODY1", face: "FACE4", tops: "TOP2", bottoms: "BOTTOM3", hair: "HAIR2" }
+  },
+  { 
+    id: 5, 
+    username: "NIGHT_OWL", 
+    level: 15,
+    status: "IN SESSION",
+    config: { body: "BODY1", face: "FACE1", tops: "TOP4", bottoms: "BOTTOM6", hair: "HAIR4" }
+  }
+];
+
+// --- MOCK FALLBACK ROOM DATA ---
+const mockRoomData = {
+  roomName: "Algorithms & Data Structures Study Group",
+  course: "CS 201 - Data Structures",
+  privacy: "public",
+  maxMembers: 6,
+  hostId: "m1",
+  members: [],
+  auditLogs: [
+    { id: 1, user: "ACORN_HERO", action: "started a 52-17 focus session", time: "2m ago" },
+    { id: 2, user: "LOFI_LUNA", action: "completed a task: Binary Search Trees", time: "5m ago" },
+    { id: 3, user: "PIXEL_SAM", action: "joined the room", time: "12m ago" },
+    { id: 4, user: "NIGHT_OWL", action: "paused their focus timer", time: "18m ago" },
+    { id: 5, user: "COZY_CAT", action: "joined the room", time: "25m ago" },
+  ],
+  chatMessages: [
+    { sender: "LOFI_LUNA", text: "Hey everyone! Let's get through Module 4 today.", time: "10:15 AM" },
+    { sender: "PIXEL_SAM", text: "Focused mode on 🚀", time: "10:16 AM" },
+    { sender: "ACORN_HERO", text: "Let's do this!", time: "10:18 AM" },
+  ]
+};
+
 const initialRecentActivities = [
   { activity: 'Reading', technique: '52-17', duration: '1h 45m', date: 'Today' },
   { activity: 'Writing', technique: 'Pomodoro', duration: '2h 15m', date: 'Today' },
@@ -61,8 +160,9 @@ const leaderboardData = {
   ],
 };
 
-export default function UserHomepage() {
+export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false }) {
   const { playerData } = usePlayer();
+  const location = useLocation();
 
   const player = {
     username: playerData?.username || 'ACORN_HERO',
@@ -71,19 +171,17 @@ export default function UserHomepage() {
     coins: playerData?.coins ?? 0,
   };
 
-  // Directly derive userActivities from PlayerContext state for instant reactive updates
   const userActivities = playerData?.userActivities || {};
-
-  // Timer custom hook handles localStorage synchronization
   const timer = useTimer(player);
   const activeCardRef = useRef(null);
 
-  // Dynamic Date Greeting
+  // Singleplayer Date & Greeting State
   const [greetingText, setGreetingText] = useState('Good Afternoon');
   const [currentDateStr, setCurrentDateStr] = useState('');
 
-  // Modal Visibility Controls
+  // Modals Visibility Controls
   const [showRecentModal, setShowRecentModal] = useState(false);
+  const [showRoomActivityModal, setShowRoomActivityModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
@@ -93,6 +191,123 @@ export default function UserHomepage() {
   // Calendar State & Touch Popover Control
   const [currentCalDate, setCurrentCalDate] = useState(new Date(2026, 7, 1));
   const [activePopoverDate, setActivePopoverDate] = useState(null);
+
+  // Dynamic Room / Multiplayer Detection
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [roomData, setRoomData] = useState(mockRoomData);
+  const [roomChat, setRoomChat] = useState(mockRoomData.chatMessages);
+  const [chatInput, setChatInput] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const chatContainerRef = useRef(null);
+
+  // Listen for session updates from CreateSession modal iframe
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data === 'CLOSE_CREATE_SESSION_MODAL') {
+        const raw = localStorage.getItem('activeSession');
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+              const newLogs = parsed.tasks.map((taskText, index) => ({
+                id: `session_task_${index}_${Date.now()}`,
+                user: player.username,
+                action: `task: ${taskText}`,
+                time: 'Just now',
+              }));
+              setRoomData((prev) => ({
+                ...prev,
+                auditLogs: newLogs,
+              }));
+            }
+          } catch (err) {
+            console.error('Error parsing activeSession:', err);
+          }
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [player.username]);
+
+  // Read Room Session from localStorage or router state on load/route change
+  useEffect(() => {
+    const storedSession = localStorage.getItem('activeRoomSession');
+    const stateIsMultiplayer = location.state?.isMultiplayer;
+
+    if (storedSession || stateIsMultiplayer || propIsMultiplayer) {
+      setIsMultiplayer(true);
+      
+      let parsed = null;
+      if (storedSession) {
+        try {
+          parsed = JSON.parse(storedSession);
+        } catch (e) {
+          console.error("Error parsing room session:", e);
+        }
+      } else if (location.state?.room) {
+        parsed = location.state.room;
+      }
+
+      const hostUsername = parsed?.host || "CodeWizard";
+      const totalMemberCount = Math.min(parsed?.currentMembers || 2, parsed?.maxMembers || 6);
+
+      // Current user object
+      const currentUser = {
+        id: "user_me",
+        username: player.username,
+        isHost: hostUsername === player.username,
+        status: "IN SESSION",
+        avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${player.username}`,
+        level: player.level,
+        isCurrentUser: true,
+      };
+
+      // Filter out current user from mock pool if present
+      const availableMocks = mockPlayerList.filter((m) => m.username !== player.username);
+
+      // If current user is host or room count is 1
+      let membersList = [];
+
+      if (totalMemberCount <= 1) {
+        membersList = [currentUser];
+      } else {
+        // Need (totalMemberCount - 1) mock members
+        const otherMembersCount = totalMemberCount - 1;
+        const otherMembers = availableMocks.slice(0, otherMembersCount).map((m) => ({
+          ...m,
+          isHost: m.username === hostUsername,
+          avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${m.username}`,
+        }));
+
+        // Ensure host is always included if present in mock pool
+        if (!currentUser.isHost && !otherMembers.some((m) => m.isHost)) {
+          otherMembers[0] = {
+            ...mockPlayerList[0],
+            username: hostUsername,
+            isHost: true,
+            avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${hostUsername}`,
+          };
+        }
+
+        // Insert current user into center index if 3 or 5 members
+        const midIndex = Math.floor(otherMembers.length / 2);
+        otherMembers.splice(midIndex, 0, currentUser);
+        membersList = otherMembers;
+      }
+
+      setRoomData((prev) => ({
+        ...prev,
+        roomName: parsed?.name || parsed?.roomName || prev.roomName,
+        course: parsed?.course || prev.course,
+        privacy: parsed?.privacy || prev.privacy || "public",
+        maxMembers: parsed?.maxMembers || 6,
+        members: membersList,
+      }));
+    } else {
+      setIsMultiplayer(false);
+    }
+  }, [location, propIsMultiplayer, player.username, player.level]);
 
   useEffect(() => {
     const now = new Date();
@@ -114,12 +329,18 @@ export default function UserHomepage() {
     }
   }, []);
 
-  // Dismiss popovers when clicking outside
   useEffect(() => {
     const handleDocumentClick = () => setActivePopoverDate(null);
     document.addEventListener('click', handleDocumentClick);
     return () => document.removeEventListener('click', handleDocumentClick);
   }, []);
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (isMultiplayer && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [roomChat, isMultiplayer]);
 
   const handlePrevMonth = () => {
     setCurrentCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
@@ -129,7 +350,27 @@ export default function UserHomepage() {
     setCurrentCalDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
   };
 
-  // Helper for Activity Item HTML inside lists
+  const handleSendRoomMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    setRoomChat((prev) => [
+      ...prev,
+      {
+        sender: player.username,
+        text: chatInput.trim(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+    setChatInput('');
+    setShowEmojiPicker(false);
+  };
+
+  const handleEmojiSelect = (emojiData) => {
+    setChatInput((prev) => prev + emojiData.emoji);
+    setShowEmojiPicker(false);
+  };
+
   const renderActivityItem = (item, idx) => {
     const iconSvg = activityIcons[item.activity] || activityIcons.Reading;
     return (
@@ -159,7 +400,6 @@ export default function UserHomepage() {
     );
   };
 
-  // Render Calendar Grid with Popover Indicators
   const renderCalendarDays = (isCompact = true) => {
     const year = currentCalDate.getFullYear();
     const month = currentCalDate.getMonth();
@@ -187,7 +427,6 @@ export default function UserHomepage() {
       const isToday =
         day === today.getDate() && month === today.getMonth() && year === today.getFullYear();
 
-      // Position logic for Popover
       const isTopRow = day + firstDayIndex <= 7;
       const colIndex = (day + firstDayIndex - 1) % 7;
       const isLeftEdge = colIndex <= 1;
@@ -240,40 +479,36 @@ export default function UserHomepage() {
             />
           )}
 
-{/* Activity Popover displaying Activity Name, Focus Duration, and Technique */}
-{hasActivity && (
-  <div
-    className={`cal-popover absolute ${verticalPos} ${horizontalPos} ${
-      isPopoverActive ? 'flex' : 'hidden sm:group-hover:flex'
-    } flex-col gap-1.5 w-48 sm:w-56 bg-theme-muted rounded-[8px] p-2.5 shadow-xl z-50 pointer-events-none transition-all`}
-  >
-    {dayActivities.map((act, index) => {
-      const isLast = index === dayActivities.length - 1;
-      return (
-        <div
-          key={index}
-          className={`flex flex-col gap-1 ${
-            !isLast ? 'border-b border-theme-dark/20 pb-1.5' : ''
-          }`}
-        >
-          {/* Top row: Name */}
-          <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary font-bold truncate">
-            {act.name}
-          </span>
-          
-          {/* Bottom row: Duration & Technique */}
-          <div className="flex items-center justify-between w-full font-pressstart text-[7px] sm:text-[8px] text-theme-dark/80">
-            <span className="font-bold text-theme-dark">{act.duration}</span>
-            <span className="bg-theme-dark/10 px-1.5 py-0.5 rounded text-theme-dark shrink-0">
-              {act.technique}
-            </span>
-          </div>
-        </div>
-      );
-    })}
-    <div className={`absolute ${arrowPos}`} />
-  </div>
-)}
+          {hasActivity && (
+            <div
+              className={`cal-popover absolute ${verticalPos} ${horizontalPos} ${
+                isPopoverActive ? 'flex' : 'hidden sm:group-hover:flex'
+              } flex-col gap-1.5 w-48 sm:w-56 bg-theme-muted rounded-[8px] p-2.5 shadow-xl z-50 pointer-events-none transition-all`}
+            >
+              {dayActivities.map((act, index) => {
+                const isLast = index === dayActivities.length - 1;
+                return (
+                  <div
+                    key={index}
+                    className={`flex flex-col gap-1 ${
+                      !isLast ? 'border-b border-theme-dark/20 pb-1.5' : ''
+                    }`}
+                  >
+                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary font-bold truncate">
+                      {act.name}
+                    </span>
+                    <div className="flex items-center justify-between w-full font-pressstart text-[7px] sm:text-[8px] text-theme-dark/80">
+                      <span className="font-bold text-theme-dark">{act.duration}</span>
+                      <span className="bg-theme-dark/10 px-1.5 py-0.5 rounded text-theme-dark shrink-0">
+                        {act.technique}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className={`absolute ${arrowPos}`} />
+            </div>
+          )}
         </div>
       );
     }
@@ -285,6 +520,13 @@ export default function UserHomepage() {
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
+  const hasActiveSession = Boolean(timer.activeSession && timer.tasksList && timer.tasksList.length > 0);
+  const completedTasksCount = timer.tasksList ? timer.tasksList.filter((t) => t.completed).length : 0;
+
+  // Retrieve current positional layout map based on active member length
+  const memberCountKey = Math.min(Math.max(roomData.members.length, 1), 6);
+  const activePositionMap = memberPositionsByCount[memberCountKey] || memberPositionsByCount[1];
+
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5">
       {/* 1ST ROW: 2 COLUMNS */}
@@ -292,18 +534,37 @@ export default function UserHomepage() {
         {/* LEFT COLUMN: GREETING & AVATAR ROOM */}
         <section className="flex flex-col gap-2 sm:gap-4 p-2 sm:p-4">
           <div>
-            <h2 className="font-pressstart text-[14px] sm:text-[18px] mb-1 level-up-gradient bg-clip-text text-transparent w-fit">
-              {greetingText}, {player.username}
-            </h2>
-            <div className="flex items-center gap-2 font-pixel text-[20px] sm:text-[25px] text-theme-dark/80">
-              <svg className="w-5 h-5 text-theme-primary shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0-2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5z" />
-              </svg>
-              <span>{currentDateStr} | Ready to focus?</span>
-            </div>
+            {isMultiplayer ? (
+              <>
+                <h2 className="font-pressstart text-[14px] sm:text-[18px] mb-1 level-up-gradient bg-clip-text text-transparent w-fit truncate">
+                  {roomData.roomName}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2 font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+                  <span className="bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-[4px] font-pressstart text-[9px]">
+                    {roomData.members.length}/{roomData.maxMembers} MEMBERS
+                  </span>
+                  <span>|</span>
+                  <span className="text-[#788D55] font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
+                  <span>|</span>
+                  <span className="truncate">{roomData.course}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="font-pressstart text-[14px] sm:text-[18px] mb-1 level-up-gradient bg-clip-text text-transparent w-fit">
+                  {greetingText}, {player.username}
+                </h2>
+                <div className="flex items-center gap-2 font-pixel text-[20px] sm:text-[25px] text-theme-dark/80">
+                  <svg className="w-5 h-5 text-theme-primary shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19 19H5V8h14m-3-7v2H8V1H6v2H5c-1.11 0-2 .89-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0-2-2V5a2 2 0 0 0-2-2h-1V1m-1 11h-5v5h5z" />
+                  </svg>
+                  <span>{currentDateStr} | Ready to focus?</span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* ROOM & AVATAR DISPLAY CONTAINER */}
+          {/* ROOM DISPLAY CONTAINER */}
           <div className="relative w-full flex items-center justify-center rounded-[12px] min-h-[300px]">
             <div className="relative flex items-center justify-center max-w-[1100px] w-full mx-auto">
               <div
@@ -316,29 +577,56 @@ export default function UserHomepage() {
 
               <CustomRoom />
 
-              <div id="mock-avatars-container" className="absolute inset-0 pointer-events-none z-10" />
-
-              <div
-                className="absolute w-[200px] h-[200px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
-                style={{
-                  bottom: avatarConfig.bottom,
-                  left: avatarConfig.left,
-                  transform: `translate(-50%, 0) scale(${avatarConfig.scale}) translate(${avatarConfig.offsetX}px, ${avatarConfig.offsetY}px)`,
-                }}
-              >
-                <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-[#000000]/20 px-1.5 sm:px-3 py-0.5 sm:py-1 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center z-30">
-                  <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-[#FFFFFF] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-                    {player.username}
-                  </span>
+              {isMultiplayer ? (
+                roomData.members.map((member, index) => {
+                  const pos = activePositionMap[index % activePositionMap.length];
+                  return (
+                    <div
+                      key={member.id || index}
+                      className="absolute w-[180px] h-[180px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
+                      style={{
+                        bottom: pos.bottom,
+                        left: pos.left,
+                        transform: `translate(-50%, 0) scale(${pos.scale})`,
+                      }}
+                    >
+                      <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-1.5 py-0.5 whitespace-nowrap rounded shadow-md flex items-center gap-1 z-30">
+                        {member.isHost && (
+                          <span className="text-[8px]" title="Host">👑</span>
+                        )}
+                        <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
+                          {member.username} {member.isCurrentUser && "(YOU)"}
+                        </span>
+                      </div>
+                      <CustomAvatar
+                        config={member.config}
+                        state={member.status === 'IN SESSION' ? 'focus' : 'idle'}
+                      />
+                    </div>
+                  );
+                })
+              ) : (
+                <div
+                  className="absolute w-[200px] h-[200px] origin-bottom pointer-events-auto z-20 transition-all duration-150"
+                  style={{
+                    bottom: avatarConfig.bottom,
+                    left: avatarConfig.left,
+                    transform: `translate(-50%, 0) scale(${avatarConfig.scale}) translate(${avatarConfig.offsetX}px, ${avatarConfig.offsetY}px)`,
+                  }}
+                >
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 bg-[#000000]/20 px-2 sm:px-3 py-1 sm:py-1.5 rounded-[4px] whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center z-30">
+                    <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-[#FFFFFF] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                      {player.username}
+                    </span>
+                  </div>
+                  <CustomAvatar state="idle" />
                 </div>
-
-                <CustomAvatar state="idle" />
-              </div>
+              )}
             </div>
           </div>
         </section>
 
-        {/* RIGHT COLUMN: ACTIVE SESSION TIMER & RECENT ACTIVITY */}
+        {/* RIGHT COLUMN: TIMER & (ROOM ACTIVITY OR RECENT ACTIVITY) */}
         <div className="flex flex-col gap-5 w-full">
           <ActiveSessionWidget
             activeSession={timer.activeSession}
@@ -358,17 +646,82 @@ export default function UserHomepage() {
             focusTimeFormatted={timer.dailyFocusFormatted}
           />
 
-          <RecentActivityWidget
-            activeSession={timer.activeSession}
-            tasksList={timer.tasksList}
-            toggleTaskCompletion={timer.toggleTaskCompletion}
-            recentActivities={initialRecentActivities}
-            onViewAll={() => setShowRecentModal(true)}
-          />
+          {isMultiplayer ? (
+            <section className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
+              <div className="flex items-center justify-between pb-2 border-b-2 border-theme-dark/20">
+                <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark uppercase">
+                  {hasActiveSession ? 'SESSION TASKS' : 'ROOM ACTIVITY LOG'}
+                </h3>
+                <div className="flex items-center gap-3">
+                  {hasActiveSession ? (
+                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary">
+                      {completedTasksCount}/{timer.tasksList.length} COMPLETED
+                    </span>
+                  ) : (
+                    <>
+                      <span className="font-pressstart text-[8px] text-theme-primary animate-pulse">● LIVE</span>
+                      <button
+                        onClick={() => setShowRoomActivityModal(true)}
+                        className="p-1 text-theme-dark hover:text-theme-primary transition-colors cursor-pointer"
+                        title="View All Logs"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 overflow-y-auto max-h-[200px] pr-1">
+                {hasActiveSession ? (
+                  timer.tasksList.map((task, idx) => (
+                    <label
+                      key={idx}
+                      className="flex items-center gap-2.5 p-2 bg-theme-muted/60 border border-theme-dark/30 rounded-[6px] hover:bg-theme-muted cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={task.completed}
+                        onChange={() => timer.toggleTaskCompletion(idx)}
+                        className="w-4 h-4 accent-theme-primary border-theme-dark rounded cursor-pointer shrink-0"
+                      />
+                      <span
+                        className={`font-pressstart text-[8px] sm:text-[9px] text-theme-dark break-words ${
+                          task.completed ? 'line-through opacity-50' : ''
+                        }`}
+                      >
+                        {task.text}
+                      </span>
+                    </label>
+                  ))
+                ) : (
+                  roomData.auditLogs.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between p-2 rounded-[6px] bg-theme-muted/50 border border-theme-dark/10">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-pressstart text-[9px] text-theme-primary font-bold">{log.user}</span>
+                        <span className="font-pixel text-[14px] text-theme-dark truncate">{log.action}</span>
+                      </div>
+                      <span className="font-pressstart text-[7px] text-theme-dark/50 shrink-0">{log.time}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+          ) : (
+            <RecentActivityWidget
+              activeSession={timer.activeSession}
+              tasksList={timer.tasksList}
+              toggleTaskCompletion={timer.toggleTaskCompletion}
+              recentActivities={initialRecentActivities}
+              onViewAll={() => setShowRecentModal(true)}
+            />
+          )}
         </div>
       </div>
 
-      {/* 2ND ROW: LEADERBOARD & CALENDAR */}
+      {/* 2ND ROW: OVERVIEW, (MEMBERS OR LEADERBOARD), AND (ROOM CHAT OR CALENDAR) */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 w-full">
         <section className="md:col-span-3 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
           <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark">OVERVIEW</h3>
@@ -379,142 +732,248 @@ export default function UserHomepage() {
           </div>
         </section>
 
-        {/* MIDDLE COLUMN: LEADERBOARD CARD */}
-        <section className="md:col-span-4 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
-          <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
-            <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 text-theme-primary shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M3 21q-.425 0-.712-.288T2 20V10q0-.425.288-.712T3 9h3.5q.425 0 .713.288T7.5 10v10q0 .425-.288.713T6.5 21zm7.25 0q-.425 0-.712-.288T9.25 20V4q0-.425.288-.712T10.25 3h3.5q.425 0 .713.288T14.75 4v16q0 .425-.288.713T13.75 21zm7.25 0q-.425 0-.712-.288T16.5 20v-8q0-.425.288-.712T17.5 11H21q.425 0 .713.288T22 12v8q0 .425-.288.713T21 21z" />
-              </svg>
+        {/* MIDDLE COLUMN: ROOM MEMBERS OR LEADERBOARD */}
+        {isMultiplayer ? (
+          <section className="md:col-span-4 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
+            <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
               <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark uppercase">
-                Leaderboards
+                ROOM MEMBERS ({roomData.members.length})
               </h3>
             </div>
-            <button
-              onClick={() => setShowLeaderboardModal(true)}
-              className="p-1 hover:text-theme-primary cursor-pointer text-theme-dark transition-colors"
-              title="View Full Leaderboard"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
-              </svg>
-            </button>
-          </div>
 
-          <div className="flex gap-2 p-1">
-            {['all-time', 'this-month', 'streaks'].map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex-1 py-1.5 font-pressstart text-[8px] sm:text-[9px] rounded-none! border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
-                  activeTab === tab
-                    ? 'bg-theme-primary text-[#FFFFF6]'
-                    : 'bg-theme-muted text-theme-dark hover:bg-[#f3dcba]'
-                }`}
-              >
-                {tab.replace('-', ' ').toUpperCase()}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[300px] pr-1">
-            {(leaderboardData[activeTab] || []).map((item) => {
-              const isCurrentUser = item.username === player.username;
-              return (
+            <div className="flex flex-col gap-2 overflow-y-auto max-h-[250px] pr-1">
+              {roomData.members.map((member, idx) => (
                 <div
-                  key={item.rank}
-                  className={`flex items-center justify-between p-2 rounded-[8px] ${
-                    isCurrentUser
-                      ? 'bg-[#C97845]/50 border-[1.5px] border-theme-dark'
-                      : 'bg-theme-muted/40 border-[1.5px] border-theme-dark/20 hover:bg-theme-muted'
-                  } transition-colors`}
+                  key={member.id || idx}
+                  className={`flex items-center justify-between p-2.5 rounded-[8px] border-[1.5px] ${
+                    member.isHost 
+                      ? 'bg-[#FEF4E0] border-theme-primary shadow-sm' 
+                      : 'bg-theme-muted/40 border-theme-dark/20'
+                  }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className={`font-pressstart text-[10px] w-5 text-center ${
-                        item.rank <= 3 ? 'text-theme-primary font-bold' : 'text-theme-dark/60'
-                      }`}
-                    >
-                      #{item.rank}
-                    </span>
-                    <img
-                      src={item.pfp}
-                      alt={item.username}
-                      className="w-7 h-7 rounded-[4px] border border-theme-dark bg-theme-surface shrink-0"
-                    />
-                    <span className="font-pressstart text-[9px] text-theme-dark truncate">
-                      {item.username} {isCurrentUser && <span className="text-[7px] text-theme-primary">(YOU)</span>}
-                    </span>
+                    <img src={member.avatar} alt="PFP" className="w-7 h-7 rounded-full border border-theme-dark bg-theme-surface shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="font-pressstart text-[9px] text-theme-dark truncate">{member.username}</span>
+                        {member.isHost && (
+                          <span className="bg-theme-primary text-[#FFFFF6] font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
+                        )}
+                        {member.isCurrentUser && (
+                          <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
+                        )}
+                      </div>
+                      <span className="font-pressstart text-[7px] text-theme-dark/60">LVL {member.level}</span>
+                    </div>
                   </div>
-                  <span className="font-pressstart text-[9px] text-theme-dark">
-                    {item.score || item.streak}
+
+                  <span className={`font-pressstart text-[7px] px-2 py-1 rounded border ${
+                    member.status === 'IN SESSION'
+                      ? 'bg-[#788D55]/20 text-[#788D55] border-[#788D55]'
+                      : 'bg-theme-dark/10 text-theme-dark/70 border-theme-dark/30'
+                  }`}>
+                    {member.status}
                   </span>
                 </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* RIGHT COLUMN: CALENDAR CARD */}
-        <section className="md:col-span-5 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 shadow-md flex flex-col gap-2.5 relative">
-          <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-theme-dark/20">
-            <div className="flex items-center gap-2 min-w-0">
-              <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-primary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark truncate">
-                {monthNames[currentCalDate.getMonth()]} {currentCalDate.getFullYear()}
-              </span>
+              ))}
             </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="flex items-center gap-1">
-                <button 
-                  onClick={handlePrevMonth} 
-                  className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
-                  aria-label="Previous Month"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
-                    <path d="M0 0h24v24H0z" fill="none" />
-                    <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z" />
-                  </svg>
-                </button>
-                <button 
-                  onClick={handleNextMonth} 
-                  className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
-                  aria-label="Next Month"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
-                    <path d="M0 0h24v24H0z" fill="none" />
-                    <path fill="currentColor" d="M11.273 3.687a1 1 0 1 1 1.454-1.374l8.5 9a1 1 0 0 1 0 1.374l-8.5 9.001a1 1 0 1 1-1.454-1.373L19.125 12z" />
-                  </svg>
-                </button>
+          </section>
+        ) : (
+          <section className="md:col-span-4 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
+            <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-theme-primary shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3 21q-.425 0-.712-.288T2 20V10q0-.425.288-.712T3 9h3.5q.425 0 .713.288T7.5 10v10q0 .425-.288.713T6.5 21zm7.25 0q-.425 0-.712-.288T9.25 20V4q0-.425.288-.712T10.25 3h3.5q.425 0 .713.288T14.75 4v16q0 .425-.288.713T13.75 21zm7.25 0q-.425 0-.712-.288T16.5 20v-8q0-.425.288-.712T17.5 11H21q.425 0 .713.288T22 12v8q0 .425-.288.713T21 21z" />
+                </svg>
+                <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark uppercase">
+                  Leaderboards
+                </h3>
               </div>
-
               <button
-                onClick={() => setShowCalendarModal(true)}
-                className="p-1 sm:p-1.5 rounded-[6px] text-theme-dark hover:bg-theme-muted hover:text-theme-primary transition-all cursor-pointer"
-                title="Full Screen"
+                onClick={() => setShowLeaderboardModal(true)}
+                className="p-1 hover:text-theme-primary cursor-pointer text-theme-dark transition-colors"
+                title="View Full Leaderboard"
               >
-                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
                 </svg>
               </button>
             </div>
-          </div>
 
-          <div className="w-full flex-1 flex flex-col justify-between p-2 sm:p-3 overflow-hidden">
-            <div className="grid grid-cols-7 gap-1 text-center font-pressstart text-[7.5px] sm:text-[9px] text-theme-dark/70 pb-1">
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                <div key={i}>{d}</div>
+            <div className="flex gap-2 p-1">
+              {['all-time', 'this-month', 'streaks'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex-1 py-1.5 font-pressstart text-[8px] sm:text-[9px] rounded-none! border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
+                    activeTab === tab
+                      ? 'bg-theme-primary text-[#FFFFF6]'
+                      : 'bg-theme-muted text-theme-dark hover:bg-[#f3dcba]'
+                  }`}
+                >
+                  {tab.replace('-', ' ').toUpperCase()}
+                </button>
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1 sm:gap-1.5 pt-1.5 flex-1 auto-rows-fr h-full">
-              {renderCalendarDays(true)}
+            <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[300px] pr-1">
+              {(leaderboardData[activeTab] || []).map((item) => {
+                const isCurrentUser = item.username === player.username;
+                return (
+                  <div
+                    key={item.rank}
+                    className={`flex items-center justify-between p-2 rounded-[8px] ${
+                      isCurrentUser
+                        ? 'bg-[#C97845]/50 border-[1.5px] border-theme-dark'
+                        : 'bg-theme-muted/40 border-[1.5px] border-theme-dark/20 hover:bg-theme-muted'
+                    } transition-colors`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`font-pressstart text-[10px] w-5 text-center ${
+                          item.rank <= 3 ? 'text-theme-primary font-bold' : 'text-theme-dark/60'
+                        }`}
+                      >
+                        #{item.rank}
+                      </span>
+                      <img
+                        src={item.pfp}
+                        alt={item.username}
+                        className="w-7 h-7 rounded-[4px] border border-theme-dark bg-theme-surface shrink-0"
+                      />
+                      <span className="font-pressstart text-[9px] text-theme-dark truncate">
+                        {item.username} {isCurrentUser && <span className="text-[7px] text-theme-primary">(YOU)</span>}
+                      </span>
+                    </div>
+                    <span className="font-pressstart text-[9px] text-theme-dark">
+                      {item.score || item.streak}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-        </section>
+          </section>
+        )}
+
+        {/* RIGHT COLUMN: ROOM CHAT OR CALENDAR */}
+        {isMultiplayer ? (
+          <section className="md:col-span-5 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 shadow-md flex flex-col gap-2.5 relative">
+            <div className="flex items-center justify-between pb-2 border-b border-theme-dark/20">
+              <h3 className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark">ROOM CHAT</h3>
+            </div>
+
+            <div ref={chatContainerRef} className="flex-1 min-h-[180px] max-h-[220px] overflow-y-auto flex flex-col gap-2 p-2 bg-theme-muted/30 border border-theme-dark/20 rounded-[8px]">
+              {roomChat.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex flex-col max-w-[85%] ${
+                    msg.sender === player.username ? 'self-end items-end' : 'self-start items-start'
+                  }`}
+                >
+                  <span className="font-pressstart text-[7px] text-theme-dark/60 mb-0.5">{msg.sender}</span>
+                  <div className={`px-2.5 py-1.5 font-pixel text-[14px] rounded-[6px] border ${
+                    msg.sender === player.username 
+                      ? 'bg-theme-primary text-[#FFFFF6] border-theme-dark' 
+                      : 'bg-theme-surface text-theme-dark border-theme-dark/30'
+                  }`}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {showEmojiPicker && (
+              <div className="absolute bottom-14 right-4 z-50 shadow-2xl">
+                <EmojiPicker onEmojiClick={handleEmojiSelect} width={280} height={300} />
+              </div>
+            )}
+
+            <form onSubmit={handleSendRoomMessage} className="flex items-center gap-2">
+              <div className="flex-1 flex items-center bg-theme-surface border-2 border-theme-dark rounded-[8px] px-2 py-1">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="Type in room chat..."
+                  className="flex-1 bg-transparent font-pixel text-[14px] text-theme-dark focus:outline-none min-w-0"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  className="text-sm cursor-pointer hover:scale-110 transition shrink-0 ml-1"
+                >
+                  😀
+                </button>
+              </div>
+              <button
+                type="submit"
+                className="bg-theme-primary text-[#FFFFF6] border-2 border-theme-dark px-3 py-1.5 rounded-[8px] font-pressstart text-[9px] hover:bg-[#d0622c] cursor-pointer"
+              >
+                SEND
+              </button>
+            </form>
+          </section>
+        ) : (
+          <section className="md:col-span-5 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 shadow-md flex flex-col gap-2.5 relative">
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-theme-dark/20">
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-primary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark truncate">
+                  {monthNames[currentCalDate.getMonth()]} {currentCalDate.getFullYear()}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={handlePrevMonth} 
+                    className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    aria-label="Previous Month"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z" />
+                    </svg>
+                  </button>
+                  <button 
+                    onClick={handleNextMonth} 
+                    className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    aria-label="Next Month"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 sm:w-5 sm:h-5" viewBox="0 0 24 24">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="currentColor" d="M11.273 3.687a1 1 0 1 1 1.454-1.374l8.5 9a1 1 0 0 1 0 1.374l-8.5 9.001a1 1 0 1 1-1.454-1.373L19.125 12z" />
+                    </svg>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowCalendarModal(true)}
+                  className="p-1 sm:p-1.5 rounded-[6px] text-theme-dark hover:bg-theme-muted hover:text-theme-primary transition-all cursor-pointer"
+                  title="Full Screen"
+                >
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="w-full flex-1 flex flex-col justify-between p-2 sm:p-3 overflow-hidden">
+              <div className="grid grid-cols-7 gap-1 text-center font-pressstart text-[7.5px] sm:text-[9px] text-theme-dark/70 pb-1">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                  <div key={i}>{d}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1 sm:gap-1.5 pt-1.5 flex-1 auto-rows-fr h-full">
+                {renderCalendarDays(true)}
+              </div>
+            </div>
+          </section>
+        )}
       </div>
 
       {/* RECENT ACTIVITIES MODAL */}
@@ -538,6 +997,40 @@ export default function UserHomepage() {
 
             <div className="flex flex-col gap-1.5 overflow-y-auto pr-1 max-h-[60vh]">
               {initialRecentActivities.map((item, idx) => renderActivityItem(item, idx))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL ROOM ACTIVITY LOG MODAL */}
+      {showRoomActivityModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh]">
+            <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
+              <h3 className="font-pressstart text-[13px] sm:text-[15px] text-theme-dark uppercase">
+                ALL ROOM ACTIVITY LOGS
+              </h3>
+              <button
+                onClick={() => setShowRoomActivityModal(false)}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 overflow-y-auto pr-1 max-h-[60vh]">
+              {roomData.auditLogs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-2.5 rounded-[6px] bg-theme-muted/50 border border-theme-dark/10">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-pressstart text-[9px] text-theme-primary font-bold">{log.user}</span>
+                    <span className="font-pixel text-[15px] text-theme-dark truncate">{log.action}</span>
+                  </div>
+                  <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>

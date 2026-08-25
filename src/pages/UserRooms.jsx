@@ -5,7 +5,26 @@ import { usePlayer } from '../context/PlayerContext';
 // --- CONFIGURATIONS ---
 const MAX_ROOM_LIMIT = 3;
 const REQUEST_TIMEOUT_SEC = 15;
-const MAX_ROOM_NAME_LENGTH = 50; // Easily adjust room name character limit here
+const MAX_ROOM_NAME_LENGTH = 50;
+
+// Standard course list suggestions
+const COURSE_OPTIONS = [
+  'Computer Science',
+  'Software Engineering',
+  'Mathematics & Calculus',
+  'Physics',
+  'Chemistry',
+  'Biology',
+  'Business & Administration',
+  'Economics',
+  'Psychology',
+  'Literature & Language',
+  'History & Social Sciences',
+  'Graphic Design & Art',
+  'Philosophy',
+  'Engineering',
+  'General Studies',
+];
 
 // --- INITIAL MOCK DATA ---
 const initialRoomsData = {
@@ -14,9 +33,10 @@ const initialRoomsData = {
       id: 1,
       code: null,
       name: 'Cozy Coding Cave',
+      course: 'Computer Science',
       host: 'CodeWizard',
       privacy: 'public',
-      currentMembers: 4,
+      currentMembers: 5,
       maxMembers: 6,
       technique: 'Pomodoro',
       focus: '2h 00m',
@@ -35,6 +55,7 @@ const initialRoomsData = {
       id: 2,
       code: 'QCA291',
       name: 'Quiet Calculus',
+      course: 'Mathematics & Calculus',
       host: 'MathWhiz',
       privacy: 'private',
       currentMembers: 2,
@@ -54,6 +75,7 @@ const initialRoomsData = {
       id: 3,
       code: null,
       name: 'Late Night Grind',
+      course: 'General Studies',
       host: 'ACORN_HERO',
       privacy: 'public',
       currentMembers: 5,
@@ -74,6 +96,7 @@ const initialRoomsData = {
       id: 4,
       code: null,
       name: 'Design & Chill',
+      course: 'Graphic Design & Art',
       host: 'PixelArtist',
       privacy: 'public',
       currentMembers: 3,
@@ -93,6 +116,7 @@ const initialRoomsData = {
       id: 5,
       code: 'LMC714',
       name: 'Language Masterclass',
+      course: 'Literature & Language',
       host: 'LinguaFranc',
       privacy: 'private',
       currentMembers: 1,
@@ -114,6 +138,7 @@ const initialRoomsData = {
       id: 101,
       code: null,
       name: 'Morning Focus Hub',
+      course: 'Business & Administration',
       host: 'ACORN_HERO',
       privacy: 'public',
       currentMembers: 3,
@@ -132,46 +157,6 @@ const initialRoomsData = {
       xp: 450,
       coins: 120,
     },
-    {
-      id: 102,
-      code: null,
-      name: 'Algorithm Dojo',
-      host: 'CodeWizard',
-      privacy: 'public',
-      currentMembers: 6,
-      maxMembers: 6,
-      technique: '52-17',
-      focus: '2h 35m',
-      breakTime: '0h 34m',
-      sessions: 5,
-      tasks: [
-        { text: 'Solve binary search', completed: true },
-        { text: 'Graph algorithms', completed: true },
-        { text: 'LeetCode daily', completed: false },
-      ],
-      xp: 500,
-      coins: 135,
-    },
-    {
-      id: 103,
-      code: 'TWS945',
-      name: 'Thesis Writing Sanctuary',
-      host: 'ACORN_HERO',
-      privacy: 'private',
-      currentMembers: 1,
-      maxMembers: 2,
-      technique: '90m',
-      focus: '4h 30m',
-      breakTime: '1h 30m',
-      sessions: 3,
-      tasks: [
-        { text: 'Literature review', completed: true },
-        { text: 'Methodology section', completed: true },
-        { text: 'References formatting', completed: true },
-      ],
-      xp: 750,
-      coins: 200,
-    },
   ],
 };
 
@@ -184,6 +169,8 @@ export default function UserRooms() {
   const [roomsData, setRoomsData] = useState(initialRoomsData);
   const [activeTab, setActiveTab] = useState('all-rooms');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCourseFilter, setSelectedCourseFilter] = useState('');
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
 
   // Modals Visibility State
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -196,6 +183,8 @@ export default function UserRooms() {
   const [privateCodeInput, setPrivateCodeInput] = useState('');
   const [privateCodeErr, setPrivateCodeErr] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomCourse, setNewRoomCourse] = useState('');
+  const [isCourseDropdownOpen, setIsCourseDropdownOpen] = useState(false);
   const [newRoomPrivacy, setNewRoomPrivacy] = useState('public');
   const [newRoomMaxMembers, setNewRoomMaxMembers] = useState('');
 
@@ -204,11 +193,32 @@ export default function UserRooms() {
   const [pendingJoinRoom, setPendingJoinRoom] = useState(null);
 
   // Request Countdown State
-  const [requestState, setRequestState] = useState('WAITING'); // WAITING, EXPIRED, ACCEPTED, REJECTED
+  const [requestState, setRequestState] = useState('WAITING');
   const [requestTimer, setRequestTimer] = useState(REQUEST_TIMEOUT_SEC);
   const timerRef = useRef(null);
+  const courseDropdownRef = useRef(null);
+  const filterDropdownRef = useRef(null);
 
-  // Code Generator Helper
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        courseDropdownRef.current &&
+        !courseDropdownRef.current.contains(event.target)
+      ) {
+        setIsCourseDropdownOpen(false);
+      }
+      if (
+        filterDropdownRef.current &&
+        !filterDropdownRef.current.contains(event.target)
+      ) {
+        setIsFilterDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const generateRoomCode = () => {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const numbers = '0123456789';
@@ -222,13 +232,11 @@ export default function UserRooms() {
     return roomsData.all.filter((r) => r.host === myUsername).length;
   };
 
-  // Helper to store active room session and navigate to dashboard timer
   const enterRoomSession = (room) => {
     localStorage.setItem('activeRoomSession', JSON.stringify(room));
-    navigate('/dashboard');
+    navigate('/dashboard', { state: { isMultiplayer: true, room } });
   };
 
-  // --- REQUEST JOIN COUNTDOWN TIMER LOGIC ---
   useEffect(() => {
     if (showRequestModal && requestState === 'WAITING') {
       setRequestTimer(REQUEST_TIMEOUT_SEC);
@@ -249,7 +257,6 @@ export default function UserRooms() {
     };
   }, [showRequestModal, requestState]);
 
-  // Handle Create Room Submission
   const handleConfirmCreate = () => {
     if (!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers) return;
 
@@ -263,6 +270,7 @@ export default function UserRooms() {
       id: Date.now(),
       code: newRoomPrivacy === 'private' ? generateRoomCode() : null,
       name: newRoomName.trim(),
+      course: newRoomCourse.trim() || 'General Studies',
       host: myUsername,
       privacy: newRoomPrivacy,
       currentMembers: 1,
@@ -281,17 +289,15 @@ export default function UserRooms() {
       all: [createdRoom, ...prev.all],
     }));
 
-    // Reset Form & Close Modal
     setNewRoomName('');
+    setNewRoomCourse('');
     setNewRoomPrivacy('public');
     setNewRoomMaxMembers('');
     setShowCreateModal(false);
 
-    // Direct Join
     enterRoomSession(createdRoom);
   };
 
-  // Handle Joining Private Room via Code
   const handleConfirmPrivateJoin = () => {
     const code = privateCodeInput.trim().toUpperCase();
     if (!code) {
@@ -312,25 +318,36 @@ export default function UserRooms() {
     setPrivateCodeInput('');
     setShowJoinModal(false);
 
-    // Start Join Request
     setPendingJoinRoom(matchedRoom);
     setRequestState('WAITING');
     setShowRequestModal(true);
   };
 
-  // Filter helpers
-  const query = searchQuery.toLowerCase();
-  const filteredAllRooms = roomsData.all.filter(
-    (r) => r.name.toLowerCase().includes(query) || r.host.toLowerCase().includes(query)
-  );
-  const filteredMyRooms = roomsData.all.filter(
-    (r) => r.host === myUsername && r.name.toLowerCase().includes(query)
-  );
-  const filteredHistory = roomsData.history.filter(
-    (r) => r.name.toLowerCase().includes(query) || r.host.toLowerCase().includes(query)
+  // Filter helper matching search query AND course dropdown filter
+  const filterRooms = (list) => {
+    const query = searchQuery.toLowerCase();
+    return list.filter((r) => {
+      const matchesQuery =
+        r.name.toLowerCase().includes(query) ||
+        r.host.toLowerCase().includes(query) ||
+        (r.course && r.course.toLowerCase().includes(query));
+
+      const matchesCourse = selectedCourseFilter
+        ? (r.course || 'General Studies').toLowerCase() === selectedCourseFilter.toLowerCase()
+        : true;
+
+      return matchesQuery && matchesCourse;
+    });
+  };
+
+  const filteredAllRooms = filterRooms(roomsData.all);
+  const filteredMyRooms = filterRooms(roomsData.all.filter((r) => r.host === myUsername));
+  const filteredHistory = filterRooms(roomsData.history);
+
+  const filteredCourseOptions = COURSE_OPTIONS.filter((c) =>
+    c.toLowerCase().includes(newRoomCourse.toLowerCase())
   );
 
-  // Render individual room card
   const renderRoomCard = (room, isHistoryTab = false) => {
     const isPublic = room.privacy.toLowerCase() === 'public';
     const privacyStyles = isPublic
@@ -348,6 +365,9 @@ export default function UserRooms() {
           </div>
           <div className="flex-1 flex flex-col gap-1 overflow-hidden">
             <span className="font-pressstart text-[11px] text-[#3D2013] truncate">{room.name}</span>
+            <span className="font-pressstart text-[8px] text-[#E87339] truncate">
+              📚 {room.course || 'General Studies'}
+            </span>
             <span className="font-pressstart text-[8px] text-[#3D2013] truncate">
               Hosted by: <span className="text-[#E87339]">{room.host}</span>
             </span>
@@ -391,10 +411,11 @@ export default function UserRooms() {
         ) : (
           <button
             onClick={() => {
-              if (room.currentMembers < room.maxMembers) {
-                room.currentMembers += 1;
-              }
-              enterRoomSession(room);
+              const activeSessionRoom = {
+                ...room,
+                currentMembers: Math.min(room.currentMembers + 1, room.maxMembers),
+              };
+              enterRoomSession(activeSessionRoom);
             }}
             className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-[#E87339] rounded-none border-[2px] border-[#3D2013] px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
           >
@@ -407,7 +428,6 @@ export default function UserRooms() {
 
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5 pb-10">
-      {/* ROW 1: TITLE & SUBTEXT */}
       <div className="flex flex-col gap-1">
         <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
           ROOMS
@@ -417,7 +437,6 @@ export default function UserRooms() {
         </p>
       </div>
 
-      {/* ROW 2: ACTION BUTTONS */}
       <div className="flex items-center justify-end gap-3 flex-wrap">
         <button
           onClick={() => setShowJoinModal(true)}
@@ -439,10 +458,8 @@ export default function UserRooms() {
         </button>
       </div>
 
-      {/* MAIN ROOMS CONTAINER */}
       <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-sm flex flex-col gap-6">
-        {/* ROW 3: NAVIGATION TABS & SEARCH */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b-2 border-[#3D2013]/20 relative">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b-2 border-[#3D2013]/20 pb-3 md:pb-4 relative">
           <div className="flex items-center gap-6 overflow-x-auto pb-2 md:pb-0">
             <button
               onClick={() => setActiveTab('all-rooms')}
@@ -476,27 +493,100 @@ export default function UserRooms() {
             </button>
           </div>
 
-          <div className="relative w-full md:w-72 flex items-center">
-            <svg
-              className="absolute left-3 w-4 h-4 text-[#3D2013]/70 pointer-events-none"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21l-4.343-4.343m0 0A8 8 0 1 0 5.343 5.343a8 8 0 0 0 11.314 11.314" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search rooms..."
-              className="w-full bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] pl-9 pr-3 py-2 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none focus:ring-1 focus:ring-[#FD923E]"
-            />
+          {/* SEARCH BAR & COURSE FILTER GROUP */}
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64 flex items-center">
+              <svg
+                className="absolute left-3 w-4 h-4 text-[#3D2013]/70 pointer-events-none"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21l-4.343-4.343m0 0A8 8 0 1 0 5.343 5.343a8 8 0 0 0 11.314 11.314" />
+              </svg>
+
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search rooms..."
+                className="w-full bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none focus:ring-1 focus:ring-[#FD923E]"
+              />
+
+              {/* SEARCH CLEAR (X) BUTTON */}
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 text-[#3D2013]/70 hover:text-[#A53914] font-pressstart text-[10px] p-0.5 cursor-pointer leading-none transition-colors"
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* COURSE FILTER BUTTON WITH DROPDOWN */}
+            <div className="relative shrink-0" ref={filterDropdownRef}>
+              <button
+                onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
+                className={`h-9 px-3 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] flex items-center justify-center gap-1.5 font-pressstart text-[8px] sm:text-[9px] cursor-pointer transition-colors ${
+                  selectedCourseFilter
+                    ? 'bg-[#FDE4D0] border-[#E87339] text-[#E87339]'
+                    : 'text-[#3D2013] hover:bg-[#FDE4D0]'
+                }`}
+                title="Filter by Course"
+              >
+                <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z" />
+                </svg>
+                <span className="hidden sm:inline max-w-[100px] truncate">
+                  {selectedCourseFilter || 'FILTER'}
+                </span>
+                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m6 9l6 6l6-6" />
+                </svg>
+              </button>
+
+              {/* COURSE FILTER DROPDOWN */}
+              {isFilterDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 z-50 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] shadow-2xl max-h-60 overflow-y-auto p-1">
+                  <div
+                    onClick={() => {
+                      setSelectedCourseFilter('');
+                      setIsFilterDropdownOpen(false);
+                    }}
+                    className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
+                      !selectedCourseFilter
+                        ? 'bg-[#E87339] text-[#FFFFF6]'
+                        : 'text-[#3D2013] hover:bg-[#FAE9CE]'
+                    }`}
+                  >
+                    ALL COURSES
+                  </div>
+                  <div className="my-1 border-t border-[#3D2013]/20" />
+                  {COURSE_OPTIONS.map((courseOption, index) => (
+                    <div
+                      key={index}
+                      onClick={() => {
+                        setSelectedCourseFilter(courseOption);
+                        setIsFilterDropdownOpen(false);
+                      }}
+                      className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
+                        selectedCourseFilter === courseOption
+                          ? 'bg-[#E87339] text-[#FFFFF6]'
+                          : 'text-[#3D2013] hover:bg-[#FAE9CE]'
+                      }`}
+                    >
+                      {courseOption}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* TAB CONTENT CONTAINER */}
         <div className="pt-2 h-[420px] sm:h-[480px] md:h-[450px] overflow-y-auto pr-1">
           {activeTab === 'all-rooms' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -536,7 +626,7 @@ export default function UserRooms() {
         </div>
       </div>
 
-      {/* ==================== 1. JOIN PRIVATE ROOM MODAL ==================== */}
+      {/* JOIN PRIVATE ROOM MODAL */}
       {showJoinModal && (
         <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4">
           <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center gap-5 relative">
@@ -569,7 +659,7 @@ export default function UserRooms() {
                 }`}
               />
               {privateCodeErr && (
-                <p className="font-pixel text-sm text-[#A53914] text-center mt-0.5">
+                <p className="font-pixel text-[18px] sm:text-[20px] text-[#A53914] text-center mt-0.5">
                   ✘ {privateCodeErr}
                 </p>
               )}
@@ -596,20 +686,21 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* ==================== 2. CREATE ROOM MODAL ==================== */}
+      {/* CREATE ROOM MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-6">
-            <div className="flex items-center justify-center relative pb-2">
+          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-5">
+            <div className="flex items-center justify-center relative pb-1">
               <h3 className="font-pressstart text-[14px] text-[#E87339] tracking-wide">
                 CREATE A ROOM
               </h3>
             </div>
 
-            <div className="flex flex-col gap-5">
-              <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-4">
+              {/* 1. ROOM NAME */}
+              <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="font-pressstart text-[10px] text-[#3D2013]">ROOM NAME</label>
+                  <label className="font-pressstart text-[9px] text-[#3D2013]">ROOM NAME</label>
                   <span className="font-pressstart text-[8px] text-[#3D2013]/60">
                     {newRoomName.length}/{MAX_ROOM_NAME_LENGTH}
                   </span>
@@ -620,12 +711,64 @@ export default function UserRooms() {
                   maxLength={MAX_ROOM_NAME_LENGTH}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   placeholder="Enter room name..."
-                  className="w-full bg-theme-muted border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
+                  className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
                 />
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="font-pressstart text-[10px] text-[#3D2013]">PRIVACY</label>
+              {/* 2. COURSE (SEARCHABLE DROPDOWN & TYPABLE) */}
+              <div className="flex flex-col gap-1.5 relative" ref={courseDropdownRef}>
+                <label className="font-pressstart text-[9px] text-[#3D2013]">COURSE</label>
+                <div className="relative w-full">
+                  <input
+                    type="text"
+                    value={newRoomCourse}
+                    onFocus={() => setIsCourseDropdownOpen(true)}
+                    onChange={(e) => {
+                      setNewRoomCourse(e.target.value);
+                      setIsCourseDropdownOpen(true);
+                    }}
+                    placeholder="Type or select a course..."
+                    className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] pl-3 pr-8 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsCourseDropdownOpen((prev) => !prev)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#3D2013] hover:text-[#E87339] cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m6 9l6 6l6-6" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* DROPDOWN MENU */}
+                {isCourseDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] shadow-xl max-h-40 overflow-y-auto">
+                    {filteredCourseOptions.length > 0 ? (
+                      filteredCourseOptions.map((courseOption, index) => (
+                        <div
+                          key={index}
+                          onClick={() => {
+                            setNewRoomCourse(courseOption);
+                            setIsCourseDropdownOpen(false);
+                          }}
+                          className="px-3 py-2 font-pressstart text-[8px] text-[#3D2013] hover:bg-[#FAE9CE] hover:text-[#E87339] cursor-pointer border-b border-[#3D2013]/10 last:border-none"
+                        >
+                          {courseOption}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 font-pressstart text-[8px] text-[#3D2013]/60">
+                        Use custom: "{newRoomCourse}"
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 3. PRIVACY */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-pressstart text-[9px] text-[#3D2013]">PRIVACY</label>
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -653,15 +796,14 @@ export default function UserRooms() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="font-pressstart text-[10px] text-[#3D2013]">
-                  MAXIMUM MEMBERS
-                </label>
+              {/* 4. MAXIMUM MEMBERS */}
+              <div className="flex flex-col gap-1.5">
+                <label className="font-pressstart text-[9px] text-[#3D2013]">MAXIMUM MEMBERS</label>
                 <div className="relative flex items-center">
                   <select
                     value={newRoomMaxMembers}
                     onChange={(e) => setNewRoomMaxMembers(e.target.value)}
-                    className="w-full bg-theme-muted border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] focus:outline-none cursor-pointer appearance-none"
+                    className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] focus:outline-none cursor-pointer appearance-none"
                   >
                     <option value="" disabled>
                       Select maximum members
@@ -708,14 +850,12 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* ==================== 3. ROOM LIMIT MODAL ==================== */}
+      {/* ROOM LIMIT MODAL */}
       {showLimitModal && (
         <div className="fixed inset-0 bg-[#3D2013]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
             <div className="flex items-center justify-between border-b border-[#3D2013]/20 pb-3">
-              <span className="font-pressstart text-[11px] text-[#A53914] uppercase">
-                LIMIT REACHED
-              </span>
+              <span className="font-pressstart text-[11px] text-[#A53914] uppercase">LIMIT REACHED</span>
               <button
                 onClick={() => setShowLimitModal(false)}
                 className="font-pressstart text-[12px] text-[#3D2013] hover:text-[#E87339] cursor-pointer"
@@ -743,7 +883,7 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* ==================== 4. STATISTICS MODAL ==================== */}
+      {/* STATISTICS MODAL */}
       {showStatsModal && selectedStatsRoom && (
         <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
@@ -754,6 +894,13 @@ export default function UserRooms() {
             </div>
 
             <div className="flex flex-col gap-4 font-pressstart text-[9px] text-[#3D2013]">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
+                <span className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013]">COURSE</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-[#E87339]">
+                  {selectedStatsRoom.course || 'General Studies'}
+                </span>
+              </div>
+
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
                 <span className="font-pixel text-[20px] text-[#3D2013]">STUDY TECHNIQUE</span>
                 <span className="font-pixel text-[20px] text-[#3D2013]">
@@ -832,7 +979,7 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* ==================== 5. REQUEST TO JOIN MODAL ==================== */}
+      {/* REQUEST TO JOIN MODAL */}
       {showRequestModal && (
         <div className="fixed inset-0 bg-[#3D2013]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
@@ -888,10 +1035,14 @@ export default function UserRooms() {
                 onClick={() => {
                   setShowRequestModal(false);
                   if (pendingJoinRoom) {
-                    if (pendingJoinRoom.currentMembers < pendingJoinRoom.maxMembers) {
-                      pendingJoinRoom.currentMembers += 1;
-                    }
-                    enterRoomSession(pendingJoinRoom);
+                    const activeSessionRoom = {
+                      ...pendingJoinRoom,
+                      currentMembers: Math.min(
+                        pendingJoinRoom.currentMembers + 1,
+                        pendingJoinRoom.maxMembers
+                      ),
+                    };
+                    enterRoomSession(activeSessionRoom);
                   }
                 }}
                 className="font-pressstart text-[10px] text-[#FFFFF6] bg-green-600 border-[2px] border-[#3D2013] py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"

@@ -12,6 +12,7 @@ export function useTimer() {
   const [tasksList, setTasksList] = useState([]);
   const [isWidgetFloating, setIsWidgetFloating] = useState(false);
   const [isWidgetFullscreen, setIsWidgetFullscreen] = useState(false);
+  const [isPipActive, setIsPipActive] = useState(false);
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [dailyFocusFormatted, setDailyFocusFormatted] = useState('0h 0m');
 
@@ -90,42 +91,46 @@ export function useTimer() {
   }, [calculateDailyFocusText]);
 
   // Record focus/break duration
-  const recordCompletedSession = useCallback((durationSec, type) => {
-    const today = new Date().toISOString().split('T')[0];
-    const lastDate = localStorage.getItem('tracker_date');
+  const recordCompletedSession = useCallback(
+    (durationSec, type) => {
+      const today = new Date().toISOString().split('T')[0];
+      const lastDate = localStorage.getItem('tracker_date');
 
-    if (lastDate !== today) {
-      localStorage.setItem('tracker_date', today);
-      localStorage.setItem('daily_focus_seconds', '0');
-      localStorage.setItem('daily_break_seconds', '0');
-    }
-
-    if (type === 'focus') {
-      const dailyFocus = parseNum(localStorage.getItem('daily_focus_seconds'), 0);
-      const newDailyFocus = dailyFocus + durationSec;
-
-      localStorage.setItem('daily_focus_seconds', newDailyFocus.toString());
-
-      if (addFocusTime) {
-        addFocusTime(durationSec);
+      if (lastDate !== today) {
+        localStorage.setItem('tracker_date', today);
+        localStorage.setItem('daily_focus_seconds', '0');
+        localStorage.setItem('daily_break_seconds', '0');
       }
 
-      const hrs = Math.floor(newDailyFocus / 3600);
-      const mins = Math.floor((newDailyFocus % 3600) / 60);
-      setDailyFocusFormatted(`${hrs}h ${mins}m`);
-    } else {
-      const dailyBreak = parseNum(localStorage.getItem('daily_break_seconds'), 0);
-      const totalBreak = parseNum(localStorage.getItem('total_break_seconds'), 0);
+      if (type === 'focus') {
+        const dailyFocus = parseNum(localStorage.getItem('daily_focus_seconds'), 0);
+        const newDailyFocus = dailyFocus + durationSec;
 
-      localStorage.setItem('daily_break_seconds', (dailyBreak + durationSec).toString());
-      localStorage.setItem('total_break_seconds', (totalBreak + durationSec).toString());
-    }
-  }, [addFocusTime]);
+        localStorage.setItem('daily_focus_seconds', newDailyFocus.toString());
 
-const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
+        if (addFocusTime) {
+          addFocusTime(durationSec);
+        }
+
+        const hrs = Math.floor(newDailyFocus / 3600);
+        const mins = Math.floor((newDailyFocus % 3600) / 60);
+        setDailyFocusFormatted(`${hrs}h ${mins}m`);
+      } else {
+        const dailyBreak = parseNum(localStorage.getItem('daily_break_seconds'), 0);
+        const totalBreak = parseNum(localStorage.getItem('total_break_seconds'), 0);
+
+        localStorage.setItem('daily_break_seconds', (dailyBreak + durationSec).toString());
+        localStorage.setItem('total_break_seconds', (totalBreak + durationSec).toString());
+      }
+    },
+    [addFocusTime]
+  );
+
+  const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
     try {
-      // 1. Array-based history log
-      const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+      const existingHistory = JSON.parse(
+        localStorage.getItem('completed_sessions_history') || '[]'
+      );
       const finishedEntry = {
         id: Date.now(),
         workType: sessionObj.workType || 'General Work',
@@ -139,26 +144,22 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
       existingHistory.unshift(finishedEntry);
       localStorage.setItem('completed_sessions_history', JSON.stringify(existingHistory));
 
-      // 2. Calendar Activities grouped by date (YYYY-MM-DD)
       const todayKey = new Date().toISOString().split('T')[0];
-      
       const singleFocusMins = parseNum(sessionObj.focusTime, 25);
       const rounds = parseNum(sessionObj.sessionCount, 1);
-      
+
       const totalFocusMins = singleFocusMins * rounds;
       const focusHrs = Math.floor(totalFocusMins / 60);
       const focusRemMins = totalFocusMins % 60;
 
-      // --- FORMAT MATCHING YOUR MOCK DATA ---
       let formattedDuration = '';
       if (focusHrs > 0) {
         const paddedMins = String(focusRemMins).padStart(2, '0');
-        formattedDuration = `${focusHrs}h ${paddedMins}m`; // e.g., '1h 00m' or '1h 30m'
+        formattedDuration = `${focusHrs}h ${paddedMins}m`;
       } else {
-        formattedDuration = `${focusRemMins}m`; // e.g., '45m' or '01m' if padded: `${String(focusRemMins).padStart(2, '0')}m`
+        formattedDuration = `${focusRemMins}m`;
       }
 
-      // Capitalize activity name for consistency with mock data
       const rawName = sessionObj.workType || 'Reading';
       const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
 
@@ -168,7 +169,6 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
         technique: sessionObj.techniqueName || 'Pomodoro',
       };
 
-      // Instantly push to PlayerContext & localStorage
       if (addUserActivity) {
         addUserActivity(todayKey, newActivity);
       }
@@ -215,7 +215,6 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
         if (nextCount >= totalSessions) {
           saveFinishedSessionToHistory(activeSession, tasksList);
 
-          // Inflate total sessions count in PlayerContext
           if (incrementTotalSessions) {
             incrementTotalSessions(totalSessions);
           }
@@ -223,6 +222,10 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
           localStorage.removeItem('activeSession');
           setActiveSession(null);
           setShowRewardModal(true);
+
+          if (pipWindowRef.current && !pipWindowRef.current.closed) {
+            pipWindowRef.current.close();
+          }
         } else {
           setIsFocusPhase(true);
           setRemainingTimeSec(focusSecs);
@@ -256,23 +259,61 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
       localStorage.removeItem('activeSession');
       setIsWidgetFloating(false);
       setIsWidgetFullscreen(false);
+      setIsPipActive(false);
+
+      if (pipWindowRef.current && !pipWindowRef.current.closed) {
+        pipWindowRef.current.close();
+      }
     }
   };
 
   const closeRewardModal = () => setShowRewardModal(false);
 
-  const toggleDocumentPiP = async (cardElement) => {
+  // Sync state updates to open PiP window
+  useEffect(() => {
+    if (pipWindowRef.current && !pipWindowRef.current.closed) {
+      const pipDoc = pipWindowRef.current.document;
+
+      const timerDisplay = pipDoc.querySelector('[data-pip-element="timer-display"]');
+      if (timerDisplay) {
+        const mins = Math.floor(remainingTimeSec / 60);
+        const secs = remainingTimeSec % 60;
+        timerDisplay.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+
+      const phaseText = pipDoc.querySelector('[data-pip-element="phase-text"]');
+      if (phaseText) {
+        phaseText.textContent = isFocusPhase ? 'FOCUS PHASE' : 'BREAK PHASE';
+      }
+
+      const guideText = pipDoc.querySelector('[data-pip-element="guide-text"]');
+      if (guideText) {
+        if (isTimerRunning) {
+          guideText.textContent = 'Go back to the webpage to pause the timer.';
+        } else if (!isFocusPhase) {
+          guideText.textContent = 'It\'s break time! Go back to the webpage to start the break timer.';
+        } else {
+          guideText.textContent = 'Go back to the webpage to start the focus timer.';
+        }
+      }
+    }
+  }, [remainingTimeSec, isTimerRunning, isFocusPhase]);
+
+  const toggleDocumentPiP = async () => {
     if (pipWindowRef.current && !pipWindowRef.current.closed) {
       pipWindowRef.current.close();
       pipWindowRef.current = null;
+      setIsPipActive(false);
       return;
     }
 
-    if ('documentPictureInPicture' in window && cardElement) {
-      try {
-        const parent = cardElement.parentElement;
-        const nextSib = cardElement.nextSibling;
+    if (isWidgetFloating) {
+      setIsWidgetFloating(false);
+      return;
+    }
 
+    if ('documentPictureInPicture' in window && activeSession) {
+      try {
         const pipWin = await window.documentPictureInPicture.requestWindow({
           width: 380,
           height: 320,
@@ -293,26 +334,86 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
           }
         });
 
+        const focusMins = activeSession.focusTime || 25;
+        const breakMins = activeSession.breakTime || 5;
+        const workType = activeSession.workType || 'GENERAL WORK';
+        const techniqueName = activeSession.techniqueName || 'Technique';
+
+        const mins = Math.floor(remainingTimeSec / 60);
+        const secs = remainingTimeSec % 60;
+        const initialTimerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        const initialPhaseText = isFocusPhase ? 'FOCUS PHASE' : 'BREAK PHASE';
+
+        let initialGuideText = 'Go back to the webpage to start the focus timer.';
+        if (isTimerRunning) {
+          initialGuideText = 'Go back to the webpage to pause the timer.';
+        } else if (!isFocusPhase) {
+          initialGuideText = 'It\'s break time! Go back to the webpage to start the break timer.';
+        }
+
         pipWin.document.body.className =
-          'bg-[#FAE9CE] p-3 flex flex-col justify-center items-center h-full m-0 overflow-hidden';
-        pipWin.document.body.appendChild(cardElement);
+          'bg-[#FAE9CE] p-3 flex flex-col justify-center items-center h-full m-0 overflow-hidden font-sans';
+
+        pipWin.document.body.innerHTML = `
+          <div class="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 shadow-md flex flex-col justify-between gap-3 w-full h-full box-border">
+            <div class="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
+              <div class="flex items-center gap-2">
+                <span class="font-pressstart text-[8px] text-[#FEF4E0] bg-[#E87339] border border-[#3D2013] px-2 py-0.5 uppercase">
+                  ${workType}
+                </span>
+                <span class="font-pressstart text-[8px] text-[#3D2013] opacity-80">
+                  ${techniqueName}
+                </span>
+              </div>
+            </div>
+
+            <div class="flex flex-col items-center justify-center text-center my-1">
+              <span data-pip-element="phase-text" class="font-pressstart text-[10px] text-[#E87339] tracking-wider uppercase mb-1">
+                ${initialPhaseText}
+              </span>
+              <div data-pip-element="timer-display" class="font-pressstart text-[36px] text-[#3D2013] tracking-tighter drop-shadow-sm">
+                ${initialTimerText}
+              </div>
+            </div>
+
+            <div class="bg-[#FAE9CE] border border-[#3D2013]/30 p-2 rounded text-center">
+              <p data-pip-element="guide-text" class="font-pixel text-[13px] text-[#3D2013] leading-snug m-0">
+                ${initialGuideText}
+              </p>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 border-t border-[#3D2013]/20 pt-2 text-center">
+              <div class="flex items-center justify-center gap-1">
+                <span class="font-pressstart text-[9px] text-[#3D2013]">${focusMins}m</span>
+                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">FOCUS</span>
+              </div>
+              <div class="flex items-center justify-center gap-1 border-x border-[#3D2013]/20 px-1">
+                <span class="font-pressstart text-[9px] text-[#3D2013]">${breakMins}m</span>
+                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">BREAK</span>
+              </div>
+              <div class="flex items-center justify-center gap-1">
+                <span class="font-pressstart text-[9px] text-[#3D2013]">${currentSessionCount}/${totalSessions}</span>
+                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">SESSIONS</span>
+              </div>
+            </div>
+          </div>
+        `;
 
         pipWin.addEventListener('pagehide', () => {
-          if (parent) {
-            if (nextSib) parent.insertBefore(cardElement, nextSib);
-            else parent.appendChild(cardElement);
-          }
           pipWindowRef.current = null;
-          setIsWidgetFloating(false);
+          setIsPipActive(false);
         });
 
-        setIsWidgetFloating(true);
+        setIsPipActive(true);
+        setIsWidgetFloating(false);
       } catch (err) {
-        console.error('PiP Error:', err);
-        setIsWidgetFloating((prev) => !prev);
+        console.error('PiP unsupported/blocked. Fallback to floating widget:', err);
+        setIsPipActive(false);
+        setIsWidgetFloating(true);
       }
     } else {
-      setIsWidgetFloating((prev) => !prev);
+      setIsPipActive(false);
+      setIsWidgetFloating(true);
     }
   };
 
@@ -328,6 +429,7 @@ const saveFinishedSessionToHistory = (sessionObj, completedTasks) => {
     tasksList,
     isWidgetFloating,
     isWidgetFullscreen,
+    isPipActive,
     showRewardModal,
     dailyFocusFormatted,
     closeRewardModal,
