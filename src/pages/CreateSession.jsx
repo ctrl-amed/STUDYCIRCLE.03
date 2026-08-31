@@ -174,14 +174,14 @@ export default function CreateSession() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAE9CE] text-[#3D2013] flex flex-col relative overflow-x-hidden">
+    <div className="min-h-screen bg-theme-muted text-theme-dark flex flex-col relative overflow-x-hidden">
       {/* HEADER WITH CLOSE BUTTON */}
       <header className="relative z-20 pt-3 sm:pt-6 px-4 sm:px-6 w-full max-w-7xl mx-auto flex items-center justify-end shrink-0">
         <button
           type="button"
           onClick={handleClose}
           title="Close and Go Back"
-          className="w-8 h-8 sm:w-10 sm:h-10 bg-[#FEF4E0] border-[2px] md:border-[3px] border-[#3D2013] text-[#3D2013] hover:bg-[#E87339] hover:text-[#FFFFF6] transition-all duration-150 retro-shadow cursor-pointer flex items-center justify-center shrink-0 rounded-full"
+          className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-surface border-[2px] md:border-[3px] border-theme-dark text-theme-dark hover:bg-theme-primary hover:text-[#FFFFF6] transition-all duration-150 retro-shadow cursor-pointer flex items-center justify-center shrink-0 rounded-full"
         >
           <svg className="w-4 h-4 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -221,7 +221,7 @@ export default function CreateSession() {
                   <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
                     WHAT ARE YOU WORKING ON?
                   </h1>
-                  <p className="font-pressstart text-[9px] sm:text-xs text-[#3D2013]/80 mt-2">
+                  <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
                     Choose the type of work you want to focus on.
                   </p>
                 </div>
@@ -232,7 +232,7 @@ export default function CreateSession() {
                       key={opt.id}
                       type="button"
                       onClick={() => setSelectedWorkType(opt.id)}
-                      className={`bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-3 sm:p-6 min-h-[120px] sm:min-h-[180px] text-left flex flex-col transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
+                      className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-3 sm:p-6 min-h-[120px] sm:min-h-[180px] text-left flex flex-col transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
                         selectedWorkType === opt.id
                           ? 'bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
                           : ''
@@ -245,7 +245,7 @@ export default function CreateSession() {
                         <span className="font-pressstart text-[11px] sm:text-[20px] md:text-[24px] block text-[#511B00] leading-none">
                           {opt.label}
                         </span>
-                        <span className="font-pixel text-[13px] sm:text-[16px] md:text-[20px] text-[#3D2013]/70 leading-tight block">
+                        <span className="font-pixel text-[13px] sm:text-[16px] md:text-[20px] text-theme-dark/70 leading-tight block">
                           {opt.desc}
                         </span>
                       </div>
@@ -258,14 +258,14 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={handleClose}
-                  className="font-pressstart text-[10px] bg-[#FEF4E0] border-[2px] border-[#3D2013] px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-[#FEF4E0] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[10px] bg-theme-surface border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>
                 <button
                   type="button"
                   onClick={handleStep1Continue}
-                  className="font-pressstart text-[10px] bg-[#E87339] text-white border-[2px] border-[#3D2013] px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[10px] bg-theme-primary text-white border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   CONTINUE
                 </button>
@@ -281,12 +281,12 @@ export default function CreateSession() {
                   <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
                     WHAT’S YOUR TASK?
                   </h2>
-                  <p className="font-pressstart text-[9px] sm:text-xs text-[#3D2013]/80 mt-2">
+                  <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
                     Tell us what you want to accomplish during this session.
                   </p>
                 </div>
 
-                <div className="bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-4 sm:p-6 flex flex-col h-[280px] sm:h-[320px] max-w-xl mx-auto w-full">
+                <div className="bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-6 flex flex-col h-[280px] sm:h-[320px] max-w-xl mx-auto w-full">
                   <div className="flex items-center gap-2 mb-3 shrink-0">
                     <span className="text-lg sm:text-xl block text-[#E16F37]">✏️</span>
                     <label className="font-pressstart text-[11px] sm:text-[13px] text-[#511B00] block">
@@ -296,7 +296,7 @@ export default function CreateSession() {
 
                   <div className="flex flex-col gap-2.5 flex-1 overflow-y-auto pr-1 min-h-0">
                     {draftTasks.length === 0 ? (
-                      <p className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013]/60 italic py-2">
+                      <p className="font-pressstart text-[8px] sm:text-[9px] text-theme-dark/60 italic py-2">
                         No tasks added yet. Click "+ Add Task" below to start!
                       </p>
                     ) : (
@@ -307,13 +307,13 @@ export default function CreateSession() {
                             value={taskText}
                             onChange={(e) => updateDraftTaskRow(index, e.target.value)}
                             placeholder="Enter task item..."
-                            className="flex-1 bg-[#FEF4E0] text-[#3D2013] border-[2px] border-[#3D2013] p-2 font-pressstart text-[8px] sm:text-[9px] focus:outline-none focus:bg-[#FFFFFF] placeholder-[#3D2013]/40 transition-colors"
+                            className="flex-1 bg-theme-surface text-theme-dark border-[2px] border-theme-dark p-2 font-pressstart text-[8px] sm:text-[9px] focus:outline-none focus:bg-[#FFFFFF] placeholder-[#3D2013]/40 transition-colors"
                           />
                           <button
                             type="button"
                             onClick={() => deleteDraftTaskRow(index)}
                             title="Delete Task"
-                            className="w-6 h-6 bg-[#A53914] border-[2px] border-[#482A1D] flex items-center justify-center text-[#FEF4E0] font-pressstart text-[10px] hover:brightness-110 active:scale-90 cursor-pointer shrink-0"
+                            className="w-6 h-6 bg-theme-danger border-[2px] border-[#482A1D] flex items-center justify-center text-theme-surface font-pressstart text-[10px] hover:brightness-110 active:scale-90 cursor-pointer shrink-0"
                           >
                             ✕
                           </button>
@@ -325,7 +325,7 @@ export default function CreateSession() {
                   <button
                     type="button"
                     onClick={addDraftTaskRow}
-                    className="self-start w-auto bg-[#97B591] text-[#3D2013] border-[2px] border-[#3D2013] px-4 py-2 font-pressstart text-[9px] sm:text-[10px] cursor-pointer transition-all duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] flex items-center justify-center gap-1.5 mt-3 shrink-0"
+                    className="self-start w-auto bg-[#97B591] text-theme-dark border-[2px] border-theme-dark px-4 py-2 font-pressstart text-[9px] sm:text-[10px] cursor-pointer transition-all duration-150 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] flex items-center justify-center gap-1.5 mt-3 shrink-0"
                   >
                     + Add Task
                   </button>
@@ -336,14 +336,14 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(1)}
-                  className="font-pressstart text-[10px] bg-[#FEF4E0] border-[2px] border-[#3D2013] px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-[#FEF4E0] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[10px] bg-theme-surface border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>
                 <button
                   type="button"
                   onClick={handleStep2Continue}
-                  className="font-pressstart text-[10px] bg-[#E87339] text-white border-[2px] border-[#3D2013] px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[10px] bg-theme-primary text-white border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   CONTINUE
                 </button>
@@ -359,7 +359,7 @@ export default function CreateSession() {
                   <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
                     RECOMMENDED FOR YOU
                   </h2>
-                  <p className="font-pressstart text-[9px] sm:text-xs text-[#3D2013]/80 mt-2">
+                  <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
                     Today’s study plan strategy.
                   </p>
                 </div>
@@ -369,7 +369,7 @@ export default function CreateSession() {
                   <button
                     type="button"
                     onClick={() => setSelectedTechnique('recommended')}
-                    className={`bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3 transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
+                    className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3 transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
                       selectedTechnique === 'recommended'
                         ? 'ring-2 ring-[#E87339] bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
                         : ''
@@ -378,10 +378,10 @@ export default function CreateSession() {
                     <div className="font-pressstart text-[30px] sm:text-[40px] leading-snug tracking-wide bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent">
                       STUDY TECHNIQUE
                     </div>
-                    <div className="w-full h-[1px] bg-[#3D2013]/20" />
+                    <div className="w-full h-[1px] bg-theme-dark/20" />
                     <div className="w-full grid grid-cols-3 items-center justify-center divide-x divide-[#3D2013]/20">
                       <div className="flex items-center justify-center gap-3 px-1">
-                        <span className="text-[#E87339] text-2xl">⏱</span>
+                        <span className="text-theme-primary text-2xl">⏱</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
                             {mockRecommendedData.focus}m
@@ -392,7 +392,7 @@ export default function CreateSession() {
                         </div>
                       </div>
                       <div className="flex items-center justify-center gap-3 px-1">
-                        <span className="text-[#E87339] text-2xl">☕</span>
+                        <span className="text-theme-primary text-2xl">☕</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
                             {mockRecommendedData.break}m
@@ -403,7 +403,7 @@ export default function CreateSession() {
                         </div>
                       </div>
                       <div className="flex items-center justify-center gap-3 px-1">
-                        <span className="text-[#E87339] text-2xl">🎯</span>
+                        <span className="text-theme-primary text-2xl">🎯</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
                             {mockRecommendedData.number_session}
@@ -417,7 +417,7 @@ export default function CreateSession() {
                   </button>
 
                   <div className="pt-2">
-                    <h3 className="font-pressstart text-[10px] sm:text-[11px] text-[#3D2013] text-left">
+                    <h3 className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark text-left">
                       OTHER OPTIONS
                     </h3>
                   </div>
@@ -432,7 +432,7 @@ export default function CreateSession() {
                         key={item.key}
                         type="button"
                         onClick={() => setSelectedTechnique(item.key)}
-                        className={`bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-4 text-left flex flex-col justify-between transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
+                        className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 text-left flex flex-col justify-between transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] ${
                           selectedTechnique === item.key
                             ? 'bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
                             : ''
@@ -441,7 +441,7 @@ export default function CreateSession() {
                         <div className="font-pressstart text-[10px] sm:text-[11px] text-[#511B00] leading-snug uppercase">
                           {item.title}
                         </div>
-                        <div className="text-[15px] sm:text-[20px] font-pixel text-[#3D2013]/70 mt-2">
+                        <div className="text-[15px] sm:text-[20px] font-pixel text-theme-dark/70 mt-2">
                           {item.sub}
                         </div>
                       </button>
@@ -451,7 +451,7 @@ export default function CreateSession() {
 
                 {selectedTechnique !== 'recommended' && (
                   <div className="pt-2 max-w-2xl mx-auto w-full">
-                    <label className="block font-pressstart text-[9px] sm:text-[10px] text-[#3D2013] mb-1.5">
+                    <label className="block font-pressstart text-[9px] sm:text-[10px] text-theme-dark mb-1.5">
                       Enter number of sessions:
                     </label>
                     <input
@@ -459,7 +459,7 @@ export default function CreateSession() {
                       min="1"
                       value={customSessionCount}
                       onChange={(e) => setCustomSessionCount(e.target.value)}
-                      className="w-full sm:w-1/2 bg-[#FEF4E0] rounded-[8px] border-[1px] border-[#3D2013] px-3.5 py-2 font-pressstart text-[9px] sm:text-[10px] text-[#3D2013] outline-none"
+                      className="w-full sm:w-1/2 bg-theme-surface rounded-[8px] border-[1px] border-theme-dark px-3.5 py-2 font-pressstart text-[9px] sm:text-[10px] text-theme-dark outline-none"
                     />
                   </div>
                 )}
@@ -469,14 +469,14 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(2)}
-                  className="font-pressstart text-[8px] sm:text-[10px] bg-[#FEF4E0] text-[#511B00] border-[2px] border-[#3D2013] px-5 py-3 w-fit text-center cursor-pointer hover:bg-[#FEF4E0] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-[#511B00] border-[2px] border-theme-dark px-5 py-3 w-fit text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>
                 <button
                   type="button"
                   onClick={() => setCurrentStep(4)}
-                  className="font-pressstart text-[7px] sm:text-[10px] bg-[#E87339] text-white border-[2px] border-[#3D2013] px-4 sm:px-6 py-3 w-fit text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[7px] sm:text-[10px] bg-theme-primary text-white border-[2px] border-theme-dark px-4 sm:px-6 py-3 w-fit text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   {selectedTechnique === 'recommended' ? 'USE RECOMMENDATION' : 'CONTINUE WITH THIS TECHNIQUE'}
                 </button>
@@ -492,18 +492,18 @@ export default function CreateSession() {
                   <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
                     REVIEW YOUR SESSION
                   </h1>
-                  <p className="font-pressstart text-[9px] sm:text-xs text-[#3D2013]/80 mt-2">
+                  <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
                     Double-check your study session details before starting.
                   </p>
                 </div>
 
-                <div className="bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-4 sm:p-6 space-y-4 text-xs sm:text-sm">
+                <div className="bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-6 space-y-4 text-xs sm:text-sm">
                   {/* WORK TYPE REVIEW */}
-                  <div className="border-b border-[#3D2013]/20 pb-3 text-center">
-                    <span className="block font-pressstart uppercase text-[8px] sm:text-[10px] text-[#3D2013]/60 mb-1">
+                  <div className="border-b border-theme-dark/20 pb-3 text-center">
+                    <span className="block font-pressstart uppercase text-[8px] sm:text-[10px] text-theme-dark/60 mb-1">
                       Focus Type
                     </span>
-                    <span className="font-pixel text-[40px] sm:text-[50px] font-bold text-[#E87339] uppercase">
+                    <span className="font-pixel text-[40px] sm:text-[50px] font-bold text-theme-primary uppercase">
                       {selectedWorkType || 'GENERAL'}
                     </span>
                   </div>
@@ -512,14 +512,14 @@ export default function CreateSession() {
                   {(() => {
                     const review = getReviewDetails();
                     return (
-                      <div className="bg-[#FEF4E0] rounded-[12px] border-[1px] border-[#3D2013] p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3">
+                      <div className="bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3">
                         <div className="font-pressstart text-[18px] sm:text-[24px] leading-snug tracking-wide bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent uppercase">
                           {review.title}
                         </div>
-                        <div className="w-full h-[1px] bg-[#3D2013]/20" />
+                        <div className="w-full h-[1px] bg-theme-dark/20" />
                         <div className="w-full grid grid-cols-3 items-center justify-center divide-x divide-[#3D2013]/20">
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
-                            <span className="text-[#E87339] text-xl">⏱</span>
+                            <span className="text-theme-primary text-xl">⏱</span>
                             <div className="flex flex-col text-left">
                               <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
                                 {review.focus}m
@@ -530,7 +530,7 @@ export default function CreateSession() {
                             </div>
                           </div>
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
-                            <span className="text-[#E87339] text-xl">☕</span>
+                            <span className="text-theme-primary text-xl">☕</span>
                             <div className="flex flex-col text-left">
                               <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
                                 {review.break}m
@@ -541,7 +541,7 @@ export default function CreateSession() {
                             </div>
                           </div>
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
-                            <span className="text-[#E87339] text-xl">🎯</span>
+                            <span className="text-theme-primary text-xl">🎯</span>
                             <div className="flex flex-col text-left">
                               <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
                                 {review.sessions}
@@ -558,7 +558,7 @@ export default function CreateSession() {
 
                   {/* CHECKLIST ITEMS */}
                   <div>
-                    <span className="block font-pressstart uppercase text-[8px] sm:text-[10px] text-[#3D2013]/60 mb-2">
+                    <span className="block font-pressstart uppercase text-[8px] sm:text-[10px] text-theme-dark/60 mb-2">
                       Checklist Items
                     </span>
                     <ul className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 font-pixel text-[13px] sm:text-[16px] text-[#511B00]">
@@ -567,9 +567,9 @@ export default function CreateSession() {
                         .map((task, idx) => (
                           <li
                             key={idx}
-                            className="bg-[#FEF4E0] border border-[#3D2013] px-2.5 py-1.5 font-bold text-[#3D2013] flex items-center gap-2"
+                            className="bg-theme-surface border border-theme-dark px-2.5 py-1.5 font-bold text-theme-dark flex items-center gap-2"
                           >
-                            <span className="w-2 h-2 bg-[#E87339] border border-[#3D2013] shrink-0" />
+                            <span className="w-2 h-2 bg-theme-primary border border-theme-dark shrink-0" />
                             <span>{task}</span>
                           </li>
                         ))}
@@ -582,14 +582,14 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(3)}
-                  className="font-pressstart text-[8px] sm:text-[10px] bg-[#FEF4E0] text-[#511B00] border-[2px] border-[#3D2013] px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-[#FEF4E0] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-[#511B00] border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmSession}
-                  className="font-pressstart text-[7px] sm:text-[10px] bg-[#E87339] text-white border-[2px] border-[#3D2013] px-4 sm:px-6 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[7px] sm:text-[10px] bg-theme-primary text-white border-[2px] border-theme-dark px-4 sm:px-6 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:opacity-90 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   CREATE SESSION
                 </button>

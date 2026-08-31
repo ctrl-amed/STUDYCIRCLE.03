@@ -100,7 +100,7 @@ export function LoadingProvider({ children }) {
       {isVisible && (
         <div
           className={`fixed inset-0 flex flex-col items-center justify-center z-50 select-none transition-colors duration-300 ${
-            isAdmin ? 'bg-[#3D2013]' : 'bg-[#FBF2E3]'
+            isAdmin ? 'bg-theme-dark' : 'bg-[#FBF2E3]'
           }`}
         >
           {/* Line texture layer */}
@@ -135,7 +135,7 @@ export function LoadingProvider({ children }) {
             {/* Title */}
             <h1
               className={`font-pixel text-4xl tracking-wide mb-2 drop-shadow-[2px_2px_0px_rgba(232,115,57,0.4)] ${
-                isAdmin ? 'text-[#FBF2E3]' : 'text-[#3D2013]'
+                isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'
               }`}
             >
               StudyCircle
@@ -144,7 +144,7 @@ export function LoadingProvider({ children }) {
             {/* Dynamic Status Subtitle */}
             <p
               className={`font-pixel text-xs tracking-widest uppercase mb-8 ${
-                isAdmin ? 'text-[#FD923E]' : 'text-[#E87339]'
+                isAdmin ? 'text-[#FD923E]' : 'text-theme-primary'
               }`}
             >
               ◆ {statusText} ◆
@@ -155,11 +155,11 @@ export function LoadingProvider({ children }) {
               className={`w-full max-w-xs border-4 p-1 ${
                 isAdmin
                   ? 'border-[#FBF2E3] bg-[#2A160D] shadow-[4px_4px_0px_#FD923E]'
-                  : 'border-[#3D2013] bg-[#F8E9D2] shadow-[4px_4px_0px_#3D2013]'
+                  : 'border-theme-dark bg-[#F8E9D2] shadow-[4px_4px_0px_#3D2013]'
               }`}
             >
               <div
-                className="h-5 bg-[#E87339] transition-all duration-200 ease-out"
+                className="h-5 bg-theme-primary transition-all duration-200 ease-out"
                 style={{ width: `${Math.round(progress)}%` }}
               />
             </div>
@@ -167,7 +167,7 @@ export function LoadingProvider({ children }) {
             {/* Retro Bar Footnotes */}
             <div
               className={`w-full max-w-xs flex justify-between font-pixel text-lg mt-1 px-1 ${
-                isAdmin ? 'text-[#FBF2E3]' : 'text-[#3D2013]'
+                isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'
               }`}
             >
               <span>LOADING</span>
@@ -178,7 +178,7 @@ export function LoadingProvider({ children }) {
             <p
               className={`font-pixel text-xl italic tracking-wide mt-12 opacity-90 max-w-xs leading-snug transition-opacity duration-300 ${
                 quoteFade ? 'opacity-0' : 'opacity-100'
-              } ${isAdmin ? 'text-[#FBF2E3]' : 'text-[#3D2013]'}`}
+              } ${isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'}`}
             >
               "{currentQuote}"
             </p>

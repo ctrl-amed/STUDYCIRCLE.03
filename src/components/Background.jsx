@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function Background({ children, showLeaves = false }) {
   return (
-    <div className={`bg-[#FAE9CE] min-h-screen relative text-[#3D2013] flex flex-col ${showLeaves ? 'md:h-screen md:overflow-hidden overflow-x-hidden' : ''}`}>
+    <div className={`bg-theme-muted min-h-screen relative text-theme-dark flex flex-col ${showLeaves ? 'md:h-screen md:overflow-hidden overflow-x-hidden' : ''}`}>
       
       {/* 1. DECORATIVE LEAVES LAYER (Only renders if showLeaves={true}) */}
       {showLeaves && (

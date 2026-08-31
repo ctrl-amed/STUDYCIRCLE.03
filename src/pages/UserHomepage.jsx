@@ -642,7 +642,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     {roomData.members.length}/{roomData.maxMembers} MEMBERS
                   </span>
                   <span>|</span>
-                  <span className="text-[#788D55] font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
+                  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
                   <span>|</span>
                   <span className="truncate">{roomData.course}</span>
                 </div>
@@ -720,18 +720,18 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       {isProfileOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className="absolute bottom-[105%] left-1/2 -translate-x-1/2 w-56 sm:w-64 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2.5 shadow-2xl z-50 flex items-center gap-3 cursor-default animate-fade-in"
+                          className="absolute bottom-[105%] left-1/2 -translate-x-1/2 w-56 sm:w-64 bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-2.5 shadow-2xl z-50 flex items-center gap-3 cursor-default animate-fade-in"
                         >
                           <div className="relative shrink-0 flex items-center justify-center">
-                            <div className="w-10 h-10 rounded-full border-[2px] border-[#3D2013] bg-[#FAE9CE] overflow-hidden flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                               <img
                                 src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
                                 alt="Player Avatar"
                                 className="w-full h-full object-cover"
                               />
                             </div>
-                            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-[#3D2013] px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
-                              <span className="font-pressstart text-[8px] text-[#3D2013] font-bold">
+                            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
+                              <span className="font-pressstart text-[8px] text-theme-dark font-bold">
                                 {member.level || 1}
                               </span>
                             </div>
@@ -739,22 +739,22 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
                           <div className="flex-1 min-w-0 flex flex-col gap-1 overflow-hidden">
                             <div className="flex items-center gap-1 min-w-0">
-                              <h2 className="font-pressstart text-[11px] text-[#3D2013] tracking-tight truncate leading-none">
+                              <h2 className="font-pressstart text-[11px] text-theme-dark tracking-tight truncate leading-none">
                                 {member.username}
                               </h2>
                               {member.isHost && (
-                                <span className="bg-[#E87339] text-[#FFFFF6] font-pressstart text-[5px] px-1 py-0.5 rounded shrink-0">
+                                <span className="bg-theme-primary text-[#FFFFF6] font-pressstart text-[5px] px-1 py-0.5 rounded shrink-0">
                                   HOST
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex items-center gap-1 text-[#3D2013]/70">
+                            <div className="flex items-center gap-1 text-theme-dark/70">
                               <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M0 0h24v24H0z" fill="none" />
                                 <path d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10a10 10 0 0 0 10-10A10 10 0 0 0 12 2m4.2 14.2L11 13V7h1.5v5.2l4.5 2.7z" />
                               </svg>
-                              <span className="font-pressstart text-[8px] text-[#3D2013]">
+                              <span className="font-pressstart text-[8px] text-theme-dark">
                                 {member.totalFocusTime || '12h 00m'}
                               </span>
                             </div>
@@ -766,7 +766,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
                                   isFriendRequestSent
                                     ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
-                                    : 'bg-[#E87339] text-[#FFFFF6] border-[#3D2013] hover:bg-[#d0622c]'
+                                    : 'bg-theme-primary text-[#FFFFF6] border-theme-dark hover:bg-[#d0622c]'
                                 }`}
                               >
                                 {isFriendRequestSent ? 'SENT' : '+ ADD'}
@@ -780,7 +780,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 e.stopPropagation();
                                 setActiveProfileId(null);
                               }}
-                              className="font-pressstart text-[8px] text-[#3D2013] hover:text-[#E87339] cursor-pointer p-0.5 leading-none"
+                              className="font-pressstart text-[8px] text-theme-dark hover:text-theme-primary cursor-pointer p-0.5 leading-none"
                               title="Close profile"
                             >
                               ✕
@@ -792,7 +792,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                   e.stopPropagation();
                                   handleKickMember(member.id, member.username);
                                 }}
-                                className="bg-[#A53914] text-[#FFFFF6] font-pressstart text-[6px] px-2 py-1 rounded border border-[#3D2013] hover:bg-red-800 transition-colors cursor-pointer"
+                                className="bg-theme-danger text-[#FFFFF6] font-pressstart text-[6px] px-2 py-1 rounded border border-theme-dark hover:bg-red-800 transition-colors cursor-pointer"
                                 title="Kick player from room"
                               >
                                 KICK
@@ -1106,7 +1106,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   key={member.id || idx}
                   className={`flex items-center justify-between p-2.5 rounded-[8px] border-[1.5px] ${
                     member.isHost 
-                      ? 'bg-[#FEF4E0] border-theme-primary shadow-sm' 
+                      ? 'bg-theme-surface border-theme-primary shadow-sm' 
                       : 'bg-theme-muted/40 border-theme-dark/20'
                   }`}
                 >
@@ -1128,7 +1128,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
                   <span className={`font-pressstart text-[7px] px-2 py-1 rounded border ${
                     member.status === 'IN SESSION'
-                      ? 'bg-[#788D55]/20 text-[#788D55] border-[#788D55]'
+                      ? 'bg-theme-safe/20 text-theme-safe border-theme-safe'
                       : 'bg-theme-dark/10 text-theme-dark/70 border-theme-dark/30'
                   }`}>
                     {member.status}
@@ -1539,32 +1539,32 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       {/* SESSION COMPLETE REWARD MODAL */}
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
-          <div className="bg-[#FEF4E0] border-4 border-[#3D2013] rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short">
             <div className="text-5xl">🎉</div>
             
-            <h3 className="font-pressstart text-[16px] text-[#E87339] uppercase">
+            <h3 className="font-pressstart text-[16px] text-theme-primary uppercase">
               SESSION COMPLETE!
             </h3>
 
-            <p className="font-pixel text-[18px] text-[#3D2013] leading-snug">
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
               Awesome job! You finished all your planned study sessions.
             </p>
 
-            <div className="bg-[#FAE9CE] border-2 border-[#3D2013] p-3 rounded-[8px] w-full flex items-center justify-around">
+            <div className="bg-theme-muted border-2 border-theme-dark p-3 rounded-[8px] w-full flex items-center justify-around">
               <div className="flex flex-col">
-                <span className="font-pressstart text-[12px] text-[#E87339]">+50 XP</span>
-                <span className="font-pixel text-[14px] text-[#3D2013]/70">REWARD</span>
+                <span className="font-pressstart text-[12px] text-theme-primary">+50 XP</span>
+                <span className="font-pixel text-[14px] text-theme-dark/70">REWARD</span>
               </div>
-              <div className="w-[1px] h-8 bg-[#3D2013]/20" />
+              <div className="w-[1px] h-8 bg-theme-dark/20" />
               <div className="flex flex-col">
-                <span className="font-pressstart text-[12px] text-[#E87339]">+10 COINS</span>
-                <span className="font-pixel text-[14px] text-[#3D2013]/70">BONUS</span>
+                <span className="font-pressstart text-[12px] text-theme-primary">+10 COINS</span>
+                <span className="font-pixel text-[14px] text-theme-dark/70">BONUS</span>
               </div>
             </div>
 
             <button
               onClick={timer.closeRewardModal}
-              className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
+              className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-2 border-theme-dark px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
             >
               CLAIM REWARD
             </button>

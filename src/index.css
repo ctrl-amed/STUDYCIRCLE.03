@@ -1,6 +1,18 @@
 @import "tailwindcss";
 
 /* ========================================================= */
+/* TAILWIND V4 THEME CONFIGURATION (Enables /10, /50 Opacities) */
+/* ========================================================= */
+@theme {
+  --color-theme-primary: #E87339;
+  --color-theme-dark: #3D2013;
+  --color-theme-surface: #FEF4E0;
+  --color-theme-muted: #FAE9CE;
+  --color-theme-danger: #A53914;
+  --color-theme-safe: #788D55;
+}
+
+/* ========================================================= */
 /* COLOR PALETTE & THEME VARIABLES                           */
 /* ========================================================= */
 :root {
@@ -57,16 +69,24 @@
 .text-theme-danger { color: var(--color-danger); }
 .text-theme-safe { color: var(--color-safe); }
 .text-theme-surface { color: var(--color-surface); }
+.text-theme-muted { color: var(--color-muted); }
+
 
 .border-theme-dark { border-color: var(--color-dark); }
 .border-theme-safe { border-color: var(--color-safe); }
 .border-theme-surface { border-color: var(--color-surface); }
+.border-theme-danger { border-color: var(--color-danger); }
+.border-theme-muted { border-color: var(--color-muted); }
+.border-theme-primary { border-color: var(--color-primary); }
+
 
 .bg-theme-surface { background-color: var(--color-surface); }
 .bg-theme-muted { background-color: var(--color-surface-muted); }
 .bg-theme-primary { background-color: var(--color-primary); }
 .bg-theme-danger { background-color: var(--color-danger); }
 .bg-theme-safe { background-color: var(--color-safe); }
+.bg-theme-dark { background-color: var(--color-dark); }
+
 
 .card-highlight {
   background: var(--gradient-highlight-card);

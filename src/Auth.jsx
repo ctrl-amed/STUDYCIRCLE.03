@@ -537,16 +537,17 @@ export default function Auth() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 h-[2px] bg-theme-dark" />
-                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
-                  <div className="flex-1 h-[2px] bg-theme-dark" />
-                </div>
+{/* OR DIVIDER WITH DASHED LINES */}
+<div className="flex items-center gap-2 my-1">
+  <div className="flex-1 border-t-2 border-theme-dark" />
+  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
+  <div className="flex-1 border-t-2 border-theme-dark" />
+</div>
 
                 <button
                   type="button"
                   onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-[#FEF4E0] border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -702,16 +703,17 @@ export default function Auth() {
                   SIGN UP
                 </button>
 
-                <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 h-[2px] bg-theme-dark" />
-                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
-                  <div className="flex-1 h-[2px] bg-theme-dark" />
-                </div>
+{/* OR DIVIDER WITH DASHED LINES */}
+<div className="flex items-center gap-2 my-1">
+  <div className="flex-1 border-t-2 border-theme-dark" />
+  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
+  <div className="flex-1 border-t-2 border-theme-dark" />
+</div>
 
                 <button
                   type="button"
                   onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-[#FEF4E0] border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -765,7 +767,7 @@ export default function Auth() {
 
         {/* MANUAL SIGNUP CONFIRMATION MODAL */}
         {signupConsentPending && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
             <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
               <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Confirm Registration</h3>
 
@@ -833,7 +835,7 @@ export default function Auth() {
 
         {/* GOOGLE USERNAME MODAL */}
         {googleUserPending && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
             <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center gap-3">
                 {googleUserPending.picture && (
@@ -929,7 +931,7 @@ export default function Auth() {
 
         {/* TERMS OF SERVICE MODAL */}
         {showTermsModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3D2013]/70 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
             <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
               <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Terms of Service</h3>
               <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">
@@ -951,7 +953,7 @@ export default function Auth() {
 
         {/* PRIVACY POLICY MODAL */}
         {showPrivacyModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3D2013]/70 backdrop-blur-xs">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
             <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
               <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Privacy Policy</h3>
               <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">

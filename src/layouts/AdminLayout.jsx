@@ -11,11 +11,11 @@ export default function AdminLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#FAE9CE] text-[#3D2013] flex flex-col md:flex-row">
+    <div className="min-h-screen bg-theme-muted text-theme-dark flex flex-col md:flex-row">
       {/* Admin Sidebar Header */}
-      <aside className="w-full md:w-64 bg-[#FEF4E0] border-b-2 md:border-b-0 md:border-r-2 border-[#3D2013] p-4 flex flex-col gap-4">
-        <div className="border-b-2 border-[#3D2013]/20 pb-3">
-          <span className="font-pressstart text-[12px] text-[#E87339]">
+      <aside className="w-full md:w-64 bg-theme-surface border-b-2 md:border-b-0 md:border-r-2 border-theme-dark p-4 flex flex-col gap-4">
+        <div className="border-b-2 border-theme-dark/20 pb-3">
+          <span className="font-pressstart text-[12px] text-theme-primary">
             ADMIN PANEL
           </span>
         </div>
@@ -27,10 +27,10 @@ export default function AdminLayout() {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`font-pressstart text-[10px] p-2.5 rounded-[6px] border border-[#3D2013] transition-all ${
+                className={`font-pressstart text-[10px] p-2.5 rounded-[6px] border border-theme-dark transition-all ${
                   isActive
-                    ? 'bg-[#E87339] text-[#FFFFF6]'
-                    : 'bg-[#FAE9CE] hover:bg-[#FDE4D0] text-[#3D2013]'
+                    ? 'bg-theme-primary text-[#FFFFF6]'
+                    : 'bg-theme-muted hover:bg-[#FDE4D0] text-theme-dark'
                 }`}
               >
                 {item.label}

@@ -339,13 +339,13 @@ export default function UserCustomizer() {
         onClick={() => handleItemClick({ ...item, type }, activeMode === 'avatar' ? avatarCategory : roomCategory)}
         className={`relative flex flex-col items-center justify-between p-2 rounded-[8px] border-2 transition-all cursor-pointer min-h-[110px] ${
           isEquipped
-            ? 'border-[#E87339] bg-[#FDE4D0] ring-2 ring-[#E87339]'
-            : 'border-[#3D2013] bg-[#FAE9CE] hover:bg-[#FDE4D0]'
+            ? 'border-theme-primary bg-[#FDE4D0] ring-2 ring-[#E87339]'
+            : 'border-theme-dark bg-theme-muted hover:bg-[#FDE4D0]'
         }`}
       >
         <div className="w-full flex-1 flex items-center justify-center overflow-hidden relative">
           {item.id === 'NONE' ? (
-            <span className="font-pressstart text-[9px] text-[#3D2013]/60">NONE</span>
+            <span className="font-pressstart text-[9px] text-theme-dark/60">NONE</span>
           ) : (
             <img
               src={`${baseUrl}ASSETS/${folder}/${item.id}.png`}
@@ -361,16 +361,16 @@ export default function UserCustomizer() {
           )}
         </div>
 
-        <div className="w-full flex items-center justify-between mt-1 pt-1 border-t border-[#3D2013]/10">
-          <span className="font-pressstart text-[7px] text-[#3D2013] truncate">{item.id}</span>
+        <div className="w-full flex items-center justify-between mt-1 pt-1 border-t border-theme-dark/10">
+          <span className="font-pressstart text-[7px] text-theme-dark truncate">{item.id}</span>
           {isUnlocked ? (
-            <span className="font-pressstart text-[7px] text-[#E87339]">
+            <span className="font-pressstart text-[7px] text-theme-primary">
               {isEquipped ? 'EQUIPPED' : 'OWNED'}
             </span>
           ) : (
             <div className="flex items-center gap-1">
               <img src={coinIconUrl} alt="coin" className="w-3 h-3 object-contain" />
-              <span className="font-pressstart text-[7px] text-[#E87339]">{item.price}</span>
+              <span className="font-pressstart text-[7px] text-theme-primary">{item.price}</span>
             </div>
           )}
         </div>
@@ -385,19 +385,19 @@ export default function UserCustomizer() {
         <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
           CUSTOMIZER
         </h1>
-        <p className="font-pressstart text-[10px] sm:text-xs text-[#3D2013]/80">
+        <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
           Customize your avatar and room to make it yours.
         </p>
       </div>
 
       {/* ROW 2: NAVIGATION TABS CONTAINER */}
-      <div className="flex items-center bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-1.5 w-full lg:w-[700px] gap-2">
+      <div className="flex items-center bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-1.5 w-full lg:w-[700px] gap-2">
         <button
           onClick={() => setActiveMode('avatar')}
           className={`flex-1 font-pressstart text-[10px] sm:text-[12px] py-2.5 text-center cursor-pointer transition-all ${
             activeMode === 'avatar'
               ? 'text-[#E16F37] border-b-2 border-[#E16F37]'
-              : 'text-[#3D2013] border-b-2 border-transparent hover:text-[#E16F37]'
+              : 'text-theme-dark border-b-2 border-transparent hover:text-[#E16F37]'
           }`}
         >
           AVATAR
@@ -407,7 +407,7 @@ export default function UserCustomizer() {
           className={`flex-1 font-pressstart text-[10px] sm:text-[12px] py-2.5 text-center cursor-pointer transition-all ${
             activeMode === 'room'
               ? 'text-[#E16F37] border-b-2 border-transparent hover:text-[#E16F37]'
-              : 'text-[#3D2013] border-b-2 border-transparent hover:text-[#E16F37]'
+              : 'text-theme-dark border-b-2 border-transparent hover:text-[#E16F37]'
           }`}
         >
           ROOM
@@ -453,7 +453,7 @@ export default function UserCustomizer() {
 
           <button
             onClick={handleSaveOrBuyClick}
-            className="w-full font-pressstart text-xs py-3 border-2 border-[#3D2013] rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer bg-[#E87339] text-[#FFFFF6] hover:bg-[#d6652d] flex items-center justify-center gap-2 mt-5"
+            className="w-full font-pressstart text-xs py-3 border-2 border-theme-dark rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer bg-theme-primary text-[#FFFFF6] hover:bg-[#d6652d] flex items-center justify-center gap-2 mt-5"
           >
             {pendingUnownedItems.length > 0 ? (
               <>
@@ -468,9 +468,9 @@ export default function UserCustomizer() {
         </div>
 
         {/* CUSTOMIZATION SELECTOR */}
-        <div className="order-2 lg:order-1 lg:col-span-7 bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 sm:p-6 flex flex-col gap-4 shadow-md">
+        <div className="order-2 lg:order-1 lg:col-span-7 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 flex flex-col gap-4 shadow-md">
           {activeMode === 'avatar' ? (
-            <div className="flex items-center gap-0 border-b border-[#3D2013]/20 overflow-x-auto">
+            <div className="flex items-center gap-0 border-b border-theme-dark/20 overflow-x-auto">
               {Object.keys(AVATAR_CATALOG).map((cat) => {
                 const isActive = avatarCategory === cat;
                 return (
@@ -480,8 +480,8 @@ export default function UserCustomizer() {
                     title={cat.toUpperCase()}
                     className={`flex-1 min-w-[50px] py-3 px-3 transition-all cursor-pointer flex items-center justify-center border-b-[3px] ${
                       isActive
-                        ? 'bg-[#F9D2B5] text-[#23170F] border-[#E87339]'
-                        : 'bg-transparent text-[#A39286] border-transparent hover:text-[#3D2013] hover:bg-[#F9D2B5]/40'
+                        ? 'bg-[#F9D2B5] text-[#23170F] border-theme-primary'
+                        : 'bg-transparent text-[#A39286] border-transparent hover:text-theme-dark hover:bg-[#F9D2B5]/40'
                     }`}
                   >
                     {CATEGORY_ICONS[cat]}
@@ -490,7 +490,7 @@ export default function UserCustomizer() {
               })}
             </div>
           ) : (
-            <div className="flex items-center gap-0 border-b border-[#3D2013]/20 overflow-x-auto">
+            <div className="flex items-center gap-0 border-b border-theme-dark/20 overflow-x-auto">
               {Object.keys(ROOM_CATALOG).map((cat) => {
                 const isActive = roomCategory === cat;
                 return (
@@ -500,8 +500,8 @@ export default function UserCustomizer() {
                     title={cat.toUpperCase()}
                     className={`flex-1 min-w-[50px] py-3 px-3 transition-all cursor-pointer flex items-center justify-center border-b-[3px] ${
                       isActive
-                        ? 'bg-[#F9D2B5] text-[#23170F] border-[#E87339]'
-                        : 'bg-transparent text-[#A39286] border-transparent hover:text-[#3D2013] hover:bg-[#F9D2B5]/40'
+                        ? 'bg-[#F9D2B5] text-[#23170F] border-theme-primary'
+                        : 'bg-transparent text-[#A39286] border-transparent hover:text-theme-dark hover:bg-[#F9D2B5]/40'
                     }`}
                   >
                     {CATEGORY_ICONS[cat]}
@@ -515,8 +515,8 @@ export default function UserCustomizer() {
             {activeMode === 'avatar' && avatarCategory === 'skin & face' ? (
               <>
                 <div className="flex flex-col gap-2">
-                  <div className="border-b border-[#3D2013]/20 pb-1">
-                    <span className="font-pressstart text-[9px] sm:text-[10px] text-[#E87339]">
+                  <div className="border-b border-theme-dark/20 pb-1">
+                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary">
                       SKIN TONE
                     </span>
                   </div>
@@ -526,8 +526,8 @@ export default function UserCustomizer() {
                 </div>
 
                 <div className="flex flex-col gap-2 mt-2">
-                  <div className="border-b border-[#3D2013]/20 pb-1">
-                    <span className="font-pressstart text-[9px] sm:text-[10px] text-[#E87339]">
+                  <div className="border-b border-theme-dark/20 pb-1">
+                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary">
                       FACE EXPRESSION
                     </span>
                   </div>
@@ -550,10 +550,10 @@ export default function UserCustomizer() {
 
       {/* ==================== CHECKOUT / BUY MODAL ==================== */}
       {showCheckoutModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-[#3D2013]/70 backdrop-blur-xs">
-          <div className="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[16px] w-full max-w-md p-5 shadow-2xl flex flex-col gap-4">
-            <div className="border-b-2 border-[#3D2013]/20 pb-2">
-              <h3 className="font-pressstart text-xs sm:text-sm text-[#3D2013]">Buy these items?</h3>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[16px] w-full max-w-md p-5 shadow-2xl flex flex-col gap-4">
+            <div className="border-b-2 border-theme-dark/20 pb-2">
+              <h3 className="font-pressstart text-xs sm:text-sm text-theme-dark">Buy these items?</h3>
             </div>
 
             {/* CHECKOUT CARDS GRID */}
@@ -564,7 +564,7 @@ export default function UserCustomizer() {
                 return (
                   <div
                     key={item.id}
-                    className="flex flex-col items-center justify-between p-2.5 rounded-[12px] bg-[#FAF3E0] border-2 border-[#3D2013] aspect-square relative overflow-hidden"
+                    className="flex flex-col items-center justify-between p-2.5 rounded-[12px] bg-[#FAF3E0] border-2 border-theme-dark aspect-square relative overflow-hidden"
                   >
                     {/* ASSET IMAGE PREVIEW CARD */}
                     <div className="w-full flex-1 flex items-center justify-center overflow-hidden relative">
@@ -582,9 +582,9 @@ export default function UserCustomizer() {
                     </div>
 
                     {/* CARD PRICE BADGE */}
-                    <div className="w-full bg-[#FEF4E0] border border-[#3D2013] rounded-full py-1 px-2 flex items-center justify-center gap-1 mt-1">
+                    <div className="w-full bg-theme-surface border border-theme-dark rounded-full py-1 px-2 flex items-center justify-center gap-1 mt-1">
                       <img src={coinIconUrl} alt="coin" className="w-3.5 h-3.5 object-contain" />
-                      <span className="font-pressstart text-[8px] text-[#3D2013]">{item.price}</span>
+                      <span className="font-pressstart text-[8px] text-theme-dark">{item.price}</span>
                     </div>
                   </div>
                 );
@@ -592,19 +592,19 @@ export default function UserCustomizer() {
             </div>
 
             {/* TOTAL & INSUFFICIENT FUNDS ERROR */}
-            <div className="border-t-2 border-[#3D2013]/20 pt-3 flex flex-col gap-1.5">
+            <div className="border-t-2 border-theme-dark/20 pt-3 flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <span className="font-pressstart text-[10px] text-[#3D2013]">Total:</span>
+                <span className="font-pressstart text-[10px] text-theme-dark">Total:</span>
                 <div className="flex items-center gap-1">
                   <img src={coinIconUrl} alt="coin" className="w-3.5 h-3.5 object-contain" />
-                  <span className="font-pressstart text-[10px] text-[#E87339]">{totalCost}</span>
+                  <span className="font-pressstart text-[10px] text-theme-primary">{totalCost}</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <span className="font-pressstart text-[8px] text-[#3D2013]/70">Your Balance:</span>
+                <span className="font-pressstart text-[8px] text-theme-dark/70">Your Balance:</span>
                 <div className="flex items-center gap-1">
                   <img src={coinIconUrl} alt="coin" className="w-3 h-3 object-contain" />
-                  <span className="font-pressstart text-[8px] text-[#3D2013]">{userCoins}</span>
+                  <span className="font-pressstart text-[8px] text-theme-dark">{userCoins}</span>
                 </div>
               </div>
 
@@ -619,16 +619,16 @@ export default function UserCustomizer() {
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => setShowCheckoutModal(false)}
-                className="flex-1 font-pressstart text-[10px] py-2.5 bg-[#FAE9CE] text-[#3D2013] border border-[#3D2013] rounded-[6px] hover:bg-[#FDE4D0] cursor-pointer"
+                className="flex-1 font-pressstart text-[10px] py-2.5 bg-theme-muted text-theme-dark border border-theme-dark rounded-[6px] hover:bg-[#FDE4D0] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmPurchase}
                 disabled={!hasEnoughCoins}
-                className={`flex-1 font-pressstart text-[10px] py-2.5 border border-[#3D2013] rounded-[6px] transition-all ${
+                className={`flex-1 font-pressstart text-[10px] py-2.5 border border-theme-dark rounded-[6px] transition-all ${
                   hasEnoughCoins
-                    ? 'bg-[#E87339] text-[#FFFFF6] hover:bg-[#d6652d] cursor-pointer'
+                    ? 'bg-theme-primary text-[#FFFFF6] hover:bg-[#d6652d] cursor-pointer'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >

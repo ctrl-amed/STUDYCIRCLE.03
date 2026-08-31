@@ -357,19 +357,19 @@ export default function UserRooms() {
     return (
       <div
         key={room.id}
-        className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-4 flex flex-col gap-3 shadow-sm justify-between"
+        className="bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-4 flex flex-col gap-3 shadow-sm justify-between"
       >
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full border-[2px] border-[#3D2013] bg-[#FAE9CE] shrink-0 flex items-center justify-center font-pressstart text-[10px] text-[#3D2013]">
+          <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted shrink-0 flex items-center justify-center font-pressstart text-[10px] text-theme-dark">
             {room.name.charAt(0)}
           </div>
           <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-            <span className="font-pressstart text-[11px] text-[#3D2013] truncate">{room.name}</span>
-            <span className="font-pressstart text-[8px] text-[#E87339] truncate">
+            <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.name}</span>
+            <span className="font-pressstart text-[8px] text-theme-primary truncate">
               📚 {room.course || 'General Studies'}
             </span>
-            <span className="font-pressstart text-[8px] text-[#3D2013] truncate">
-              Hosted by: <span className="text-[#E87339]">{room.host}</span>
+            <span className="font-pressstart text-[8px] text-theme-dark truncate">
+              Hosted by: <span className="text-theme-primary">{room.host}</span>
             </span>
             <div className="flex flex-col gap-1.5 pt-1">
               <div className="flex items-center">
@@ -386,7 +386,7 @@ export default function UserRooms() {
                   <span>{room.privacy}</span>
                 </span>
               </div>
-              <div className="flex items-center gap-1 font-pressstart text-[8px] text-[#3D2013]">
+              <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
                 <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M16 17v2H2v-2s0-4 7-4s7 4 7 4m-3.5-9.5A3.5 3.5 0 1 0 9 11a3.5 3.5 0 0 0 3.5-3.5m3.44 5.5A5.32 5.32 0 0 1 18 17v2h4v-2s0-3.63-6.06-4M15 4a3.4 3.4 0 0 0-1.93.59a5 5 0 0 1 0 5.82A3.4 3.4 0 0 0 15 11a3.5 3.5 0 0 0 0-7" />
                 </svg>
@@ -404,7 +404,7 @@ export default function UserRooms() {
               setSelectedStatsRoom(room);
               setShowStatsModal(true);
             }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-[#E87339] rounded-none border-[2px] border-[#3D2013] px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
           >
             STATISTICS
           </button>
@@ -417,7 +417,7 @@ export default function UserRooms() {
               };
               enterRoomSession(activeSessionRoom);
             }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-[#E87339] rounded-none border-[2px] border-[#3D2013] px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
           >
             JOIN ROOM
           </button>
@@ -432,7 +432,7 @@ export default function UserRooms() {
         <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
           ROOMS
         </h1>
-        <p className="font-pressstart text-[10px] sm:text-xs text-[#3D2013]/80">
+        <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
           Find a study space that motivates you.
         </p>
       </div>
@@ -440,7 +440,7 @@ export default function UserRooms() {
       <div className="flex items-center justify-end gap-3 flex-wrap">
         <button
           onClick={() => setShowJoinModal(true)}
-          className="font-pressstart text-[9px] sm:text-[10px] bg-[#FEF4E0] text-[#3D2013] rounded-none border-[2px] border-[#3D2013] px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+          className="font-pressstart text-[9px] sm:text-[10px] bg-theme-surface text-theme-dark rounded-none border-[2px] border-theme-dark px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
         >
           Join Private Room
         </button>
@@ -452,21 +452,21 @@ export default function UserRooms() {
               setShowCreateModal(true);
             }
           }}
-          className="font-pressstart text-[9px] sm:text-[10px] bg-[#E87339] text-[#FFFFF6] rounded-none border-[2px] border-[#3D2013] px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
+          className="font-pressstart text-[9px] sm:text-[10px] bg-theme-primary text-[#FFFFF6] rounded-none border-[2px] border-theme-dark px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
         >
           Create Room
         </button>
       </div>
 
-      <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-4 sm:p-6 shadow-sm flex flex-col gap-6">
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b-2 border-[#3D2013]/20 pb-3 md:pb-4 relative">
+      <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-sm flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b-2 border-theme-dark/20 pb-3 md:pb-4 relative">
           <div className="flex items-center gap-6 overflow-x-auto pb-2 md:pb-0">
             <button
               onClick={() => setActiveTab('all-rooms')}
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'all-rooms'
                   ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-[#3D2013] hover:text-[#E16F37]'
+                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
               }`}
             >
               ALL ROOMS
@@ -476,7 +476,7 @@ export default function UserRooms() {
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'my-rooms'
                   ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-[#3D2013] hover:text-[#E16F37]'
+                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
               }`}
             >
               MY ROOMS
@@ -486,7 +486,7 @@ export default function UserRooms() {
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'history'
                   ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-[#3D2013] hover:text-[#E16F37]'
+                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
               }`}
             >
               HISTORY
@@ -497,7 +497,7 @@ export default function UserRooms() {
           <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="relative flex-1 md:w-64 flex items-center">
               <svg
-                className="absolute left-3 w-4 h-4 text-[#3D2013]/70 pointer-events-none"
+                className="absolute left-3 w-4 h-4 text-theme-dark/70 pointer-events-none"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2.5"
@@ -511,14 +511,14 @@ export default function UserRooms() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search rooms..."
-                className="w-full bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none focus:ring-1 focus:ring-[#FD923E]"
+                className="w-full bg-theme-surface border-[2px] border-theme-dark rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none focus:ring-1 focus:ring-[#FD923E]"
               />
 
               {/* SEARCH CLEAR (X) BUTTON */}
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 text-[#3D2013]/70 hover:text-[#A53914] font-pressstart text-[10px] p-0.5 cursor-pointer leading-none transition-colors"
+                  className="absolute right-2.5 text-theme-dark/70 hover:text-theme-danger font-pressstart text-[10px] p-0.5 cursor-pointer leading-none transition-colors"
                   title="Clear search"
                 >
                   ✕
@@ -530,10 +530,10 @@ export default function UserRooms() {
             <div className="relative shrink-0" ref={filterDropdownRef}>
               <button
                 onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
-                className={`h-9 px-3 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] flex items-center justify-center gap-1.5 font-pressstart text-[8px] sm:text-[9px] cursor-pointer transition-colors ${
+                className={`h-9 px-3 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] flex items-center justify-center gap-1.5 font-pressstart text-[8px] sm:text-[9px] cursor-pointer transition-colors ${
                   selectedCourseFilter
-                    ? 'bg-[#FDE4D0] border-[#E87339] text-[#E87339]'
-                    : 'text-[#3D2013] hover:bg-[#FDE4D0]'
+                    ? 'bg-[#FDE4D0] border-theme-primary text-theme-primary'
+                    : 'text-theme-dark hover:bg-[#FDE4D0]'
                 }`}
                 title="Filter by Course"
               >
@@ -550,7 +550,7 @@ export default function UserRooms() {
 
               {/* COURSE FILTER DROPDOWN */}
               {isFilterDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 z-50 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] shadow-2xl max-h-60 overflow-y-auto p-1">
+                <div className="absolute right-0 top-full mt-2 w-56 z-50 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] shadow-2xl max-h-60 overflow-y-auto p-1">
                   <div
                     onClick={() => {
                       setSelectedCourseFilter('');
@@ -558,13 +558,13 @@ export default function UserRooms() {
                     }}
                     className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
                       !selectedCourseFilter
-                        ? 'bg-[#E87339] text-[#FFFFF6]'
-                        : 'text-[#3D2013] hover:bg-[#FAE9CE]'
+                        ? 'bg-theme-primary text-[#FFFFF6]'
+                        : 'text-theme-dark hover:bg-theme-muted'
                     }`}
                   >
                     ALL COURSES
                   </div>
-                  <div className="my-1 border-t border-[#3D2013]/20" />
+                  <div className="my-1 border-t border-theme-dark/20" />
                   {COURSE_OPTIONS.map((courseOption, index) => (
                     <div
                       key={index}
@@ -574,8 +574,8 @@ export default function UserRooms() {
                       }}
                       className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
                         selectedCourseFilter === courseOption
-                          ? 'bg-[#E87339] text-[#FFFFF6]'
-                          : 'text-[#3D2013] hover:bg-[#FAE9CE]'
+                          ? 'bg-theme-primary text-[#FFFFF6]'
+                          : 'text-theme-dark hover:bg-theme-muted'
                       }`}
                     >
                       {courseOption}
@@ -593,7 +593,7 @@ export default function UserRooms() {
               {filteredAllRooms.length > 0 ? (
                 filteredAllRooms.map((r) => renderRoomCard(r, false))
               ) : (
-                <p className="font-pressstart text-[9px] text-[#3D2013]/70 col-span-full py-4">
+                <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
                   No rooms found.
                 </p>
               )}
@@ -605,7 +605,7 @@ export default function UserRooms() {
               {filteredMyRooms.length > 0 ? (
                 filteredMyRooms.map((r) => renderRoomCard(r, false))
               ) : (
-                <p className="font-pressstart text-[9px] text-[#3D2013]/70 col-span-full py-4">
+                <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
                   You have not created any rooms yet.
                 </p>
               )}
@@ -617,7 +617,7 @@ export default function UserRooms() {
               {filteredHistory.length > 0 ? (
                 filteredHistory.map((r) => renderRoomCard(r, true))
               ) : (
-                <p className="font-pressstart text-[9px] text-[#3D2013]/70 col-span-full py-4">
+                <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
                   No session history found.
                 </p>
               )}
@@ -628,19 +628,19 @@ export default function UserRooms() {
 
       {/* JOIN PRIVATE ROOM MODAL */}
       {showJoinModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center gap-5 relative">
-            <div className="text-[20px] text-[#E87339] mb-[-8px]">
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col items-center text-center gap-5 relative">
+            <div className="text-[20px] text-theme-primary mb-[-8px]">
               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M6 22q-.825 0-1.412-.587T4 20V10q0-.825.588-1.412T6 8h1V6q0-2.075 1.463-3.537T12 1t3.538 1.463T17 6v2h1q.825 0 1.413.588T20 10v10q0 .825-.587 1.413T18 22zm0-2h12V10H6zm7.413-3.588Q14 15.826 14 15t-.587-1.412T12 13t-1.412.588T10 15t.588 1.413T12 17t1.413-.587M9 8h6V6q0-1.25-.875-2.125T12 3t-2.125.875T9 6zM6 20V10z" />
               </svg>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="font-pressstart text-[11px] sm:text-[13px] text-[#3D2013] tracking-wider">
+              <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark tracking-wider">
                 JOIN PRIVATE
               </h3>
-              <p className="font-pressstart text-[7px] sm:text-[8px] text-[#3D2013]/70">
+              <p className="font-pressstart text-[7px] sm:text-[8px] text-theme-dark/70">
                 Enter the room code to join.
               </p>
             </div>
@@ -654,12 +654,12 @@ export default function UserRooms() {
                   setPrivateCodeErr('');
                 }}
                 placeholder="ABCD123"
-                className={`w-full bg-[#FAE9CE] border-[2px] rounded-[8px] p-3 font-pressstart text-[10px] text-center text-[#3D2013] placeholder-[#3D2013]/40 focus:outline-none tracking-widest uppercase transition-colors duration-150 ${
-                  privateCodeErr ? 'border-[#A53914]' : 'border-[#3D2013]'
+                className={`w-full bg-theme-muted border-[2px] rounded-[8px] p-3 font-pressstart text-[10px] text-center text-theme-dark placeholder-[#3D2013]/40 focus:outline-none tracking-widest uppercase transition-colors duration-150 ${
+                  privateCodeErr ? 'border-theme-danger' : 'border-theme-dark'
                 }`}
               />
               {privateCodeErr && (
-                <p className="font-pixel text-[18px] sm:text-[20px] text-[#A53914] text-center mt-0.5">
+                <p className="font-pixel text-[18px] sm:text-[20px] text-theme-danger text-center mt-0.5">
                   ✘ {privateCodeErr}
                 </p>
               )}
@@ -671,13 +671,13 @@ export default function UserRooms() {
                   setPrivateCodeErr('');
                   setShowJoinModal(false);
                 }}
-                className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] bg-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FAE9CE]"
+                className="font-pressstart text-[8px] sm:text-[9px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
               >
                 CANCEL
               </button>
               <button
                 onClick={handleConfirmPrivateJoin}
-                className="font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
+                className="font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
               >
                 JOIN
               </button>
@@ -688,10 +688,10 @@ export default function UserRooms() {
 
       {/* CREATE ROOM MODAL */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-5">
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-5">
             <div className="flex items-center justify-center relative pb-1">
-              <h3 className="font-pressstart text-[14px] text-[#E87339] tracking-wide">
+              <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide">
                 CREATE A ROOM
               </h3>
             </div>
@@ -700,8 +700,8 @@ export default function UserRooms() {
               {/* 1. ROOM NAME */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="font-pressstart text-[9px] text-[#3D2013]">ROOM NAME</label>
-                  <span className="font-pressstart text-[8px] text-[#3D2013]/60">
+                  <label className="font-pressstart text-[9px] text-theme-dark">ROOM NAME</label>
+                  <span className="font-pressstart text-[8px] text-theme-dark/60">
                     {newRoomName.length}/{MAX_ROOM_NAME_LENGTH}
                   </span>
                 </div>
@@ -711,13 +711,13 @@ export default function UserRooms() {
                   maxLength={MAX_ROOM_NAME_LENGTH}
                   onChange={(e) => setNewRoomName(e.target.value)}
                   placeholder="Enter room name..."
-                  className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
+                  className="w-full bg-theme-muted border-[2px] border-theme-dark rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none"
                 />
               </div>
 
               {/* 2. COURSE (SEARCHABLE DROPDOWN & TYPABLE) */}
               <div className="flex flex-col gap-1.5 relative" ref={courseDropdownRef}>
-                <label className="font-pressstart text-[9px] text-[#3D2013]">COURSE</label>
+                <label className="font-pressstart text-[9px] text-theme-dark">COURSE</label>
                 <div className="relative w-full">
                   <input
                     type="text"
@@ -728,12 +728,12 @@ export default function UserRooms() {
                       setIsCourseDropdownOpen(true);
                     }}
                     placeholder="Type or select a course..."
-                    className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] pl-3 pr-8 py-2.5 font-pressstart text-[9px] text-[#3D2013] placeholder-[#3D2013]/50 focus:outline-none"
+                    className="w-full bg-theme-muted border-[2px] border-theme-dark rounded-[8px] pl-3 pr-8 py-2.5 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setIsCourseDropdownOpen((prev) => !prev)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#3D2013] hover:text-[#E87339] cursor-pointer"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary cursor-pointer"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="m6 9l6 6l6-6" />
@@ -743,7 +743,7 @@ export default function UserRooms() {
 
                 {/* DROPDOWN MENU */}
                 {isCourseDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[8px] shadow-xl max-h-40 overflow-y-auto">
+                  <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] shadow-xl max-h-40 overflow-y-auto">
                     {filteredCourseOptions.length > 0 ? (
                       filteredCourseOptions.map((courseOption, index) => (
                         <div
@@ -752,13 +752,13 @@ export default function UserRooms() {
                             setNewRoomCourse(courseOption);
                             setIsCourseDropdownOpen(false);
                           }}
-                          className="px-3 py-2 font-pressstart text-[8px] text-[#3D2013] hover:bg-[#FAE9CE] hover:text-[#E87339] cursor-pointer border-b border-[#3D2013]/10 last:border-none"
+                          className="px-3 py-2 font-pressstart text-[8px] text-theme-dark hover:bg-theme-muted hover:text-theme-primary cursor-pointer border-b border-theme-dark/10 last:border-none"
                         >
                           {courseOption}
                         </div>
                       ))
                     ) : (
-                      <div className="px-3 py-2 font-pressstart text-[8px] text-[#3D2013]/60">
+                      <div className="px-3 py-2 font-pressstart text-[8px] text-theme-dark/60">
                         Use custom: "{newRoomCourse}"
                       </div>
                     )}
@@ -768,7 +768,7 @@ export default function UserRooms() {
 
               {/* 3. PRIVACY */}
               <div className="flex flex-col gap-1.5">
-                <label className="font-pressstart text-[9px] text-[#3D2013]">PRIVACY</label>
+                <label className="font-pressstart text-[9px] text-theme-dark">PRIVACY</label>
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -776,7 +776,7 @@ export default function UserRooms() {
                     className={`flex-1 flex items-center justify-center gap-2 font-pressstart text-[9px] py-2.5 rounded-[8px] cursor-pointer transition-all ${
                       newRoomPrivacy === 'public'
                         ? 'bg-[#EAF3FF] border-[1.5px] border-[#315B8C] text-[#315B8C] opacity-100'
-                        : 'bg-[#FEF4E0] border-[1.5px] border-[#3D2013]/30 text-[#3D2013]/50 opacity-60 hover:opacity-100'
+                        : 'bg-theme-surface border-[1.5px] border-theme-dark/30 text-theme-dark/50 opacity-60 hover:opacity-100'
                     }`}
                   >
                     Public
@@ -788,7 +788,7 @@ export default function UserRooms() {
                     className={`flex-1 flex items-center justify-center gap-2 font-pressstart text-[9px] py-2.5 rounded-[8px] cursor-pointer transition-all ${
                       newRoomPrivacy === 'private'
                         ? 'bg-[#F1EDFF] border-[1.5px] border-[#6846A5] text-[#6846A5] opacity-100'
-                        : 'bg-[#FEF4E0] border-[1.5px] border-[#3D2013]/30 text-[#3D2013]/50 opacity-60 hover:opacity-100'
+                        : 'bg-theme-surface border-[1.5px] border-theme-dark/30 text-theme-dark/50 opacity-60 hover:opacity-100'
                     }`}
                   >
                     Private
@@ -798,12 +798,12 @@ export default function UserRooms() {
 
               {/* 4. MAXIMUM MEMBERS */}
               <div className="flex flex-col gap-1.5">
-                <label className="font-pressstart text-[9px] text-[#3D2013]">MAXIMUM MEMBERS</label>
+                <label className="font-pressstart text-[9px] text-theme-dark">MAXIMUM MEMBERS</label>
                 <div className="relative flex items-center">
                   <select
                     value={newRoomMaxMembers}
                     onChange={(e) => setNewRoomMaxMembers(e.target.value)}
-                    className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-[#3D2013] focus:outline-none cursor-pointer appearance-none"
+                    className="w-full bg-theme-muted border-[2px] border-theme-dark rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-theme-dark focus:outline-none cursor-pointer appearance-none"
                   >
                     <option value="" disabled>
                       Select maximum members
@@ -815,7 +815,7 @@ export default function UserRooms() {
                     ))}
                   </select>
                   <svg
-                    className="absolute right-3 w-4 h-4 text-[#3D2013] pointer-events-none"
+                    className="absolute right-3 w-4 h-4 text-theme-dark pointer-events-none"
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
@@ -830,14 +830,14 @@ export default function UserRooms() {
             <div className="grid grid-cols-2 gap-3 w-full pt-2">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] bg-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FAE9CE]"
+                className="font-pressstart text-[8px] sm:text-[9px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
               >
                 CANCEL
               </button>
               <button
                 onClick={handleConfirmCreate}
                 disabled={!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers}
-                className={`font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] py-2.5 transition-all duration-150 retro-shadow ${
+                className={`font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow ${
                   newRoomName.trim() && newRoomName.length <= MAX_ROOM_NAME_LENGTH && newRoomMaxMembers
                     ? 'cursor-pointer hover:bg-[#d66530]'
                     : 'opacity-50 cursor-not-allowed'
@@ -852,30 +852,30 @@ export default function UserRooms() {
 
       {/* ROOM LIMIT MODAL */}
       {showLimitModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
-            <div className="flex items-center justify-between border-b border-[#3D2013]/20 pb-3">
-              <span className="font-pressstart text-[11px] text-[#A53914] uppercase">LIMIT REACHED</span>
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
+            <div className="flex items-center justify-between border-b border-theme-dark/20 pb-3">
+              <span className="font-pressstart text-[11px] text-theme-danger uppercase">LIMIT REACHED</span>
               <button
                 onClick={() => setShowLimitModal(false)}
-                className="font-pressstart text-[12px] text-[#3D2013] hover:text-[#E87339] cursor-pointer"
+                className="font-pressstart text-[12px] text-theme-dark hover:text-theme-primary cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <div className="my-2 flex flex-col items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[#A53914]/10 border-[2px] border-[#A53914] flex items-center justify-center text-[#A53914] font-pressstart text-[18px]">
+              <div className="w-12 h-12 rounded-full bg-theme-danger/10 border-[2px] border-theme-danger flex items-center justify-center text-theme-danger font-pressstart text-[18px]">
                 !
               </div>
-              <p className="font-pressstart text-[9px] text-[#3D2013] leading-relaxed">
+              <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">
                 Room limit reached! You can only host a maximum of {MAX_ROOM_LIMIT} rooms at a time.
               </p>
             </div>
 
             <button
               onClick={() => setShowLimitModal(false)}
-              className="font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
+              className="font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
             >
               GOT IT
             </button>
@@ -885,83 +885,83 @@ export default function UserRooms() {
 
       {/* STATISTICS MODAL */}
       {showStatsModal && selectedStatsRoom && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-center relative pb-2">
-              <h3 className="font-pressstart text-[14px] text-[#E87339] tracking-wide">
+              <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide">
                 STATISTICS: {selectedStatsRoom.name}
               </h3>
             </div>
 
-            <div className="flex flex-col gap-4 font-pressstart text-[9px] text-[#3D2013]">
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-                <span className="font-pixel text-[18px] sm:text-[20px] text-[#3D2013]">COURSE</span>
-                <span className="font-pixel text-[18px] sm:text-[20px] text-[#E87339]">
+            <div className="flex flex-col gap-4 font-pressstart text-[9px] text-theme-dark">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">COURSE</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-primary">
                   {selectedStatsRoom.course || 'General Studies'}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-                <span className="font-pixel text-[20px] text-[#3D2013]">STUDY TECHNIQUE</span>
-                <span className="font-pixel text-[20px] text-[#3D2013]">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">STUDY TECHNIQUE</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
                   {selectedStatsRoom.technique}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-                <span className="font-pixel text-[20px] text-[#3D2013]">FOCUS TIME</span>
-                <span className="font-pixel text-[20px] text-[#3D2013]">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">FOCUS TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
                   {selectedStatsRoom.focus}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-                <span className="font-pixel text-[20px] text-[#3D2013]">BREAK TIME</span>
-                <span className="font-pixel text-[20px] text-[#3D2013]">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">BREAK TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
                   {selectedStatsRoom.breakTime}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-solid border-[#3D2013]/40">
-                <span className="font-pixel text-[20px] text-[#3D2013]">NUMBER OF SESSIONS</span>
-                <span className="font-pixel text-[20px] text-[#3D2013]">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-solid border-theme-dark/40">
+                <span className="font-pixel text-[20px] text-theme-dark">NUMBER OF SESSIONS</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
                   {selectedStatsRoom.sessions} Sessions
                 </span>
               </div>
 
               <div className="flex justify-between items-center pt-1">
-                <span className="font-pixel text-[20px] text-[#3D2013]">TASKS COMPLETED</span>
-                <span className="font-pixel text-[20px] text-[#3D2013]">
+                <span className="font-pixel text-[20px] text-theme-dark">TASKS COMPLETED</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
                   {selectedStatsRoom.tasks.filter((t) => t.completed).length} /{' '}
                   {selectedStatsRoom.tasks.length}
                 </span>
               </div>
 
-              <div className="flex flex-col gap-2 pb-3 border-b-[2px] border-solid border-[#3D2013]">
+              <div className="flex flex-col gap-2 pb-3 border-b-[2px] border-solid border-theme-dark">
                 <ul className="flex flex-col text-[8px] list-none pl-2 m-0 gap-1">
                   {selectedStatsRoom.tasks.map((t, idx) => (
                     <li key={idx} className="flex justify-between items-center">
-                      <span className={t.completed ? 'line-through text-[#3D2013]/60' : ''}>
+                      <span className={t.completed ? 'line-through text-theme-dark/60' : ''}>
                         {t.text}
                       </span>
                       {t.completed && (
-                        <span className="text-[#E87339] font-pixel text-[20px]">✓</span>
+                        <span className="text-theme-primary font-pixel text-[20px]">✓</span>
                       )}
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-[#3D2013]/30">
-                <span className="font-pixel text-[20px] text-[#3D2013]">XP EARNED</span>
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">XP EARNED</span>
                 <span className="font-pixel text-[20px] text-[#7E57C2]">
                   {selectedStatsRoom.xp} XP
                 </span>
               </div>
 
               <div className="flex justify-between items-center">
-                <span className="font-pixel text-[20px] text-[#3D2013]">COINS EARNED</span>
-                <span className="font-pixel text-[20px] text-[#E87339]">
+                <span className="font-pixel text-[20px] text-theme-dark">COINS EARNED</span>
+                <span className="font-pixel text-[20px] text-theme-primary">
                   {selectedStatsRoom.coins} coins
                 </span>
               </div>
@@ -970,7 +970,7 @@ export default function UserRooms() {
             <div className="flex items-center justify-center pt-2">
               <button
                 onClick={() => setShowStatsModal(false)}
-                className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+                className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
               >
                 CLOSE
               </button>
@@ -981,10 +981,10 @@ export default function UserRooms() {
 
       {/* REQUEST TO JOIN MODAL */}
       {showRequestModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
-            <div className="flex items-center justify-between border-b border-[#3D2013]/20 pb-3">
-              <span className="font-pressstart text-[11px] text-[#E87339] uppercase">
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
+            <div className="flex items-center justify-between border-b border-theme-dark/20 pb-3">
+              <span className="font-pressstart text-[11px] text-theme-primary uppercase">
                 {requestState === 'WAITING' && 'REQUEST SENT'}
                 {requestState === 'EXPIRED' && 'REQUEST EXPIRED'}
                 {requestState === 'ACCEPTED' && 'ACCEPTED!'}
@@ -992,21 +992,21 @@ export default function UserRooms() {
               </span>
               <button
                 onClick={() => setShowRequestModal(false)}
-                className="font-pressstart text-[12px] text-[#3D2013] hover:text-[#E87339] cursor-pointer"
+                className="font-pressstart text-[12px] text-theme-dark hover:text-theme-primary cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             <div className="my-2 flex flex-col items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[#E87339]/10 border-[2px] border-[#E87339] flex items-center justify-center text-[#E87339] font-pressstart text-[16px]">
+              <div className="w-12 h-12 rounded-full bg-theme-primary/10 border-[2px] border-theme-primary flex items-center justify-center text-theme-primary font-pressstart text-[16px]">
                 {requestState === 'WAITING' && '⏳'}
                 {requestState === 'EXPIRED' && '⏰'}
                 {requestState === 'ACCEPTED' && '✓'}
                 {requestState === 'REJECTED' && '✕'}
               </div>
 
-              <p className="font-pressstart text-[10px] text-[#3D2013] leading-relaxed">
+              <p className="font-pressstart text-[10px] text-theme-dark leading-relaxed">
                 {requestState === 'WAITING' &&
                   `Waiting for approval from host (${pendingJoinRoom?.host || 'Host'})...`}
                 {requestState === 'EXPIRED' && 'Request to join expired.'}
@@ -1015,7 +1015,7 @@ export default function UserRooms() {
               </p>
 
               {requestState === 'WAITING' && (
-                <span className="font-pressstart text-[9px] text-[#3D2013]/60">
+                <span className="font-pressstart text-[9px] text-theme-dark/60">
                   Expires in {requestTimer}s
                 </span>
               )}
@@ -1024,7 +1024,7 @@ export default function UserRooms() {
             {requestState === 'WAITING' && (
               <button
                 onClick={() => setShowRequestModal(false)}
-                className="font-pressstart text-[10px] text-[#3D2013] bg-[#FAE9CE] hover:bg-[#3D2013] hover:text-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
+                className="font-pressstart text-[10px] text-theme-dark bg-theme-muted hover:bg-theme-dark hover:text-theme-surface border-[2px] border-theme-dark py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
               >
                 CANCEL REQUEST
               </button>
@@ -1045,7 +1045,7 @@ export default function UserRooms() {
                     enterRoomSession(activeSessionRoom);
                   }
                 }}
-                className="font-pressstart text-[10px] text-[#FFFFF6] bg-green-600 border-[2px] border-[#3D2013] py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
+                className="font-pressstart text-[10px] text-[#FFFFF6] bg-green-600 border-[2px] border-theme-dark py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
               >
                 JOIN ROOM
               </button>
@@ -1054,7 +1054,7 @@ export default function UserRooms() {
             {(requestState === 'EXPIRED' || requestState === 'REJECTED') && (
               <button
                 onClick={() => setShowRequestModal(false)}
-                className="font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-[2px] border-[#3D2013] py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
+                className="font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
               >
                 CLOSE
               </button>

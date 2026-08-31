@@ -511,48 +511,48 @@ export function useTimer() {
         }
 
         pipWin.document.body.className =
-          'bg-[#FAE9CE] p-3 flex flex-col justify-center items-center h-full m-0 overflow-hidden font-sans';
+          'bg-theme-muted p-3 flex flex-col justify-center items-center h-full m-0 overflow-hidden font-sans';
 
         pipWin.document.body.innerHTML = `
-          <div class="bg-[#FEF4E0] border-2 border-[#3D2013] rounded-[12px] p-4 shadow-md flex flex-col justify-between gap-3 w-full h-full box-border">
-            <div class="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
+          <div class="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 shadow-md flex flex-col justify-between gap-3 w-full h-full box-border">
+            <div class="flex items-center justify-between pb-2 border-b border-theme-dark/20">
               <div class="flex items-center gap-2">
-                <span class="font-pressstart text-[8px] text-[#FEF4E0] bg-[#E87339] border border-[#3D2013] px-2 py-0.5 uppercase">
+                <span class="font-pressstart text-[8px] text-theme-surface bg-theme-primary border border-theme-dark px-2 py-0.5 uppercase">
                   ${workType}
                 </span>
-                <span class="font-pressstart text-[8px] text-[#3D2013] opacity-80">
+                <span class="font-pressstart text-[8px] text-theme-dark opacity-80">
                   ${techniqueName}
                 </span>
               </div>
             </div>
 
             <div class="flex flex-col items-center justify-center text-center my-1">
-              <span data-pip-element="phase-text" class="font-pressstart text-[10px] text-[#E87339] tracking-wider uppercase mb-1">
+              <span data-pip-element="phase-text" class="font-pressstart text-[10px] text-theme-primary tracking-wider uppercase mb-1">
                 ${initialPhaseText}
               </span>
-              <div data-pip-element="timer-display" class="font-pressstart text-[36px] text-[#3D2013] tracking-tighter drop-shadow-sm">
+              <div data-pip-element="timer-display" class="font-pressstart text-[36px] text-theme-dark tracking-tighter drop-shadow-sm">
                 ${initialTimerText}
               </div>
             </div>
 
-            <div class="bg-[#FAE9CE] border border-[#3D2013]/30 p-2 rounded text-center">
-              <p data-pip-element="guide-text" class="font-pixel text-[13px] text-[#3D2013] leading-snug m-0">
+            <div class="bg-theme-muted border border-theme-dark/30 p-2 rounded text-center">
+              <p data-pip-element="guide-text" class="font-pixel text-[13px] text-theme-dark leading-snug m-0">
                 ${initialGuideText}
               </p>
             </div>
 
-            <div class="grid grid-cols-3 gap-2 border-t border-[#3D2013]/20 pt-2 text-center">
+            <div class="grid grid-cols-3 gap-2 border-t border-theme-dark/20 pt-2 text-center">
               <div class="flex items-center justify-center gap-1">
-                <span class="font-pressstart text-[9px] text-[#3D2013]">${focusMins}m</span>
-                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">FOCUS</span>
+                <span class="font-pressstart text-[9px] text-theme-dark">${focusMins}m</span>
+                <span class="font-pixel text-[11px] text-theme-dark/60 uppercase">FOCUS</span>
               </div>
-              <div class="flex items-center justify-center gap-1 border-x border-[#3D2013]/20 px-1">
-                <span class="font-pressstart text-[9px] text-[#3D2013]">${breakMins}m</span>
-                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">BREAK</span>
+              <div class="flex items-center justify-center gap-1 border-x border-theme-dark/20 px-1">
+                <span class="font-pressstart text-[9px] text-theme-dark">${breakMins}m</span>
+                <span class="font-pixel text-[11px] text-theme-dark/60 uppercase">BREAK</span>
               </div>
               <div class="flex items-center justify-center gap-1">
-                <span class="font-pressstart text-[9px] text-[#3D2013]">${currentSessionCount}/${totalSessions}</span>
-                <span class="font-pixel text-[11px] text-[#3D2013]/60 uppercase">SESSIONS</span>
+                <span class="font-pressstart text-[9px] text-theme-dark">${currentSessionCount}/${totalSessions}</span>
+                <span class="font-pixel text-[11px] text-theme-dark/60 uppercase">SESSIONS</span>
               </div>
             </div>
           </div>

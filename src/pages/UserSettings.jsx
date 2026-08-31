@@ -235,7 +235,7 @@ export default function UserSettings() {
   <div className="fixed top-20 right-6 z-50 pointer-events-none flex flex-col gap-3">
     <div
       key={toastMessage}
-      className="bg-[#FEF4E0] border-4 border-[#3D2013] p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
+      className="bg-theme-surface border-4 border-theme-dark p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
       style={{ boxShadow: '4px 4px 0px #3D2013' }}
     >
       {/* Align icon to start for multi-line text */}
@@ -249,7 +249,7 @@ export default function UserSettings() {
         </span>
       </div>
       <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
-        <div className="w-full h-full bg-[#788D55] animate-progress-center" />
+        <div className="w-full h-full bg-theme-safe animate-progress-center" />
       </div>
     </div>
   </div>
@@ -260,7 +260,7 @@ export default function UserSettings() {
         <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
           SETTINGS
         </h1>
-        <p className="font-pressstart text-[10px] sm:text-xs text-[#3D2013]/80">
+        <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
           Manage your account and get study reminders.
         </p>
       </div>
@@ -268,52 +268,52 @@ export default function UserSettings() {
       {/* TWO COLUMNS CARD LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         {/* LEFT CARD: ACCOUNT SETTINGS */}
-        <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-5 sm:p-6 shadow-md flex flex-col gap-5">
-          <div className="flex items-center gap-3 border-b-2 border-[#3D2013]/20 pb-3">
-            <svg className="w-[1em] h-[1em] text-[20px] text-[#E87339]" fill="currentColor" viewBox="0 0 16 16">
+        <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-5 sm:p-6 shadow-md flex flex-col gap-5">
+          <div className="flex items-center gap-3 border-b-2 border-theme-dark/20 pb-3">
+            <svg className="w-[1em] h-[1em] text-[20px] text-theme-primary" fill="currentColor" viewBox="0 0 16 16">
               <path d="M11 7c0 1.66-1.34 3-3 3S5 8.66 5 7s1.34-3 3-3s3 1.34 3 3" />
               <path fillRule="evenodd" d="M16 8c0 4.42-3.58 8-8 8s-8-3.58-8-8s3.58-8 8-8s8 3.58 8 8M4 13.75C4.16 13.484 5.71 11 7.99 11c2.27 0 3.83 2.49 3.99 2.75A6.98 6.98 0 0 0 14.99 8c0-3.87-3.13-7-7-7s-7 3.13-7 7c0 2.38 1.19 4.49 3.01 5.75" clipRule="evenodd" />
             </svg>
-            <h2 className="font-pressstart text-[12px] sm:text-[14px] text-[#3D2013]">ACCOUNT</h2>
+            <h2 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark">ACCOUNT</h2>
           </div>
 
           <div className="flex flex-col gap-4">
             {/* USERNAME ROW */}
-            <div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-[#3D2013]/30">
+            <div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-theme-dark/30">
               <div className="flex flex-col min-w-0 pr-2">
-                <span className="font-pixel text-[14px] text-[#3D2013]/70 uppercase">Username</span>
-                <span className="font-pressstart text-[12px] text-[#3D2013] truncate mt-1">
+                <span className="font-pixel text-[14px] text-theme-dark/70 uppercase">Username</span>
+                <span className="font-pressstart text-[12px] text-theme-dark truncate mt-1">
                   {playerData?.username || 'ACORN_HERO'}
                 </span>
               </div>
               <button
                 onClick={handleOpenUsernameModal}
-                className="h-8 sm:h-11 bg-[#FAE9CE] border-[2px] border-[#3D2013] px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+                className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
               >
-                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[#3D2013]" viewBox="0 0 24 24" fill="none">
+                <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-theme-dark" viewBox="0 0 24 24" fill="none">
                   <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
                 </svg>
-                <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013]">EDIT</span>
+                <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark">EDIT</span>
               </button>
             </div>
 
 {/* EMAIL ROW */}
-<div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-[#3D2013]/30">
+<div className="flex items-center justify-between pb-4 border-b-[1.5px] border-dashed border-theme-dark/30">
   <div className="flex flex-col min-w-0 pr-2">
-    <span className="font-pixel text-[14px] text-[#3D2013]/70 uppercase">Email</span>
+    <span className="font-pixel text-[14px] text-theme-dark/70 uppercase">Email</span>
     {/* Replaced truncate with break-all & added responsive font sizing */}
-    <span className="font-pressstart text-[9px] sm:text-[12px] text-[#3D2013] break-all leading-tight sm:leading-normal mt-1">
+    <span className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark break-all leading-tight sm:leading-normal mt-1">
       {settingsData.email}
     </span>
   </div>
   <button
     onClick={handleOpenEmailModal}
-    className="h-8 sm:h-11 bg-[#FAE9CE] border-[2px] border-[#3D2013] px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+    className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
   >
-    <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-[#3D2013]" viewBox="0 0 24 24" fill="none">
+    <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-theme-dark" viewBox="0 0 24 24" fill="none">
       <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
     </svg>
-    <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013]">EDIT</span>
+    <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark">EDIT</span>
   </button>
 </div>
 
@@ -323,14 +323,14 @@ export default function UserSettings() {
               className="w-full flex items-center justify-between pt-1 group cursor-pointer text-left bg-transparent border-none p-0"
             >
               <div className="flex items-center gap-3">
-                <svg className="w-4 h-4 text-[#3D2013]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 text-theme-dark" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4v-3.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                 </svg>
-                <span className="font-pressstart text-[10px] sm:text-[11px] text-[#3D2013] group-hover:text-[#E87339] transition-colors">
+                <span className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark group-hover:text-theme-primary transition-colors">
                   Change password
                 </span>
               </div>
-              <span className="font-pressstart text-[10px] text-[#3D2013] group-hover:text-[#E87339] flex items-center gap-1">
+              <span className="font-pressstart text-[10px] text-theme-dark group-hover:text-theme-primary flex items-center gap-1">
                 <span className="transition-transform group-hover:translate-x-0.5">&gt;</span>
               </span>
             </button>
@@ -338,36 +338,36 @@ export default function UserSettings() {
         </div>
 
         {/* RIGHT CARD: STUDY REMINDERS */}
-        <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-5 sm:p-6 shadow-md flex flex-col gap-5">
-          <div className="flex items-center gap-3 border-b-2 border-[#3D2013]/20 pb-3">
-            <svg className="w-[1em] h-[1em] text-[20px] text-[#E87339]" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-5 sm:p-6 shadow-md flex flex-col gap-5">
+          <div className="flex items-center gap-3 border-b-2 border-theme-dark/20 pb-3">
+            <svg className="w-[1em] h-[1em] text-[20px] text-theme-primary" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
             </svg>
-            <h2 className="font-pressstart text-[12px] sm:text-[14px] text-[#3D2013]">Study reminders</h2>
+            <h2 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark">Study reminders</h2>
           </div>
 
           <div className="flex flex-col gap-4">
             {/* DAILY STUDY REMINDER TOGGLE ROW */}
-            <div className="flex flex-col gap-3 pb-4 border-b-[1.5px] border-dashed border-[#3D2013]/30">
+            <div className="flex flex-col gap-3 pb-4 border-b-[1.5px] border-dashed border-theme-dark/30">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col pr-2">
-                  <span className="font-pressstart text-[10px] sm:text-[11px] text-[#3D2013]">
+                  <span className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark">
                     DAILY STUDY REMINDER
                   </span>
-                  <span className="font-pixel text-[13px] text-[#3D2013]/70 mt-1">
+                  <span className="font-pixel text-[13px] text-theme-dark/70 mt-1">
                     Get a reminder via email to keep you focused.
                   </span>
                 </div>
                 {/* Toggle Switch */}
                 <button
                   onClick={toggleDailyReminder}
-                  className={`w-12 h-6 border-[2px] border-[#3D2013] rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 ${
-                    settingsData.dailyReminderEnabled ? 'bg-[#E87339]' : 'bg-[#3D2013]/20'
+                  className={`w-12 h-6 border-[2px] border-theme-dark rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 ${
+                    settingsData.dailyReminderEnabled ? 'bg-theme-primary' : 'bg-theme-dark/20'
                   }`}
                 >
                   <div
-                    className={`w-4 h-4 bg-[#FAE9CE] border border-[#3D2013] rounded-full absolute top-[2px] left-[2px] transition-transform duration-200 ${
+                    className={`w-4 h-4 bg-theme-muted border border-theme-dark rounded-full absolute top-[2px] left-[2px] transition-transform duration-200 ${
                       settingsData.dailyReminderEnabled ? 'translate-x-[24px]' : 'translate-x-0'
                     }`}
                   />
@@ -376,30 +376,30 @@ export default function UserSettings() {
 
               {/* Dynamic reminder info when ON */}
               {settingsData.dailyReminderEnabled && (
-                <div className="flex flex-col gap-2 mt-2 bg-[#FAE9CE] p-3 rounded-[6px] border border-[#3D2013]/30">
+                <div className="flex flex-col gap-2 mt-2 bg-theme-muted p-3 rounded-[6px] border border-theme-dark/30">
                   <div className="flex items-center justify-between">
-                    <span className="font-pixel text-[13px] text-[#3D2013]">
+                    <span className="font-pixel text-[13px] text-theme-dark">
                       You will be reminded daily at {settingsData.dailyReminderTime}
                     </span>
                     <button
                       onClick={() => setShowTimePicker(!showTimePicker)}
-                      className="font-pressstart text-[8px] bg-[#E87339] text-[#FFFFF6] border border-[#3D2013] px-2 py-1 cursor-pointer hover:bg-[#d6652d]"
+                      className="font-pressstart text-[8px] bg-theme-primary text-[#FFFFF6] border border-theme-dark px-2 py-1 cursor-pointer hover:bg-[#d6652d]"
                     >
                       EDIT
                     </button>
                   </div>
                   {/* Time Picker Row */}
                   {showTimePicker && (
-                    <div className="flex items-center gap-2 pt-2 border-t border-[#3D2013]/20">
+                    <div className="flex items-center gap-2 pt-2 border-t border-theme-dark/20">
                       <input
                         type="time"
                         value={reminderTimeInput}
                         onChange={(e) => setReminderTimeInput(e.target.value)}
-                        className="bg-[#FEF4E0] border border-[#3D2013] px-2 py-1 font-pixel text-[14px] text-[#3D2013] rounded"
+                        className="bg-theme-surface border border-theme-dark px-2 py-1 font-pixel text-[14px] text-theme-dark rounded"
                       />
                       <button
                         onClick={handleSaveTime}
-                        className="font-pressstart text-[8px] bg-[#2E7D32] text-[#FFFFF6] border border-[#3D2013] px-3 py-1.5 cursor-pointer hover:bg-green-700"
+                        className="font-pressstart text-[8px] bg-[#2E7D32] text-[#FFFFF6] border border-theme-dark px-3 py-1.5 cursor-pointer hover:bg-green-700"
                       >
                         SAVE
                       </button>
@@ -412,8 +412,8 @@ export default function UserSettings() {
             {/* MANUAL REMINDER SECTION (When Daily is OFF) */}
             {!settingsData.dailyReminderEnabled && (
               <div className="flex flex-col gap-3 pt-1">
-                <span className="font-pressstart text-[10px] text-[#3D2013]">MANUAL REMINDERS</span>
-                <span className="font-pixel text-[13px] text-[#3D2013]/70">
+                <span className="font-pressstart text-[10px] text-theme-dark">MANUAL REMINDERS</span>
+                <span className="font-pixel text-[13px] text-theme-dark/70">
                   Set a specific custom date and time for a reminder.
                 </span>
 
@@ -422,11 +422,11 @@ export default function UserSettings() {
                     type="datetime-local"
                     value={manualDatetimeInput}
                     onChange={(e) => setManualDatetimeInput(e.target.value)}
-                    className="bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2 font-pixel text-[13px] text-[#3D2013] rounded-[6px] flex-1"
+                    className="bg-theme-muted border-[1.5px] border-theme-dark p-2 font-pixel text-[13px] text-theme-dark rounded-[6px] flex-1"
                   />
                   <button
                     onClick={handleAddManualReminder}
-                    className="font-pressstart text-[9px] bg-[#E87339] text-[#FFFFF6] border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                    className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
                   >
                     SAVE
                   </button>
@@ -435,16 +435,16 @@ export default function UserSettings() {
                 {/* Saved Manual Reminders List */}
                 <div className="flex flex-col gap-2 mt-2">
                   {settingsData.manualReminders.length === 0 ? (
-                    <span className="font-pixel text-[12px] text-[#3D2013]/60 italic">
+                    <span className="font-pixel text-[12px] text-theme-dark/60 italic">
                       No manual reminders set.
                     </span>
                   ) : (
                     settingsData.manualReminders.map((rem) => (
                       <div
                         key={rem.id}
-                        className="flex items-center justify-between bg-[#FAE9CE] p-2 rounded-[6px] border border-[#3D2013]/30 font-pixel text-[13px]"
+                        className="flex items-center justify-between bg-theme-muted p-2 rounded-[6px] border border-theme-dark/30 font-pixel text-[13px]"
                       >
-                        <span className="text-[#3D2013]">
+                        <span className="text-theme-dark">
                           📅 {new Date(rem.datetime).toLocaleString()}
                         </span>
                         <button
@@ -467,27 +467,27 @@ export default function UserSettings() {
 
       {/* 1. EDIT USERNAME MODAL */}
       {showUsernameModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b-2 border-[#3D2013]/20 pb-3">
-              <h3 className="font-pressstart text-[12px] text-[#E87339]">Edit Username</h3>
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b-2 border-theme-dark/20 pb-3">
+              <h3 className="font-pressstart text-[12px] text-theme-primary">Edit Username</h3>
               <button
                 onClick={() => setShowUsernameModal(false)}
-                className="font-pressstart text-[10px] text-[#3D2013] hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex flex-col gap-3 font-pixel text-[14px] text-[#3D2013]">
+            <div className="flex flex-col gap-3 font-pixel text-[14px] text-theme-dark">
               <div className="flex flex-col gap-1">
-                <span className="text-[#3D2013]/70">Current Username:</span>
+                <span className="text-theme-dark/70">Current Username:</span>
                 <span className="font-pressstart text-[11px]">
                   {playerData?.username || 'ACORN_HERO'}
                 </span>
               </div>
               <div className="flex flex-col gap-1 pt-2">
-                <label className="text-[#3D2013]">New Username:</label>
+                <label className="text-theme-dark">New Username:</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -495,30 +495,30 @@ export default function UserSettings() {
                     value={newUsername}
                     onChange={(e) => handleUsernameInputChange(e.target.value)}
                     placeholder="Enter new username"
-                    className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2.5 font-pixel text-[15px] rounded-[6px] outline-none"
+                    className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 font-pixel text-[15px] rounded-[6px] outline-none"
                   />
-                  <span className="absolute right-3 top-2.5 text-[12px] text-[#3D2013]/60">
+                  <span className="absolute right-3 top-2.5 text-[12px] text-theme-dark/60">
                     {newUsername.length}/20
                   </span>
                 </div>
-                <p className={`font-pixel text-[12px] mt-1 leading-tight ${usernameError ? 'text-[#A94A4A]' : 'text-[#3D2013]/70'}`}>
+                <p className={`font-pixel text-[12px] mt-1 leading-tight ${usernameError ? 'text-[#A94A4A]' : 'text-theme-dark/70'}`}>
                   {usernameError ? `✘ ${usernameError}` : 'Usernames must be 6-20 characters long and can include letters, numbers, and special characters.'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#3D2013]/20">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-theme-dark/20">
               <button
                 type="button"
                 onClick={() => setShowUsernameModal(false)}
-                className="font-pressstart text-[9px] bg-transparent border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#3D2013]/10 cursor-pointer"
+                className="font-pressstart text-[9px] bg-transparent border-[2px] border-theme-dark px-4 py-2 hover:bg-theme-dark/10 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveUsername}
                 type="button"
-                className="font-pressstart text-[9px] bg-[#E87339] text-[#FFFFF6] border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>
@@ -529,31 +529,31 @@ export default function UserSettings() {
 
       {/* 2. EDIT EMAIL MODAL */}
       {showEmailModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b-2 border-[#3D2013]/20 pb-3">
-              <h3 className="font-pressstart text-[12px] text-[#E87339]">Edit Email</h3>
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b-2 border-theme-dark/20 pb-3">
+              <h3 className="font-pressstart text-[12px] text-theme-primary">Edit Email</h3>
               <button
                 onClick={() => setShowEmailModal(false)}
-                className="font-pressstart text-[10px] text-[#3D2013] hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex flex-col gap-3 font-pixel text-[14px] text-[#3D2013]">
+            <div className="flex flex-col gap-3 font-pixel text-[14px] text-theme-dark">
               <div className="flex flex-col gap-1">
-                <span className="text-[#3D2013]/70">Current Email:</span>
+                <span className="text-theme-dark/70">Current Email:</span>
                 <span className="font-pressstart text-[11px]">{settingsData.email}</span>
               </div>
               <div className="flex flex-col gap-1 pt-2">
-                <label className="text-[#3D2013]">New Email:</label>
+                <label className="text-theme-dark">New Email:</label>
                 <input
                   type="email"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="Enter new email"
-                  className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2.5 font-pixel text-[15px] rounded-[6px] outline-none"
+                  className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 font-pixel text-[15px] rounded-[6px] outline-none"
                 />
                 {emailError && (
                   <p className="font-pixel text-[12px] text-[#A94A4A] mt-1 leading-tight">
@@ -563,18 +563,18 @@ export default function UserSettings() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#3D2013]/20">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-theme-dark/20">
               <button
                 type="button"
                 onClick={() => setShowEmailModal(false)}
-                className="font-pressstart text-[9px] bg-transparent border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#3D2013]/10 cursor-pointer"
+                className="font-pressstart text-[9px] bg-transparent border-[2px] border-theme-dark px-4 py-2 hover:bg-theme-dark/10 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveEmail}
                 type="button"
-                className="font-pressstart text-[9px] bg-[#E87339] text-[#FFFFF6] border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>
@@ -585,22 +585,22 @@ export default function UserSettings() {
 
       {/* 3. CHANGE PASSWORD MODAL */}
       {showPasswordModal && (
-        <div className="fixed inset-0 bg-[#3D2013]/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b-2 border-[#3D2013]/20 pb-3">
-              <h3 className="font-pressstart text-[12px] text-[#E87339]">Change password</h3>
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b-2 border-theme-dark/20 pb-3">
+              <h3 className="font-pressstart text-[12px] text-theme-primary">Change password</h3>
               <button
                 onClick={() => setShowPasswordModal(false)}
-                className="font-pressstart text-[10px] text-[#3D2013] hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex flex-col gap-4 font-pixel text-[14px] text-[#3D2013]">
+            <div className="flex flex-col gap-4 font-pixel text-[14px] text-theme-dark">
               {/* Old Password Field */}
               <div className="flex flex-col gap-1">
-                <label className="text-[#3D2013] font-pressstart text-[9px]">Old Password</label>
+                <label className="text-theme-dark font-pressstart text-[9px]">Old Password</label>
                 <div className="relative">
                   <input
                     type={showOldPass ? 'text' : 'password'}
@@ -610,12 +610,12 @@ export default function UserSettings() {
                       setOldPassError('');
                     }}
                     placeholder="Enter old password"
-                    className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
+                    className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowOldPass(!showOldPass)}
-                    className="absolute right-3 top-3 text-[#3D2013]/70 hover:text-[#3D2013] cursor-pointer"
+                    className="absolute right-3 top-3 text-theme-dark/70 hover:text-theme-dark cursor-pointer"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -632,19 +632,19 @@ export default function UserSettings() {
 
               {/* New Password Field */}
               <div className="flex flex-col gap-1">
-                <label className="text-[#3D2013] font-pressstart text-[9px]">New Password</label>
+                <label className="text-theme-dark font-pressstart text-[9px]">New Password</label>
                 <div className="relative">
                   <input
                     type={showNewPass ? 'text' : 'password'}
                     value={newPassword}
                     onChange={(e) => handleNewPassChange(e.target.value)}
                     placeholder="Enter new password"
-                    className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
+                    className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPass(!showNewPass)}
-                    className="absolute right-3 top-3 text-[#3D2013]/70 hover:text-[#3D2013] cursor-pointer"
+                    className="absolute right-3 top-3 text-theme-dark/70 hover:text-theme-dark cursor-pointer"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -661,19 +661,19 @@ export default function UserSettings() {
 
               {/* Confirm Password Field */}
               <div className="flex flex-col gap-1">
-                <label className="text-[#3D2013] font-pressstart text-[9px]">Confirm Password</label>
+                <label className="text-theme-dark font-pressstart text-[9px]">Confirm Password</label>
                 <div className="relative">
                   <input
                     type={showConfirmPass ? 'text' : 'password'}
                     value={confirmPassword}
                     onChange={(e) => handleConfirmPassChange(e.target.value)}
                     placeholder="Confirm new password"
-                    className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
+                    className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 pr-10 font-pixel text-[15px] rounded-[6px] outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirmPass(!showConfirmPass)}
-                    className="absolute right-3 top-3 text-[#3D2013]/70 hover:text-[#3D2013] cursor-pointer"
+                    className="absolute right-3 top-3 text-theme-dark/70 hover:text-theme-dark cursor-pointer"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -681,24 +681,24 @@ export default function UserSettings() {
                     </svg>
                   </button>
                 </div>
-                <p className={`font-pixel text-[12px] mt-1 leading-tight ${passwordNote ? 'text-[#A94A4A]' : 'text-[#3D2013]'}`}>
+                <p className={`font-pixel text-[12px] mt-1 leading-tight ${passwordNote ? 'text-[#A94A4A]' : 'text-theme-dark'}`}>
                   {passwordNote ? `✘ ${passwordNote}` : 'Create a strong password using 8 or more characters, including uppercase and lowercase letters, a number, and a special character.'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-[#3D2013]/20">
+            <div className="flex items-center justify-end gap-3 pt-3 border-t-2 border-theme-dark/20">
               <button
                 type="button"
                 onClick={() => setShowPasswordModal(false)}
-                className="font-pressstart text-[9px] bg-transparent border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#3D2013]/10 cursor-pointer"
+                className="font-pressstart text-[9px] bg-transparent border-[2px] border-theme-dark px-4 py-2 hover:bg-theme-dark/10 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSavePassword}
                 type="button"
-                className="font-pressstart text-[9px] bg-[#E87339] text-[#FFFFF6] border-[2px] border-[#3D2013] px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>

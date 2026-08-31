@@ -51,7 +51,7 @@ export default function UserLayout() {
     : `${import.meta.env.BASE_URL}/`;
 
   return (
-    <div className="min-h-screen bg-[#FAE9CE] relative text-[#3D2013] flex flex-col">
+    <div className="min-h-screen bg-theme-muted relative text-theme-dark flex flex-col">
       {/* BACKGROUND TEXTURE LAYERS */}
       <div
         className="fixed inset-0 pointer-events-none z-0"
@@ -126,7 +126,7 @@ export default function UserLayout() {
 
       {/* KITSU AI OVERLAY MODAL IFRAME */}
       {isKitsuOpen && (
-        <div className="fixed inset-0 z-[9999] flex flex-col bg-[#FEF4E0] border-4 border-[#3D2013]">
+        <div className="fixed inset-0 z-[9999] flex flex-col bg-theme-surface border-4 border-theme-dark">
           <iframe
             src={`${baseUrl}kitsuai-embed`}
             title="Kitsu AI Frame"
@@ -137,7 +137,7 @@ export default function UserLayout() {
 
       {/* CREATE SESSION OVERLAY MODAL IFRAME */}
       {isCreateSessionOpen && (
-        <div className="fixed inset-0 z-[9999] flex flex-col bg-[#FEF4E0] border-4 border-[#3D2013]">
+        <div className="fixed inset-0 z-[9999] flex flex-col bg-theme-surface border-4 border-theme-dark">
           <iframe
             src={`${baseUrl}create-session-embed`}
             title="Create Session Frame"

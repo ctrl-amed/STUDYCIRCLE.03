@@ -145,7 +145,7 @@ export default function Sidebar({
       <div
         id="sidebar-overlay"
         onClick={() => setIsMobileOpen(false)}
-        className={`fixed inset-0 bg-[#3D2013]/40 z-40 md:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 bg-theme-dark/40 z-40 md:hidden transition-opacity duration-300 ${
           isMobileOpen ? 'block opacity-100' : 'hidden opacity-0'
         }`}
       />
@@ -153,21 +153,21 @@ export default function Sidebar({
       {/* SIDE NAVIGATION */}
       <aside
         id="sidebar"
-        className={`fixed top-0 left-0 h-full bg-[#FEF4E0] border-r-[3px] border-[#3D2013] z-50 transition-all duration-300 ease-in-out flex flex-col p-4 shadow-xl overflow-x-hidden ${
+        className={`fixed top-0 left-0 h-full bg-theme-surface border-r-[3px] border-theme-dark z-50 transition-all duration-300 ease-in-out flex flex-col p-4 shadow-xl overflow-x-hidden ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         } ${isExpanded ? 'w-64' : 'w-20 md:w-20'} ${isMobileOpen ? 'w-64' : ''}`}
       >
         {/* HEADER: LOGO & TOGGLE BUTTON */}
         <div
           id="sidebar-header"
-          className={`flex items-center pb-4 border-b-2 border-[#3D2013]/20 mb-4 shrink-0 transition-all duration-300 ${
+          className={`flex items-center pb-4 border-b-2 border-theme-dark/20 mb-4 shrink-0 transition-all duration-300 ${
             isExpanded || isMobileOpen ? 'flex-row justify-between' : 'flex-col gap-2 items-center'
           }`}
         >
           <div id="logo-container" className="flex items-center gap-2 overflow-hidden">
             <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="w-8 h-8 object-contain shrink-0" />
             {(isExpanded || isMobileOpen) && (
-              <span className="nav-label font-pressstart text-[12px] text-[#3D2013] tracking-tight whitespace-nowrap">
+              <span className="nav-label font-pressstart text-[12px] text-theme-dark tracking-tight whitespace-nowrap">
                 StudyCircle
               </span>
             )}
@@ -178,7 +178,7 @@ export default function Sidebar({
             id="toggle-sidebar-btn"
             aria-label="Toggle Sidebar"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="hidden md:flex text-[#3D2013] hover:text-[#FD923E] transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
+            className="hidden md:flex text-theme-dark hover:text-[#FD923E] transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
           >
             <svg
               id="toggle-icon"
@@ -204,22 +204,22 @@ export default function Sidebar({
           title="Click to view Level Rewards"
           className={`mb-4 cursor-pointer rounded-[10px] flex items-center gap-3 shrink-0 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
             isExpanded || isMobileOpen
-              ? 'bg-[#FEF4E0] border-[2px] border-[#3D2013] p-2.5 justify-start hover:border-[#FD923E]'
+              ? 'bg-theme-surface border-[2px] border-theme-dark p-2.5 justify-start hover:border-[#FD923E]'
               : 'bg-transparent border-transparent p-0 justify-center'
           }`}
         >
           <div className="relative shrink-0 flex items-center justify-center">
-            <div className="w-10 h-10 rounded-full border-[2px] border-[#3D2013] bg-[#FAE9CE] overflow-hidden flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
               {playerData.avatarUrl ? (
                 <img id="player-avatar" src={playerData.avatarUrl} alt="Player Avatar" className="w-full h-full object-cover" />
               ) : (
-                <svg id="avatar-placeholder" className="w-6 h-6 text-[#3D2013]" fill="currentColor" viewBox="0 0 24 24">
+                <svg id="avatar-placeholder" className="w-6 h-6 text-theme-dark" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 2L2 9l2 11h16l2-11L12 2zm0 4a3 3 0 110 6 3 3 0 010-6zm-6 12v-1.5c0-1.65 2.7-3 6-3s6 1.35 6 3V18H6z" />
                 </svg>
               )}
             </div>
-            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-[#3D2013] px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
-              <span id="player-level" className="font-pressstart text-[8px] text-[#3D2013] font-bold">
+            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
+              <span id="player-level" className="font-pressstart text-[8px] text-theme-dark font-bold">
                 {playerData.level}
               </span>
             </div>
@@ -227,17 +227,17 @@ export default function Sidebar({
 
           {(isExpanded || isMobileOpen) && (
             <div className="nav-label flex-1 flex flex-col gap-1 overflow-hidden transition-opacity duration-200">
-              <h2 id="player-name" className="font-pressstart text-[11px] text-[#3D2013] tracking-tight truncate leading-none">
+              <h2 id="player-name" className="font-pressstart text-[11px] text-theme-dark tracking-tight truncate leading-none">
                 {playerData.username}
               </h2>
-              <div className="w-full bg-[#FAE9CE] border-[2px] border-[#3D2013] h-3.5 relative overflow-hidden rounded-[4px]">
+              <div className="w-full bg-theme-muted border-[2px] border-theme-dark h-3.5 relative overflow-hidden rounded-[4px]">
                 <div
                   id="xp-bar-fill"
-                  className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r-2 border-[#3D2013]' : ''}`}
+                  className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r-2 border-theme-dark' : ''}`}
                   style={{ width: `${xpPercent}%` }}
                 />
               </div>
-              <div id="xp-text" className="font-pressstart text-[8px] text-[#3D2013] leading-none">
+              <div id="xp-text" className="font-pressstart text-[8px] text-theme-dark leading-none">
                 {playerData.currentXP.toLocaleString()}/{playerData.maxXP.toLocaleString()} XP
               </div>
             </div>
@@ -252,14 +252,14 @@ export default function Sidebar({
 
             return (
               <div key={item.path} className="flex flex-col gap-1.5">
-                {isSettings && <div className="border-t-2 border-[#3D2013]/20 my-1" />}
+                {isSettings && <div className="border-t-2 border-theme-dark/20 my-1" />}
                 <Link
                   to={item.path}
                   onClick={() => setIsMobileOpen(false)}
                   className={`nav-item group font-pressstart text-[11px] p-2.5 rounded-[8px] transition-colors flex items-center gap-3 whitespace-nowrap ${
                     isActive
                       ? 'active bg-[#FDE4D0] border-r-4 border-[#FD923E] text-[#EA781C]'
-                      : 'text-[#3D2013] hover:bg-[#FDE4D0] hover:text-[#EA781C]'
+                      : 'text-theme-dark hover:bg-[#FDE4D0] hover:text-[#EA781C]'
                   }`}
                 >
                   {item.icon}
@@ -273,14 +273,14 @@ export default function Sidebar({
         </nav>
 
         {/* FOOTER SECTION */}
-        <div className="mt-auto pt-3 border-t-2 border-[#3D2013]/20 flex flex-col gap-2 shrink-0">
+        <div className="mt-auto pt-3 border-t-2 border-theme-dark/20 flex flex-col gap-2 shrink-0">
           <button
             type="button"
             onClick={() => {
               setIsMobileOpen(false);
               if (onOpenKitsu) onOpenKitsu();
             }}
-            className="w-full bg-[#FDE4D0] border-2 border-[#3D2013] hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-[#3D2013]"
+            className="w-full bg-[#FDE4D0] border-2 border-theme-dark hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-theme-dark"
           >
             <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-5 h-5 object-contain shrink-0" />
             {(isExpanded || isMobileOpen) && <span className="nav-label font-pressstart text-[10px]">KitsuAI</span>}
@@ -291,7 +291,7 @@ export default function Sidebar({
               id="appearance-btn"
               title="Toggle Appearance"
               onClick={() => setAppearanceRotated(!appearanceRotated)}
-              className="w-full text-[#3D2013] hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-[#FAE9CE] cursor-pointer"
+              className="w-full text-theme-dark hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
             >
               <svg
                 id="appearance-icon"
@@ -317,7 +317,7 @@ export default function Sidebar({
             <button
               title="Feedback"
               onClick={() => setShowFeedbackModal(true)}
-              className="w-full text-[#3D2013] hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-[#FAE9CE] cursor-pointer"
+              className="w-full text-theme-dark hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
             >
               <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                 <path d="M0 0h24v24H0z" fill="none" />
@@ -334,23 +334,23 @@ export default function Sidebar({
 
       {/* LEVEL REWARDS MODAL */}
       {showLevelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#3D2013]/50">
-          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-theme-dark/50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             
             {/* CLOSE BUTTON AT TOP RIGHT */}
             <button
               onClick={() => setShowLevelModal(false)}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-theme-dark hover:text-theme-danger font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
             >
               ✕
             </button>
 
             {/* HEADER */}
             <div className="flex flex-col items-center justify-center text-center gap-1 pt-1">
-              <h3 className="font-pressstart text-sm sm:text-[36px] text-[#3D2013] tracking-wide">
+              <h3 className="font-pressstart text-sm sm:text-[36px] text-theme-dark tracking-wide">
                 LEVELS
               </h3>
-              <p className="font-pixel text-[7px] sm:text-[24px] text-[#3D2013]/70 px-4">
+              <p className="font-pixel text-[7px] sm:text-[24px] text-theme-dark/70 px-4">
                 Level up by completing study sessions to earn perks & titles!
               </p>
             </div>
@@ -362,9 +362,9 @@ export default function Sidebar({
               <button
                 disabled={levelPageIndex === 0}
                 onClick={() => setLevelPageIndex((prev) => Math.max(0, prev - 1))}
-                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
                   levelPageIndex === 0
-                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark'
                     : 'cursor-pointer'
                 }`}
               >
@@ -386,13 +386,13 @@ export default function Sidebar({
                       key={item.level}
                       className={`w-28 sm:w-36 rounded-[12px] flex flex-col justify-between overflow-hidden shrink-0 border-[2px] sm:border-[2.5px] transition-all shadow-sm ${
                         canClaim
-                          ? 'border-[#E87339] bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
-                          : 'border-[#3D2013] bg-[#FEF4E0]'
+                          ? 'border-theme-primary bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
+                          : 'border-theme-dark bg-theme-surface'
                       }`}
                     >
                       {/* CARD HEADER */}
                       <div className="p-1.5 sm:p-2 text-center pt-2">
-                        <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013] uppercase block truncate">
+                        <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark uppercase block truncate">
                           {item.label}
                         </span>
                       </div>
@@ -407,13 +407,13 @@ export default function Sidebar({
                             e.target.style.display = 'none';
                           }}
                         />
-                        <span className="font-pixel text-[13px] sm:text-[15px] text-[#3D2013]/90 text-center leading-tight">
+                        <span className="font-pixel text-[13px] sm:text-[15px] text-theme-dark/90 text-center leading-tight">
                           {item.text}
                         </span>
                       </div>
 
                       {/* BORDER SEPARATOR */}
-                      <div className="w-full h-[2px] sm:h-[2px] bg-[#3D2013]" />
+                      <div className="w-full h-[2px] sm:h-[2px] bg-theme-dark" />
 
                       {/* CARD FOOTER */}
                       {isClaimed && (
@@ -431,7 +431,7 @@ export default function Sidebar({
                         <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
                           <button
                             onClick={() => handleClaimLevelReward(item)}
-                            className="w-full bg-[#E87339] text-[#FEF4E0] border-[1.5px] sm:border-[2px] border-[#3D2013] py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase"
+                            className="w-full bg-theme-primary text-theme-surface border-[1.5px] sm:border-[2px] border-theme-dark py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase"
                           >
                             CLAIM
                           </button>
@@ -456,9 +456,9 @@ export default function Sidebar({
               <button
                 disabled={levelPageIndex === LEVEL_PAGES_TIERS.length - 1}
                 onClick={() => setLevelPageIndex((prev) => Math.min(LEVEL_PAGES_TIERS.length - 1, prev + 1))}
-                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
                   levelPageIndex === LEVEL_PAGES_TIERS.length - 1
-                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark'
                     : 'cursor-pointer'
                 }`}
               >
@@ -468,7 +468,7 @@ export default function Sidebar({
 
             {/* INFO TEXT & CIRCLE PAGE INDICATOR */}
             <div className="flex flex-col items-center gap-1.5 pb-1">
-              <span className="font-pressstart text-[7px] sm:text-[9px] text-[#3D2013]/70 text-center">
+              <span className="font-pressstart text-[7px] sm:text-[9px] text-theme-dark/70 text-center">
                 Gain XP from completed sessions to unlock tiers
               </span>
 
@@ -477,8 +477,8 @@ export default function Sidebar({
                   <button
                     key={idx}
                     onClick={() => setLevelPageIndex(idx)}
-                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-[#3D2013] transition-colors cursor-pointer ${
-                      levelPageIndex === idx ? 'bg-[#E87339]' : 'bg-[#FAE9CE]'
+                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-theme-dark transition-colors cursor-pointer ${
+                      levelPageIndex === idx ? 'bg-theme-primary' : 'bg-theme-muted'
                     }`}
                   />
                 ))}
@@ -486,7 +486,7 @@ export default function Sidebar({
             </div>
 
             {/* FOOTER SECTION WITH DISTINCT BACKGROUND */}
-            <div className="-mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-3.5 sm:py-4 bg-[#FAE9CE] border-t-[2.5px] border-[#3D2013] rounded-b-[13px] flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 mt-1">
+            <div className="-mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-3.5 sm:py-4 bg-theme-muted border-t-[2.5px] border-theme-dark rounded-b-[13px] flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 mt-1">
               
               {/* LEFT: KITSU LOGO & TEXT */}
               <div className="flex items-center gap-2.5 text-center md:text-left">
@@ -499,15 +499,15 @@ export default function Sidebar({
                   }}
                 />
                 <div className="flex flex-col">
-                  <span className="font-pressstart text-[11px] sm:text-[16px] text-[#3D2013]">Keep it up!</span>
-                  <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/80 leading-4">
+                  <span className="font-pressstart text-[11px] sm:text-[16px] text-theme-dark">Keep it up!</span>
+                  <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/80 leading-4">
                     Earn XP by completing study <br /> sessions to unlock new levels.
                   </span>
                 </div>
               </div>
 
               {/* RIGHT: DUAL STATS CARD (CURRENT LEVEL & TOTAL XP WITH BAR) */}
-              <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2 sm:p-2.5 flex items-center justify-center gap-2 sm:gap-3 w-full md:w-auto shrink-0 shadow-xs">
+              <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-2 sm:p-2.5 flex items-center justify-center gap-2 sm:gap-3 w-full md:w-auto shrink-0 shadow-xs">
                 
                 {/* CURRENT LEVEL */}
                 <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2">
@@ -520,7 +520,7 @@ export default function Sidebar({
                     <path d="M7 21H3v-8h4zm7 0h-4V3h4zm7-13v13h-4V8z" />
                   </svg>
                   <div className="flex flex-col text-left">
-                    <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">CURRENT LEVEL</span>
+                    <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70">CURRENT LEVEL</span>
                     <span className="font-pressstart text-[8px] sm:text-[20px] text-[#FD923E]">
                       {playerData.level ?? 1}
                     </span>
@@ -528,18 +528,18 @@ export default function Sidebar({
                 </div>
 
                 {/* VERTICAL BORDER SEPARATOR */}
-                <div className="w-[1.5px] h-6 sm:h-7 bg-[#3D2013]/30" />
+                <div className="w-[1.5px] h-6 sm:h-7 bg-theme-dark/30" />
 
                 {/* TOTAL XP WITH BAR & RATIO */}
                 <div className="flex flex-col text-left pl-1 gap-1 min-w-[110px] sm:min-w-[130px]">
-                  <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">TOTAL XP</span>
-                  <div className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] h-2.5 sm:h-3 relative overflow-hidden rounded-[3px]">
+                  <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70">TOTAL XP</span>
+                  <div className="w-full bg-theme-muted border-[1.5px] border-theme-dark h-2.5 sm:h-3 relative overflow-hidden rounded-[3px]">
                     <div
-                      className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r border-[#3D2013]' : ''}`}
+                      className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r border-theme-dark' : ''}`}
                       style={{ width: `${xpPercent}%` }}
                     />
                   </div>
-                  <span className="font-pressstart text-[6px] sm:text-[7px] text-[#3D2013]">
+                  <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-dark">
                     {playerData.currentXP?.toLocaleString() ?? 0}/{playerData.maxXP?.toLocaleString() ?? 100} XP
                   </span>
                 </div>
@@ -554,20 +554,20 @@ export default function Sidebar({
 
       {/* FEEDBACK & IDEAS MODAL */}
       {showFeedbackModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#3D2013]/50">
-          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[16px] p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-theme-dark/50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative animate-fade-in">
             
             {/* CLOSE BUTTON AT TOP RIGHT */}
             <button
               onClick={() => setShowFeedbackModal(false)}
-              className="absolute top-4 right-4 text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+              className="absolute top-4 right-4 text-theme-dark hover:text-theme-danger font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
             >
               ✕
             </button>
 
             {/* HEADER */}
             <div className="flex flex-col gap-1">
-              <h3 className="font-pressstart text-[14px] sm:text-[18px] text-[#3D2013] tracking-wide">
+              <h3 className="font-pressstart text-[14px] sm:text-[18px] text-theme-dark tracking-wide">
                 Feedback & Ideas
               </h3>
             </div>
@@ -576,7 +576,7 @@ export default function Sidebar({
               <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
                 <span className="text-4xl">🎉</span>
                 <span className="font-pressstart text-[12px] text-[#FD923E]">THANK YOU!</span>
-                <span className="font-pixel text-[16px] text-[#3D2013]/80">
+                <span className="font-pixel text-[16px] text-theme-dark/80">
                   Your feedback has been submitted successfully.
                 </span>
               </div>
@@ -584,7 +584,7 @@ export default function Sidebar({
               <form onSubmit={handleFeedbackSubmit} className="flex flex-col gap-5">
                 {/* RATING OPTIONS */}
                 <div className="flex flex-col gap-3">
-                  <span className="font-pressstart text-[9px] text-[#3D2013]/70">
+                  <span className="font-pressstart text-[9px] text-theme-dark/70">
                     How was your experience?
                   </span>
 
@@ -598,14 +598,14 @@ export default function Sidebar({
                           onClick={() => setSelectedRating(item.label)}
                           className={`flex flex-col items-center justify-center p-2 rounded-[12px] border-[2px] transition-all cursor-pointer ${
                             isSelected
-                              ? 'bg-[#FD923E] border-[#3D2013] scale-105 shadow-md'
-                              : 'bg-[#FAE9CE] border-transparent hover:border-[#3D2013]/30 hover:scale-102'
+                              ? 'bg-[#FD923E] border-theme-dark scale-105 shadow-md'
+                              : 'bg-theme-muted border-transparent hover:border-theme-dark/30 hover:scale-102'
                           }`}
                         >
                           <span className="text-2xl sm:text-3xl mb-1">{item.emoji}</span>
                           <span
                             className={`font-pressstart text-[7px] sm:text-[8px] truncate max-w-full ${
-                              isSelected ? 'text-[#FEF4E0] font-bold' : 'text-[#3D2013]/80'
+                              isSelected ? 'text-theme-surface font-bold' : 'text-theme-dark/80'
                             }`}
                           >
                             {item.label}
@@ -618,8 +618,8 @@ export default function Sidebar({
 
                 {/* TEXT AREA WITH FIELDSET BORDER LABEL */}
                 <div className="relative">
-                  <fieldset className="border-[2px] border-[#3D2013] rounded-[8px] p-2 bg-[#FEF4E0]">
-                    <legend className="px-2 font-pressstart text-[8px] text-[#3D2013]/70 ml-2">
+                  <fieldset className="border-[2px] border-theme-dark rounded-[8px] p-2 bg-theme-surface">
+                    <legend className="px-2 font-pressstart text-[8px] text-theme-dark/70 ml-2">
                       We would love to hear from you!
                     </legend>
                     <textarea
@@ -628,7 +628,7 @@ export default function Sidebar({
                       value={feedbackText}
                       onChange={(e) => setFeedbackText(e.target.value)}
                       placeholder="Write your feedback or feature ideas here..."
-                      className="w-full bg-transparent font-pixel text-[15px] sm:text-[18px] text-[#3D2013] focus:outline-none resize-none px-1"
+                      className="w-full bg-transparent font-pixel text-[15px] sm:text-[18px] text-theme-dark focus:outline-none resize-none px-1"
                     />
                   </fieldset>
                 </div>
@@ -636,7 +636,7 @@ export default function Sidebar({
                 {/* SUBMIT BUTTON */}
                 <button
                   type="submit"
-                  className="w-full bg-[#FD923E] text-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 sm:py-3 font-pressstart text-[10px] sm:text-[11px] rounded-[8px] hover:bg-[#d0622c] cursor-pointer transition-colors shadow-sm uppercase"
+                  className="w-full bg-[#FD923E] text-theme-surface border-[2px] border-theme-dark py-2.5 sm:py-3 font-pressstart text-[10px] sm:text-[11px] rounded-[8px] hover:bg-[#d0622c] cursor-pointer transition-colors shadow-sm uppercase"
                 >
                   Submit
                 </button>
