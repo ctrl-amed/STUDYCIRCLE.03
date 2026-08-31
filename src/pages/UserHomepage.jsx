@@ -7,6 +7,14 @@ import CustomRoom from '../components/CustomRoom';
 import CustomAvatar from '../components/CustomAvatar';
 import EmojiPicker from 'emoji-picker-react';
 
+// --- LOFI TRACKS DATA ---
+const LOFI_TRACKS = [
+  { id: 'lofi1', name: 'Midnight Coffee', artist: 'Lofi Girl & Chill', src: 'media/BGM/LOFI1.mp3' },
+  { id: 'lofi2', name: 'Rainy Study Session', artist: 'Pixel Beats', src: 'media/BGM/LOFI2.mp3' },
+  { id: 'lofi3', name: 'Pixel Sunset', artist: 'Kitsu BGM', src: 'media/BGM/LOFI3.mp3' },
+  { id: 'lofi4', name: 'Cosmic Chillout', artist: 'StudyCircle Sound', src: 'media/BGM/LOFI4.mp3' },
+];
+
 // --- MULTIPLAYER & SINGLEPLAYER AVATAR POSITIONS ---
 const avatarConfig = {
   scale: 0.85,
@@ -208,6 +216,54 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [chatInput, setChatInput] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const chatContainerRef = useRef(null);
+
+  // Music Player State
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [isLoop, setIsLoop] = useState(false);
+  const [volume, setVolume] = useState(0.5);
+
+  const audioRef = useRef(null);
+  const currentTrack = LOFI_TRACKS[currentTrackIndex];
+
+  // Control audio play/pause and volume changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+      if (isPlaying) {
+        audioRef.current.play().catch(() => setIsPlaying(false));
+      } else {
+        audioRef.current.pause();
+      }
+    }
+  }, [isPlaying, currentTrackIndex, volume]);
+
+  const togglePlay = () => setIsPlaying((prev) => !prev);
+
+  const handleNextTrack = () => {
+    if (isShuffle) {
+      const randomIndex = Math.floor(Math.random() * LOFI_TRACKS.length);
+      setCurrentTrackIndex(randomIndex);
+    } else {
+      setCurrentTrackIndex((prev) => (prev + 1) % LOFI_TRACKS.length);
+    }
+  };
+
+  const handlePrevTrack = () => {
+    setCurrentTrackIndex((prev) => (prev - 1 + LOFI_TRACKS.length) % LOFI_TRACKS.length);
+  };
+
+  const handleTrackEnd = () => {
+    if (isLoop) {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play();
+      }
+    } else {
+      handleNextTrack();
+    }
+  };
 
   // Listen for session updates from CreateSession modal iframe
   useEffect(() => {
@@ -627,46 +683,45 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
                   return (
-<div
-  key={memberKey}
-  onClick={(e) => {
-    e.stopPropagation();
-    setActiveProfileId((prev) => (prev === memberKey ? null : memberKey));
-  }}
-  className={`absolute w-[180px] h-[180px] origin-bottom pointer-events-auto transition-all duration-150 cursor-pointer group ${
-    isProfileOpen ? 'z-50' : 'z-20'
-  }`}
-  style={{
-    bottom: pos.bottom,
-    left: pos.left,
-    transform: `translate(-50%, 0) scale(${pos.scale})`,
-  }}
->
-{/* PLAYER NAMETAG */}
-<div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
-  {member.isHost && (
-    <svg
-      className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      title="Host"
-    >
-      <path d="M0 0h24v24H0z" fill="none" />
-      <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
-    </svg>
-  )}
-  <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
-    {member.username} {member.isCurrentUser}
-  </span>
-</div>
+                    <div
+                      key={memberKey}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveProfileId((prev) => (prev === memberKey ? null : memberKey));
+                      }}
+                      className={`absolute w-[180px] h-[180px] origin-bottom pointer-events-auto transition-all duration-150 cursor-pointer group ${
+                        isProfileOpen ? 'z-50' : 'z-20'
+                      }`}
+                      style={{
+                        bottom: pos.bottom,
+                        left: pos.left,
+                        transform: `translate(-50%, 0) scale(${pos.scale})`,
+                      }}
+                    >
+                      {/* PLAYER NAMETAG */}
+                      <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
+                        {member.isHost && (
+                          <svg
+                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            title="Host"
+                          >
+                            <path d="M0 0h24v24H0z" fill="none" />
+                            <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
+                          </svg>
+                        )}
+                        <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
+                          {member.username} {member.isCurrentUser}
+                        </span>
+                      </div>
 
-{/* AVATAR PROFILE POPOVER */}
+                      {/* AVATAR PROFILE POPOVER */}
                       {isProfileOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
                           className="absolute bottom-[105%] left-1/2 -translate-x-1/2 w-56 sm:w-64 bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2.5 shadow-2xl z-50 flex items-center gap-3 cursor-default animate-fade-in"
                         >
-                          {/* ROUND AVATAR WITH OVERLAPPING LEVEL BADGE */}
                           <div className="relative shrink-0 flex items-center justify-center">
                             <div className="w-10 h-10 rounded-full border-[2px] border-[#3D2013] bg-[#FAE9CE] overflow-hidden flex items-center justify-center">
                               <img
@@ -682,7 +737,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                             </div>
                           </div>
 
-                          {/* USER DETAILS */}
                           <div className="flex-1 min-w-0 flex flex-col gap-1 overflow-hidden">
                             <div className="flex items-center gap-1 min-w-0">
                               <h2 className="font-pressstart text-[11px] text-[#3D2013] tracking-tight truncate leading-none">
@@ -705,7 +759,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               </span>
                             </div>
 
-                            {/* ADD FRIEND BUTTON */}
                             {!member.isCurrentUser && (
                               <button
                                 onClick={() => handleAddFriend(memberKey)}
@@ -721,9 +774,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                             )}
                           </div>
 
-                          {/* RIGHT SIDE ACTIONS: KICK & CLOSE */}
                           <div className="flex flex-col items-end gap-2 shrink-0 self-start">
-                            {/* CLOSE BUTTON */}
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -735,7 +786,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               ✕
                             </button>
 
-                            {/* KICK BUTTON */}
                             {isCurrentUserHost && !member.isCurrentUser && (
                               <button
                                 onClick={(e) => {
@@ -750,7 +800,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                             )}
                           </div>
 
-                          {/* POPOVER ARROW */}
                           <div className="absolute top-full left-1/2 -translate-x-1/2 border-x-8 border-x-transparent border-t-8 border-t-[#3D2013]" />
                         </div>
                       )}
@@ -877,14 +926,168 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       </div>
 
-      {/* 2ND ROW: OVERVIEW, (MEMBERS OR LEADERBOARD), AND (ROOM CHAT OR CALENDAR) */}
+      {/* 2ND ROW: FOCUS MUSIC, (MEMBERS OR LEADERBOARD), AND (ROOM CHAT OR CALENDAR) */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 w-full">
-        <section className="md:col-span-3 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
-          <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark">OVERVIEW</h3>
-          <div className="w-full h-full min-h-[120px] bg-theme-muted border-2 border-dashed border-theme-dark/50 rounded-[8px] p-4 flex items-center justify-center text-center">
-            <span className="font-pressstart text-[9px] text-theme-dark/60">
-              LVL {player.level} • {player.coins} COINS
+        {/* FOCUS MUSIC SECTION */}
+        <section className="md:col-span-3 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col gap-3 justify-between">
+          <audio
+            ref={audioRef}
+            src={currentTrack.src}
+            onEnded={handleTrackEnd}
+          />
+
+          {/* HEADER */}
+          <div className="flex items-center justify-between pb-2 border-b-2 border-theme-dark/20">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M0 0h24v24H0z" fill="none" />
+                <g fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 18V5.716a2 2 0 0 1 1.696-1.977l9-1.385A2 2 0 0 1 21 4.331V16" />
+                  <path d="m8 9l13-2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 18a3 3 0 1 1-6 0c0-1.657 1.343-2 3-2s3 .343 3 2m13-2a3 3 0 1 1-6 0c0-1.657 1.343-2 3-2s3 .343 3 2" />
+                </g>
+              </svg>
+              <h3 className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark uppercase">FOCUS MUSIC</h3>
+            </div>
+          </div>
+
+{/* VINYL CD ANIMATION */}
+<div className="flex items-center justify-center my-1">
+  <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
+    {/* Outer Vinyl Body */}
+    <div className={`w-full h-full rounded-full bg-[#121212] border-4 border-theme-dark shadow-md flex items-center justify-center relative overflow-hidden ${
+      isPlaying ? 'animate-spin [animation-duration:4s]' : ''
+    }`}>
+      {/* Vinyl Grooves */}
+      <div className="absolute w-[85%] h-[85%] rounded-full border border-white/10" />
+      <div className="absolute w-[70%] h-[70%] rounded-full border border-white/10" />
+      <div className="absolute w-[55%] h-[55%] rounded-full border border-white/10" />
+      
+      {/* Dynamic Light Reflection Cones (Sheen) */}
+      <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.2)_45deg,transparent_90deg,transparent_180deg,rgba(255,255,255,0.2)_225deg,transparent_270deg)] pointer-events-none" />
+
+      {/* Center Sticker */}
+      <div className="w-[40%] h-[40%] rounded-full bg-theme-primary border-2 border-theme-dark flex items-center justify-center relative">
+        {/* Label Marker Dot (Makes rotation unmistakably visible) */}
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/50 rounded-full" />
+        
+        {/* Center Hole */}
+        <div className="w-2.5 h-2.5 rounded-full bg-theme-surface border border-theme-dark z-10" />
+      </div>
+    </div>
+  </div>
+</div>
+
+          {/* TRACK DROPDOWN SELECTOR */}
+          <div className="flex flex-col gap-1">
+            <label className="font-pressstart text-[7px] text-theme-dark/60 uppercase">CHOOSE TRACK</label>
+            <select
+              value={currentTrackIndex}
+              onChange={(e) => setCurrentTrackIndex(Number(e.target.value))}
+              className="w-full bg-theme-muted border-2 border-theme-dark rounded-[6px] px-2 py-1 font-pressstart text-[8px] sm:text-[9px] text-theme-dark focus:outline-none cursor-pointer"
+            >
+              {LOFI_TRACKS.map((track, idx) => (
+                <option key={track.id} value={idx}>
+                  {track.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* TRACK METADATA */}
+          <div className="flex flex-col text-center">
+            <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-dark truncate">
+              {currentTrack.name}
             </span>
+            <span className="font-pixel text-[13px] text-theme-dark/70 truncate">
+              {currentTrack.artist}
+            </span>
+          </div>
+
+          {/* SPOTIFY STYLE CONTROLS */}
+          <div className="flex flex-col gap-2 pt-1">
+            <div className="flex items-center justify-between px-2">
+              {/* SHUFFLE BUTTON */}
+              <button
+                onClick={() => setIsShuffle((prev) => !prev)}
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  isShuffle ? 'text-theme-primary' : 'text-theme-dark/40 hover:text-theme-dark'
+                }`}
+                title="Shuffle"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M10.59 9.17L5.41 4L4 5.41l5.17 5.17l1.42-1.41zM14.5 4l2.04 2.04L4 18.59L5.41 20L17.96 7.45L20 9.5V4h-5.5zm.33 9.41l-1.41 1.41l3.13 3.13L14.5 20H20v-5.5l-2.04 2.04l-3.13-3.13z" />
+                </svg>
+              </button>
+
+              {/* PREVIOUS TRACK */}
+              <button
+                onClick={handlePrevTrack}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Previous"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                </svg>
+              </button>
+
+              {/* PLAY/PAUSE */}
+              <button
+                onClick={togglePlay}
+                className="w-8 h-8 rounded-full bg-theme-primary border-2 border-theme-dark text-theme-surface flex items-center justify-center hover:bg-[#d0622c] cursor-pointer shadow-xs transition-transform active:scale-95"
+                title={isPlaying ? "Pause" : "Play"}
+              >
+                {isPlaying ? (
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* NEXT TRACK */}
+              <button
+                onClick={handleNextTrack}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Next"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
+              </button>
+
+              {/* LOOP BUTTON */}
+              <button
+                onClick={() => setIsLoop((prev) => !prev)}
+                className={`p-1 rounded cursor-pointer transition-colors ${
+                  isLoop ? 'text-theme-primary' : 'text-theme-dark/40 hover:text-theme-dark'
+                }`}
+                title="Loop"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* VOLUME SLIDER */}
+            <div className="flex items-center gap-2 px-1 pt-1">
+              <svg className="w-3.5 h-3.5 text-theme-dark/60 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+              </svg>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={volume}
+                onChange={(e) => setVolume(parseFloat(e.target.value))}
+                className="w-full accent-theme-primary h-1.5 bg-theme-muted rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
           </div>
         </section>
 
