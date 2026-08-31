@@ -1,6 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
+const TECHNIQUE_CONFIGS = {
+  POMODORO: {
+    gracePeriodMs: 3 * 60 * 1000,
+    cooldownMs: 5 * 60 * 1000,
+    maxCap: 2,
+  },
+  MEDIUM: {
+    gracePeriodMs: 5 * 60 * 1000,
+    cooldownMs: 10 * 60 * 1000,
+    maxCap: 3,
+  },
+  ULTRADIAN: {
+    gracePeriodMs: 10 * 60 * 1000,
+    cooldownMs: 15 * 60 * 1000,
+    maxCap: 4,
+  },
+};
+
 export function useTimer() {
   const { addFocusTime, incrementTotalSessions, addUserActivity } = usePlayer() || {};
   const [activeSession, setActiveSession] = useState(null);
@@ -16,13 +34,43 @@ export function useTimer() {
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [dailyFocusFormatted, setDailyFocusFormatted] = useState('0h 0m');
 
+  // Nudge States
+  const [isIdle, setIsIdle] = useState(false);
+  const [showNudgeModal, setShowNudgeModal] = useState(false);
+  const [nudgeCountdown, setNudgeCountdown] = useState(30);
+  const [isCooldownActive, setIsCooldownActive] = useState(false);
+  const [nudgeCount, setNudgeCount] = useState(0);
+  const [toastMessage, setToastMessage] = useState('');
+
+  const sessionStartTimeRef = useRef(null);
   const timerRef = useRef(null);
   const pipWindowRef = useRef(null);
+  const nudgeIntervalRef = useRef(null);
 
   const parseNum = (val, fallback) => {
     const num = parseInt(val, 10);
     return isNaN(num) || num <= 0 ? fallback : num;
   };
+
+  const showRetroToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 4000);
+  };
+
+  const getTechniqueConfig = useCallback(() => {
+    if (!activeSession) return TECHNIQUE_CONFIGS.POMODORO;
+    const techName = (activeSession.techniqueName || '').toUpperCase();
+
+    if (techName.includes('52') || techName.includes('75') || techName.includes('MEDIUM')) {
+      return TECHNIQUE_CONFIGS.MEDIUM;
+    }
+    if (techName.includes('90') || techName.includes('ULTRADIAN')) {
+      return TECHNIQUE_CONFIGS.ULTRADIAN;
+    }
+    return TECHNIQUE_CONFIGS.POMODORO;
+  }, [activeSession]);
 
   const calculateDailyFocusText = useCallback(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -63,6 +111,12 @@ export function useTimer() {
           setIsFocusPhase(true);
           setCurrentSessionCount(0);
           setIsTimerRunning(false);
+
+          sessionStartTimeRef.current = Date.now();
+          setNudgeCount(0);
+          setIsIdle(false);
+          setShowNudgeModal(false);
+          setIsCooldownActive(false);
 
           setTasksList((session.tasks || []).map((t) => ({ text: t, completed: false })));
         } catch (e) {
@@ -177,7 +231,31 @@ export function useTimer() {
     }
   };
 
-  // 1. COUNTDOWN TICKER
+  // Helper to trigger Nudge Modal with active visual 30s countdown
+  const triggerNudgeModal = useCallback(() => {
+    setIsTimerRunning(false);
+    setShowNudgeModal(true);
+    setIsIdle(false);
+    setNudgeCountdown(30);
+
+    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+
+    nudgeIntervalRef.current = setInterval(() => {
+      setNudgeCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(nudgeIntervalRef.current);
+          setShowNudgeModal(false);
+          setIsTimerRunning(false); // Pause focus session
+          console.log(`[Focus Verification] Timed out at 0s. nudges_accepted: 0`);
+          showRetroToast('Session paused due to inactivity.');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // 1. COUNTDOWN TICKER & RELEASE TRIGGER 2
   useEffect(() => {
     if (isTimerRunning) {
       timerRef.current = setInterval(() => {
@@ -185,6 +263,11 @@ export function useTimer() {
           if (prev <= 1) {
             clearInterval(timerRef.current);
             setIsTimerRunning(false);
+
+            if (isIdle) {
+              triggerNudgeModal();
+            }
+
             return 0;
           }
           return prev - 1;
@@ -195,11 +278,86 @@ export function useTimer() {
     }
 
     return () => clearInterval(timerRef.current);
-  }, [isTimerRunning]);
+  }, [isTimerRunning, isIdle, triggerNudgeModal]);
 
-  // 2. PHASE SWITCHING & STATS RECORDING
+  // 2. BOUNDARY-QUEUED IDLE VERIFICATION LOGIC
   useEffect(() => {
-    if (remainingTimeSec === 0 && !isTimerRunning && activeSession) {
+    if (!isTimerRunning || !activeSession || !isFocusPhase) {
+      setIsIdle(false);
+      return;
+    }
+
+    const config = getTechniqueConfig();
+    const sessionElapsedMs = Date.now() - (sessionStartTimeRef.current || Date.now());
+
+    if (sessionElapsedMs < config.gracePeriodMs) {
+      return;
+    }
+
+    if (isCooldownActive || nudgeCount >= config.maxCap) {
+      return;
+    }
+
+    let idleTimer;
+
+    const handleUserActivity = () => {
+      if (isIdle) {
+        triggerNudgeModal();
+      }
+
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        setIsIdle(true);
+      }, 120000);
+    };
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+
+    return () => {
+      clearTimeout(idleTimer);
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+    };
+  }, [
+    isTimerRunning,
+    activeSession,
+    isFocusPhase,
+    isIdle,
+    isCooldownActive,
+    nudgeCount,
+    getTechniqueConfig,
+    triggerNudgeModal,
+  ]);
+
+  // Handler when user clicks "YES, I'M HERE" before timer reaches 0
+  const handleConfirmNudge = useCallback(() => {
+    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+
+    const config = getTechniqueConfig();
+
+    setShowNudgeModal(false);
+    console.log(`[Focus Verification] User confirmed presence. nudges_accepted: 1`);
+
+    setNudgeCount((prev) => prev + 1);
+    setIsTimerRunning(true);
+
+    setIsCooldownActive(true);
+    setTimeout(() => {
+      setIsCooldownActive(false);
+    }, config.cooldownMs);
+  }, [getTechniqueConfig]);
+
+  // Cleanup intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+    };
+  }, []);
+
+  // 3. PHASE SWITCHING & STATS RECORDING
+  useEffect(() => {
+    if (remainingTimeSec === 0 && !isTimerRunning && activeSession && !showNudgeModal) {
       const focusSecs = parseNum(activeSession.focusTime, 25) * 60;
       const breakSecs = parseNum(activeSession.breakTime, 5) * 60;
 
@@ -242,6 +400,7 @@ export function useTimer() {
     recordCompletedSession,
     tasksList,
     incrementTotalSessions,
+    showNudgeModal,
   ]);
 
   const toggleTimer = () => setIsTimerRunning((prev) => !prev);
@@ -291,7 +450,7 @@ export function useTimer() {
         if (isTimerRunning) {
           guideText.textContent = 'Go back to the webpage to pause the timer.';
         } else if (!isFocusPhase) {
-          guideText.textContent = 'It\'s break time! Go back to the webpage to start the break timer.';
+          guideText.textContent = "It's break time! Go back to the webpage to start the break timer.";
         } else {
           guideText.textContent = 'Go back to the webpage to start the focus timer.';
         }
@@ -348,7 +507,7 @@ export function useTimer() {
         if (isTimerRunning) {
           initialGuideText = 'Go back to the webpage to pause the timer.';
         } else if (!isFocusPhase) {
-          initialGuideText = 'It\'s break time! Go back to the webpage to start the break timer.';
+          initialGuideText = "It's break time! Go back to the webpage to start the break timer.";
         }
 
         pipWin.document.body.className =
@@ -431,8 +590,12 @@ export function useTimer() {
     isWidgetFullscreen,
     isPipActive,
     showRewardModal,
+    showNudgeModal,
+    nudgeCountdown,
+    toastMessage,
     dailyFocusFormatted,
     closeRewardModal,
+    handleConfirmNudge,
     toggleTimer,
     toggleTaskCompletion,
     cancelSession,

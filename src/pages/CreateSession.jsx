@@ -94,7 +94,7 @@ export default function CreateSession() {
       break: mockRecommendedData.break,
       sessions: mockRecommendedData.number_session,
     },
-    pomodoro: { title: 'Pomodoro', focus: 1, break: 1 },
+    pomodoro: { title: 'Pomodoro', focus: 25, break: 5 },
     '52-17': { title: '52-17 Method', focus: 52, break: 17 },
     '90m': { title: '90m Deep Work', focus: 90, break: 20 },
   };

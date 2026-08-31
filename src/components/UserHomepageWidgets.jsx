@@ -34,6 +34,10 @@ export function ActiveSessionWidget({
   cardRef,
   isWidgetFloating,
   isWidgetFullscreen,
+  showNudgeModal,
+  nudgeCountdown = 30,
+  handleConfirmNudge,
+  toastMessage,
   streakDays = 0,
   focusTimeFormatted = '0h 0m',
 }) {
@@ -188,90 +192,151 @@ export function ActiveSessionWidget({
     wrapperClasses = 'fixed bottom-5 right-5 w-80 sm:w-96 z-50 shadow-2xl bg-[#FEF4E0] border-2 border-[#3D2013] p-4 rounded-[12px] cursor-grab active:cursor-grabbing';
   }
 
+  const progressPercent = Math.max(0, Math.min(100, (nudgeCountdown / 30) * 100));
+
   const content = (
-    <section ref={cardRef} className={wrapperClasses}>
-      <div className="flex flex-col gap-3 h-full justify-between w-full max-w-3xl mx-auto">
-        <div className="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
-          <div className="flex items-center gap-2">
-            <span className="font-pressstart text-[8px] sm:text-[9px] text-[#FEF4E0] bg-[#E87339] border border-[#3D2013] px-2 py-0.5 uppercase">
-              {activeSession.workType || 'GENERAL WORK'}
-            </span>
-            <span className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] opacity-80">
-              {activeSession.techniqueName || 'Technique'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={toggleDocumentPiP}
-              className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
-              title="Pop-out Widget / Fallback Float"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 002 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-
-            <button
-              onClick={toggleFullscreen}
-              className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
-              title="Fullscreen"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-            </button>
-
-            <button
-              onClick={cancelSession}
-              className="p-1 cursor-pointer text-[#A53914] hover:text-[#E87339] transition-colors"
-              title="Cancel Session"
-            >
-              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-center justify-center my-2 text-center">
-          <span className="font-pressstart text-[10px] sm:text-[14px] text-[#E87339] tracking-wider uppercase mb-1">
-            {isFocusPhase ? 'FOCUS PHASE' : 'BREAK PHASE'}
+    <>
+      {/* RETRO TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[10001] bg-[#FEF4E0] border-3 border-[#3D2013] px-4 py-3 rounded-[8px] shadow-2xl flex items-center gap-3 animate-bounce-short">
+          <span className="text-xl">⚠️</span>
+          <span className="font-pressstart text-[9px] text-[#A53914] uppercase">
+            {toastMessage}
           </span>
-          <div className="font-pressstart text-[36px] sm:text-[56px] text-[#3D2013] tracking-tighter drop-shadow-sm">
-            {formatTime(remainingTimeSec)}
-          </div>
         </div>
+      )}
 
-        <div>
-          <button
-            onClick={toggleTimer}
-            className="w-full font-pressstart text-[11px] sm:text-[13px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
-          >
-            {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
-          </button>
-        </div>
+      <section ref={cardRef} className={wrapperClasses}>
+        <div className="flex flex-col gap-3 h-full justify-between w-full max-w-3xl mx-auto">
+          <div className="flex items-center justify-between pb-2 border-b border-[#3D2013]/20">
+            <div className="flex items-center gap-2">
+              <span className="font-pressstart text-[8px] sm:text-[9px] text-[#FEF4E0] bg-[#E87339] border border-[#3D2013] px-2 py-0.5 uppercase">
+                {activeSession.workType || 'GENERAL WORK'}
+              </span>
+              <span className="font-pressstart text-[8px] sm:text-[9px] text-[#3D2013] opacity-80">
+                {activeSession.techniqueName || 'Technique'}
+              </span>
+            </div>
 
-        <div className="grid grid-cols-3 gap-2 border-t border-[#3D2013]/20 pt-3 text-center">
-          <div className="flex items-center justify-center gap-2">
-            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{focusMins}m</span>
-            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">FOCUS</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={toggleDocumentPiP}
+                className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
+                title="Pop-out Widget / Fallback Float"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 002 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+
+              <button
+                onClick={toggleFullscreen}
+                className="p-1 cursor-pointer text-[#3D2013] hover:text-[#E87339] transition-colors"
+                title="Fullscreen"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </button>
+
+              <button
+                onClick={cancelSession}
+                className="p-1 cursor-pointer text-[#A53914] hover:text-[#E87339] transition-colors"
+                title="Cancel Session"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center justify-center gap-2 border-x border-[#3D2013]/20 px-1">
-            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{breakMins}m</span>
-            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">BREAK</span>
-          </div>
-
-          <div className="flex items-center justify-center gap-2">
-            <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">
-              {currentSessionCount}/{totalSessions}
+          <div className="flex flex-col items-center justify-center my-2 text-center">
+            <span className="font-pressstart text-[10px] sm:text-[14px] text-[#E87339] tracking-wider uppercase mb-1">
+              {isFocusPhase ? 'FOCUS PHASE' : 'BREAK PHASE'}
             </span>
-            <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">SESSIONS</span>
+            <div className="font-pressstart text-[36px] sm:text-[56px] text-[#3D2013] tracking-tighter drop-shadow-sm">
+              {formatTime(remainingTimeSec)}
+            </div>
           </div>
+
+          <div>
+            <button
+              onClick={toggleTimer}
+              className="w-full font-pressstart text-[11px] sm:text-[13px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
+            >
+              {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 border-t border-[#3D2013]/20 pt-3 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{focusMins}m</span>
+              <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">FOCUS</span>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 border-x border-[#3D2013]/20 px-1">
+              <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">{breakMins}m</span>
+              <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">BREAK</span>
+            </div>
+
+            <div className="flex items-center justify-center gap-2">
+              <span className="font-pressstart text-[10px] sm:text-[13px] text-[#3D2013]">
+                {currentSessionCount}/{totalSessions}
+              </span>
+              <span className="font-pixel text-[10px] sm:text-[15px] text-[#3D2013]/60 uppercase">SESSIONS</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+{/* FOCUS VERIFICATION NUDGE MODAL WITH REAL-TIME COUNTDOWN */}
+{showNudgeModal && (
+  <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-[#3D2013]/60 backdrop-blur-xs">
+    <div className="bg-[#FEF4E0] border-4 border-[#3D2013] rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-fade-in">
+      
+      {/* KITSU LOGO ICON */}
+      <img
+        src={`${baseUrl || '/'}media/kitsu_logo.png`}
+        alt="Kitsu Logo"
+        className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0 animate-bounce-short"
+        onError={(e) => {
+          e.currentTarget.src = '/media/kitsu_logo.png';
+        }}
+      />
+
+      <h3 className="font-pressstart text-[14px] text-[#E87339] uppercase">
+        ARE YOU STILL HERE?
+      </h3>
+
+      <p className="font-pixel text-[18px] text-[#3D2013] leading-snug">
+        Just checking in - are you still focused on today’s goal?
+      </p>
+
+      {/* VISUAL REAL-TIME COUNTDOWN DISPLAY */}
+      <div className="w-full flex flex-col items-center gap-1.5 my-1">
+        <span className="font-pressstart text-[10px] text-[#A53914] uppercase tracking-wider">
+          CLOSING IN {nudgeCountdown}S
+        </span>
+        
+        <div className="w-full bg-[#FAE9CE] border-2 border-[#3D2013] h-3.5 rounded-full overflow-hidden p-0.5">
+          <div
+            className="bg-[#E87339] h-full rounded-full transition-all duration-1000 ease-linear"
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
       </div>
-    </section>
+
+      <button
+        onClick={handleConfirmNudge}
+        className="w-full font-pressstart text-[10px] text-[#FFFFF6] bg-[#E87339] border-2 border-[#3D2013] py-2.5 hover:bg-[#d0622c] cursor-pointer shadow-sm uppercase transition-colors"
+      >
+        YES, I'M HERE
+      </button>
+    </div>
+  </div>
+)}
+    </>
   );
 
   if (isWidgetFullscreen) {

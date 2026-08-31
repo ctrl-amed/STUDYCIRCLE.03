@@ -20,6 +20,15 @@ const LEVEL_PAGES_TIERS = [
   [25, 30, 40, 50],
 ];
 
+// FEEDBACK RATING EMOJIS
+const FEEDBACK_RATINGS = [
+  { label: "Terrible", emoji: "🤢" },
+  { label: "Bad", emoji: "🙁" },
+  { label: "Meh", emoji: "😐" },
+  { label: "Good", emoji: "😊" },
+  { label: "Awesome", emoji: "😍" },
+];
+
 export default function Sidebar({
   isExpanded,
   setIsExpanded,
@@ -36,11 +45,28 @@ export default function Sidebar({
   const [levelPageIndex, setLevelPageIndex] = useState(0);
   const [claimedLevels, setClaimedLevels] = useState([0]);
 
+  // Modal State for Feedback
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [selectedRating, setSelectedRating] = useState("Awesome");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
   const xpPercent = Math.min(100, Math.max(0, (playerData.currentXP / playerData.maxXP) * 100));
 
   const handleClaimLevelReward = (item) => {
     if (claimedLevels.includes(item.level)) return;
     setClaimedLevels((prev) => [...prev, item.level]);
+  };
+
+  const handleFeedbackSubmit = (e) => {
+    e.preventDefault();
+    setIsSubmitted(true);
+    setTimeout(() => {
+      setShowFeedbackModal(false);
+      setIsSubmitted(false);
+      setFeedbackText("");
+      setSelectedRating("Awesome");
+    }, 1500);
   };
 
   const navItems = [
@@ -129,29 +155,30 @@ export default function Sidebar({
         id="sidebar"
         className={`fixed top-0 left-0 h-full bg-[#FEF4E0] border-r-[3px] border-[#3D2013] z-50 transition-all duration-300 ease-in-out flex flex-col p-4 shadow-xl overflow-x-hidden ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        } ${isExpanded ? 'w-64' : 'w-20'}`}
+        } ${isExpanded ? 'w-64' : 'w-20 md:w-20'} ${isMobileOpen ? 'w-64' : ''}`}
       >
         {/* HEADER: LOGO & TOGGLE BUTTON */}
         <div
           id="sidebar-header"
           className={`flex items-center pb-4 border-b-2 border-[#3D2013]/20 mb-4 shrink-0 transition-all duration-300 ${
-            isExpanded ? 'flex-row justify-between' : 'flex-col gap-2 items-center'
+            isExpanded || isMobileOpen ? 'flex-row justify-between' : 'flex-col gap-2 items-center'
           }`}
         >
           <div id="logo-container" className="flex items-center gap-2 overflow-hidden">
             <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="w-8 h-8 object-contain shrink-0" />
-            {isExpanded && (
+            {(isExpanded || isMobileOpen) && (
               <span className="nav-label font-pressstart text-[12px] text-[#3D2013] tracking-tight whitespace-nowrap">
                 StudyCircle
               </span>
             )}
           </div>
 
+          {/* TOGGLE BUTTON: Hidden on mobile (hidden md:flex) */}
           <button
             id="toggle-sidebar-btn"
             aria-label="Toggle Sidebar"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="text-[#3D2013] hover:text-[#FD923E] transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
+            className="hidden md:flex text-[#3D2013] hover:text-[#FD923E] transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
           >
             <svg
               id="toggle-icon"
@@ -176,7 +203,7 @@ export default function Sidebar({
           onClick={() => setShowLevelModal(true)}
           title="Click to view Level Rewards"
           className={`mb-4 cursor-pointer rounded-[10px] flex items-center gap-3 shrink-0 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
-            isExpanded
+            isExpanded || isMobileOpen
               ? 'bg-[#FEF4E0] border-[2px] border-[#3D2013] p-2.5 justify-start hover:border-[#FD923E]'
               : 'bg-transparent border-transparent p-0 justify-center'
           }`}
@@ -198,7 +225,7 @@ export default function Sidebar({
             </div>
           </div>
 
-          {isExpanded && (
+          {(isExpanded || isMobileOpen) && (
             <div className="nav-label flex-1 flex flex-col gap-1 overflow-hidden transition-opacity duration-200">
               <h2 id="player-name" className="font-pressstart text-[11px] text-[#3D2013] tracking-tight truncate leading-none">
                 {playerData.username}
@@ -236,7 +263,9 @@ export default function Sidebar({
                   }`}
                 >
                   {item.icon}
-                  {isExpanded && <span className="nav-label transition-opacity duration-200">{item.label}</span>}
+                  {(isExpanded || isMobileOpen) && (
+                    <span className="nav-label transition-opacity duration-200">{item.label}</span>
+                  )}
                 </Link>
               </div>
             );
@@ -254,7 +283,7 @@ export default function Sidebar({
             className="w-full bg-[#FDE4D0] border-2 border-[#3D2013] hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-[#3D2013]"
           >
             <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-5 h-5 object-contain shrink-0" />
-            {isExpanded && <span className="nav-label font-pressstart text-[10px]">KitsuAI</span>}
+            {(isExpanded || isMobileOpen) && <span className="nav-label font-pressstart text-[10px]">KitsuAI</span>}
           </button>
 
           <div className="bg-[#FDE4D0] rounded-[8px] p-1.5 flex flex-col gap-1.5">
@@ -282,11 +311,12 @@ export default function Sidebar({
                   />
                 </g>
               </svg>
-              {isExpanded && <span className="nav-label font-pressstart text-[9px] whitespace-nowrap">Appearance</span>}
+              {(isExpanded || isMobileOpen) && <span className="nav-label font-pressstart text-[9px] whitespace-nowrap">Appearance</span>}
             </button>
 
             <button
               title="Feedback"
+              onClick={() => setShowFeedbackModal(true)}
               className="w-full text-[#3D2013] hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-[#FAE9CE] cursor-pointer"
             >
               <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -296,7 +326,7 @@ export default function Sidebar({
                   d="M12 15q.425 0 .713-.288T13 14t-.288-.712T12 13t-.712.288T11 11t.288.713T12 15m-1-4h2V5h-2zM2 22V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v12q0 .825-.587 1.413T20 18H6zm3.15-6H20V4H4v13.125zM4 16V4z"
                 />
               </svg>
-              {isExpanded && <span className="nav-label font-pressstart text-[9px] whitespace-nowrap">Feedback</span>}
+              {(isExpanded || isMobileOpen) && <span className="nav-label font-pressstart text-[9px] whitespace-nowrap">Feedback</span>}
             </button>
           </div>
         </div>
@@ -517,6 +547,101 @@ export default function Sidebar({
               </div>
 
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK & IDEAS MODAL */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#3D2013]/50">
+          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[16px] p-5 sm:p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 relative animate-fade-in">
+            
+            {/* CLOSE BUTTON AT TOP RIGHT */}
+            <button
+              onClick={() => setShowFeedbackModal(false)}
+              className="absolute top-4 right-4 text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+            >
+              ✕
+            </button>
+
+            {/* HEADER */}
+            <div className="flex flex-col gap-1">
+              <h3 className="font-pressstart text-[14px] sm:text-[18px] text-[#3D2013] tracking-wide">
+                Feedback & Ideas
+              </h3>
+            </div>
+
+            {isSubmitted ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                <span className="text-4xl">🎉</span>
+                <span className="font-pressstart text-[12px] text-[#FD923E]">THANK YOU!</span>
+                <span className="font-pixel text-[16px] text-[#3D2013]/80">
+                  Your feedback has been submitted successfully.
+                </span>
+              </div>
+            ) : (
+              <form onSubmit={handleFeedbackSubmit} className="flex flex-col gap-5">
+                {/* RATING OPTIONS */}
+                <div className="flex flex-col gap-3">
+                  <span className="font-pressstart text-[9px] text-[#3D2013]/70">
+                    How was your experience?
+                  </span>
+
+                  <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                    {FEEDBACK_RATINGS.map((item) => {
+                      const isSelected = selectedRating === item.label;
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setSelectedRating(item.label)}
+                          className={`flex flex-col items-center justify-center p-2 rounded-[12px] border-[2px] transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#FD923E] border-[#3D2013] scale-105 shadow-md'
+                              : 'bg-[#FAE9CE] border-transparent hover:border-[#3D2013]/30 hover:scale-102'
+                          }`}
+                        >
+                          <span className="text-2xl sm:text-3xl mb-1">{item.emoji}</span>
+                          <span
+                            className={`font-pressstart text-[7px] sm:text-[8px] truncate max-w-full ${
+                              isSelected ? 'text-[#FEF4E0] font-bold' : 'text-[#3D2013]/80'
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* TEXT AREA WITH FIELDSET BORDER LABEL */}
+                <div className="relative">
+                  <fieldset className="border-[2px] border-[#3D2013] rounded-[8px] p-2 bg-[#FEF4E0]">
+                    <legend className="px-2 font-pressstart text-[8px] text-[#3D2013]/70 ml-2">
+                      We would love to hear from you!
+                    </legend>
+                    <textarea
+                      required
+                      rows="4"
+                      value={feedbackText}
+                      onChange={(e) => setFeedbackText(e.target.value)}
+                      placeholder="Write your feedback or feature ideas here..."
+                      className="w-full bg-transparent font-pixel text-[15px] sm:text-[18px] text-[#3D2013] focus:outline-none resize-none px-1"
+                    />
+                  </fieldset>
+                </div>
+
+                {/* SUBMIT BUTTON */}
+                <button
+                  type="submit"
+                  className="w-full bg-[#FD923E] text-[#FEF4E0] border-[2px] border-[#3D2013] py-2.5 sm:py-3 font-pressstart text-[10px] sm:text-[11px] rounded-[8px] hover:bg-[#d0622c] cursor-pointer transition-colors shadow-sm uppercase"
+                >
+                  Submit
+                </button>
+              </form>
+            )}
 
           </div>
         </div>
