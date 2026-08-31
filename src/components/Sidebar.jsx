@@ -2,6 +2,24 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 
+// LEVEL REWARDS DATA FOR THE 9 TIERS
+const LEVEL_REWARDS_DATA = [
+  { level: 1, label: "Lvl. 1", img: "media/xp_starter.png", text: "Take it one focused step at a time." },
+  { level: 5, label: "Lvl. 5", img: "media/xp_regular.png", text: "Keep building your routine!" },
+  { level: 10, label: "Lvl. 10", img: "media/xp_focused.png", text: "Keep your momentum going!" },
+  { level: 15, label: "Lvl. 15", img: "media/xp_commited.png", text: "Your consistency is paying off." },
+  { level: 20, label: "Lvl. 20", img: "media/xp_dedicated.png", text: "Keep going!" },
+  { level: 25, label: "Lvl. 25", img: "media/xp_achiever.png", text: "Your dedication is shining through!" },
+  { level: 30, label: "Lvl. 30", img: "media/xp_advanced.png", text: "Your focus skills are leveling up!" },
+  { level: 40, label: "Lvl. 40", img: "media/xp_expert.png", text: "Your consistency is impressive!" },
+  { level: 50, label: "Lvl. 50", img: "media/xp_mastery.png", text: "You've reached the top!" },
+];
+
+const LEVEL_PAGES_TIERS = [
+  [1, 5, 10, 15, 20],
+  [25, 30, 40, 50],
+];
+
 export default function Sidebar({
   isExpanded,
   setIsExpanded,
@@ -13,7 +31,17 @@ export default function Sidebar({
   const location = useLocation();
   const [appearanceRotated, setAppearanceRotated] = useState(false);
 
+  // Modal State for Level Rewards
+  const [showLevelModal, setShowLevelModal] = useState(false);
+  const [levelPageIndex, setLevelPageIndex] = useState(0);
+  const [claimedLevels, setClaimedLevels] = useState([0]);
+
   const xpPercent = Math.min(100, Math.max(0, (playerData.currentXP / playerData.maxXP) * 100));
+
+  const handleClaimLevelReward = (item) => {
+    if (claimedLevels.includes(item.level)) return;
+    setClaimedLevels((prev) => [...prev, item.level]);
+  };
 
   const navItems = [
     {
@@ -25,6 +53,19 @@ export default function Sidebar({
           <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
             <path d="m3 9l9-7l9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
             <path d="M9 22V12h6v10" />
+          </g>
+        </svg>
+      ),
+    },
+    {
+      path: '/profile',
+      label: 'Profile',
+      icon: (
+        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M0 0h24v24H0z" fill="none" />
+          <g fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+            <circle cx="12" cy="7" r="3" />
           </g>
         </svg>
       ),
@@ -51,15 +92,12 @@ export default function Sidebar({
       ),
     },
     {
-      path: '/profile',
-      label: 'Profile',
+      path: '/customizer',
+      label: 'Customizer',
       icon: (
-        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path d="M0 0h24v24H0z" fill="none" />
-          <g fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-            <circle cx="12" cy="7" r="3" />
-          </g>
+        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 640 640">
+          <path d="M0 0h640v640H0z" fill="none" />
+          <path fill="currentColor" d="M320.2 176c44.2 0 80-35.8 80-80h53.5c17 0 33.3 6.7 45.3 18.7l118.6 118.7c12.5 12.5 12.5 32.8 0 45.3l-50.7 50.7c-12.5 12.5-32.8 12.5-45.3 0L480.2 288v224c0 35.3-28.7 64-64 64h-192c-35.3 0-64-28.7-64-64V288l-41.4 41.4c-12.5 12.5-32.8 12.5-45.3 0l-50.6-50.8c-12.5-12.5-12.5-32.8 0-45.3l118.6-118.6c12-12 28.3-18.7 45.3-18.7h53.5c0 44.2 35.8 80 80 80z" />
         </svg>
       ),
     },
@@ -132,12 +170,14 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* PLAYER PROFILE WIDGET */}
+        {/* CLICKABLE PLAYER PROFILE WIDGET */}
         <div
           id="profile-widget"
-          className={`mb-4 cursor-pointer rounded-[10px] flex items-center gap-3 shrink-0 transition-all duration-300 ${
+          onClick={() => setShowLevelModal(true)}
+          title="Click to view Level Rewards"
+          className={`mb-4 cursor-pointer rounded-[10px] flex items-center gap-3 shrink-0 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
             isExpanded
-              ? 'bg-[#FEF4E0] border-[2px] border-[#3D2013] p-2.5 justify-start'
+              ? 'bg-[#FEF4E0] border-[2px] border-[#3D2013] p-2.5 justify-start hover:border-[#FD923E]'
               : 'bg-transparent border-transparent p-0 justify-center'
           }`}
         >
@@ -261,6 +301,226 @@ export default function Sidebar({
           </div>
         </div>
       </aside>
+
+      {/* LEVEL REWARDS MODAL */}
+      {showLevelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#3D2013]/50">
+          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            
+            {/* CLOSE BUTTON AT TOP RIGHT */}
+            <button
+              onClick={() => setShowLevelModal(false)}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+            >
+              ✕
+            </button>
+
+            {/* HEADER */}
+            <div className="flex flex-col items-center justify-center text-center gap-1 pt-1">
+              <h3 className="font-pressstart text-sm sm:text-[36px] text-[#3D2013] tracking-wide">
+                LEVELS
+              </h3>
+              <p className="font-pixel text-[7px] sm:text-[24px] text-[#3D2013]/70 px-4">
+                Level up by completing study sessions to earn perks & titles!
+              </p>
+            </div>
+
+            {/* CARDS CONTAINER WITH NAVIGATION ARROWS */}
+            <div className="relative flex items-center justify-between w-full my-1 min-h-[190px] sm:min-h-[220px]">
+              
+              {/* LEFT ARROW */}
+              <button
+                disabled={levelPageIndex === 0}
+                onClick={() => setLevelPageIndex((prev) => Math.max(0, prev - 1))}
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                  levelPageIndex === 0
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    : 'cursor-pointer'
+                }`}
+              >
+                ◀
+              </button>
+
+              {/* HORIZONTAL CARDS DISPLAY */}
+              <div className="flex items-stretch justify-start sm:justify-center gap-2 sm:gap-3 flex-1 px-1 sm:px-2 overflow-x-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {LEVEL_PAGES_TIERS[levelPageIndex].map((lvlValue) => {
+                  const item = LEVEL_REWARDS_DATA.find((r) => r.level === lvlValue);
+                  if (!item) return null;
+
+                  const isClaimed = claimedLevels.includes(item.level);
+                  const canClaim = (playerData.level ?? 1) >= item.level && !isClaimed;
+                  const isLocked = !canClaim && !isClaimed;
+
+                  return (
+                    <div
+                      key={item.level}
+                      className={`w-28 sm:w-36 rounded-[12px] flex flex-col justify-between overflow-hidden shrink-0 border-[2px] sm:border-[2.5px] transition-all shadow-sm ${
+                        canClaim
+                          ? 'border-[#E87339] bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
+                          : 'border-[#3D2013] bg-[#FEF4E0]'
+                      }`}
+                    >
+                      {/* CARD HEADER */}
+                      <div className="p-1.5 sm:p-2 text-center pt-2">
+                        <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013] uppercase block truncate">
+                          {item.label}
+                        </span>
+                      </div>
+
+                      {/* CARD BODY */}
+                      <div className="flex flex-col items-center justify-center gap-1.5 p-1.5 sm:p-2 my-auto">
+                        <img
+                          src={item.img}
+                          alt={item.label}
+                          className="w-20 h-20 sm:w-30 sm:h-30 object-contain"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                        <span className="font-pixel text-[13px] sm:text-[15px] text-[#3D2013]/90 text-center leading-tight">
+                          {item.text}
+                        </span>
+                      </div>
+
+                      {/* BORDER SEPARATOR */}
+                      <div className="w-full h-[2px] sm:h-[2px] bg-[#3D2013]" />
+
+                      {/* CARD FOOTER */}
+                      {isClaimed && (
+                        <div className="bg-[#C8DDB0] text-[#5C8D57] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                          <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" viewBox="0 0 32 32">
+                            <path d="M0 0h32v32H0z" fill="none" />
+                            <path fill="currentColor" d="m14 21.414l-5-5.001L10.413 15L14 18.586L21.585 11L23 12.415z" />
+                            <path fill="currentColor" d="M16 2a14 14 0 1 0 14 14A14 14 0 0 0 16 2m0 26a12 12 0 1 1 12-12a12 12 0 0 1-12 12" />
+                          </svg>
+                          <span>CLAIMED</span>
+                        </div>
+                      )}
+
+                      {canClaim && (
+                        <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
+                          <button
+                            onClick={() => handleClaimLevelReward(item)}
+                            className="w-full bg-[#E87339] text-[#FEF4E0] border-[1.5px] sm:border-[2px] border-[#3D2013] py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase"
+                          >
+                            CLAIM
+                          </button>
+                        </div>
+                      )}
+
+                      {isLocked && (
+                        <div className="bg-[#D8D0C4] text-[#8A786C] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" viewBox="0 0 16 16">
+                            <path d="M0 0h16v16H0z" fill="none" />
+                            <path fill="currentColor" d="M8 1a4 4 0 0 1 4 4v2l.204.01A2 2 0 0 1 14 9v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2V5a4 4 0 0 1 4-4m0 8a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1m0-6a2 2 0 0 0-2 2v2h4V5a2 2 0 0 0-2-2" />
+                          </svg>
+                          <span>LOCKED</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* RIGHT ARROW */}
+              <button
+                disabled={levelPageIndex === LEVEL_PAGES_TIERS.length - 1}
+                onClick={() => setLevelPageIndex((prev) => Math.min(LEVEL_PAGES_TIERS.length - 1, prev + 1))}
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                  levelPageIndex === LEVEL_PAGES_TIERS.length - 1
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    : 'cursor-pointer'
+                }`}
+              >
+                ▶
+              </button>
+            </div>
+
+            {/* INFO TEXT & CIRCLE PAGE INDICATOR */}
+            <div className="flex flex-col items-center gap-1.5 pb-1">
+              <span className="font-pressstart text-[7px] sm:text-[9px] text-[#3D2013]/70 text-center">
+                Gain XP from completed sessions to unlock tiers
+              </span>
+
+              <div className="flex items-center gap-2">
+                {LEVEL_PAGES_TIERS.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setLevelPageIndex(idx)}
+                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-[#3D2013] transition-colors cursor-pointer ${
+                      levelPageIndex === idx ? 'bg-[#E87339]' : 'bg-[#FAE9CE]'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* FOOTER SECTION WITH DISTINCT BACKGROUND */}
+            <div className="-mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-3.5 sm:py-4 bg-[#FAE9CE] border-t-[2.5px] border-[#3D2013] rounded-b-[13px] flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 mt-1">
+              
+              {/* LEFT: KITSU LOGO & TEXT */}
+              <div className="flex items-center gap-2.5 text-center md:text-left">
+                <img
+                  src="media/kitsu_logo.png"
+                  alt="Kitsu Logo"
+                  className="w-8 h-8 sm:w-10 sm:h-10 object-contain shrink-0"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+                <div className="flex flex-col">
+                  <span className="font-pressstart text-[11px] sm:text-[16px] text-[#3D2013]">Keep it up!</span>
+                  <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/80 leading-4">
+                    Earn XP by completing study <br /> sessions to unlock new levels.
+                  </span>
+                </div>
+              </div>
+
+              {/* RIGHT: DUAL STATS CARD (CURRENT LEVEL & TOTAL XP WITH BAR) */}
+              <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2 sm:p-2.5 flex items-center justify-center gap-2 sm:gap-3 w-full md:w-auto shrink-0 shadow-xs">
+                
+                {/* CURRENT LEVEL */}
+                <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2">
+                  <svg
+                    className="w-5 h-5 sm:w-10 sm:h-10 text-[#FD923E] shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path d="M7 21H3v-8h4zm7 0h-4V3h4zm7-13v13h-4V8z" />
+                  </svg>
+                  <div className="flex flex-col text-left">
+                    <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">CURRENT LEVEL</span>
+                    <span className="font-pressstart text-[8px] sm:text-[20px] text-[#FD923E]">
+                      {playerData.level ?? 1}
+                    </span>
+                  </div>
+                </div>
+
+                {/* VERTICAL BORDER SEPARATOR */}
+                <div className="w-[1.5px] h-6 sm:h-7 bg-[#3D2013]/30" />
+
+                {/* TOTAL XP WITH BAR & RATIO */}
+                <div className="flex flex-col text-left pl-1 gap-1 min-w-[110px] sm:min-w-[130px]">
+                  <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">TOTAL XP</span>
+                  <div className="w-full bg-[#FAE9CE] border-[1.5px] border-[#3D2013] h-2.5 sm:h-3 relative overflow-hidden rounded-[3px]">
+                    <div
+                      className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r border-[#3D2013]' : ''}`}
+                      style={{ width: `${xpPercent}%` }}
+                    />
+                  </div>
+                  <span className="font-pressstart text-[6px] sm:text-[7px] text-[#3D2013]">
+                    {playerData.currentXP?.toLocaleString() ?? 0}/{playerData.maxXP?.toLocaleString() ?? 100} XP
+                  </span>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -54,8 +54,30 @@ const initialChatHistory = {
   ]
 };
 
+// 12 Streak Rewards Definition
+const STREAK_REWARDS_DATA = [
+  { days: 1, text: "1 day", type: "coins", valueText: "+5 coins", img: "media/streak_coins.png", coins: 5, xp: 0 },
+  { days: 3, text: "3 days", type: "coins", valueText: "+10 coins", img: "media/streak_coins.png", coins: 10, xp: 0 },
+  { days: 7, text: "7 days", type: "coins", valueText: "+20 coins", img: "media/streak_coins.png", coins: 20, xp: 0 },
+  { days: 14, text: "14 days", type: "xp", valueText: "+75 xp", img: "media/streak_xp.png", coins: 0, xp: 75 },
+  { days: 21, text: "21 days", type: "xp", valueText: "+100 xp", img: "media/streak_xp.png", coins: 0, xp: 100 },
+  { days: 30, text: "30 days", type: "xp", valueText: "+200 xp", img: "media/streak_xp.png", coins: 0, xp: 200 },
+  { days: 45, text: "45 days", type: "coins", valueText: "+100 coins", img: "media/streak_coins.png", coins: 100, xp: 0 },
+  { days: 60, text: "60 days", type: "coins", valueText: "+120 coins", img: "media/streak_coins.png", coins: 120, xp: 0 },
+  { days: 90, text: "90 days", type: "coins", valueText: "+150 coins", img: "media/streak_coins.png", coins: 150, xp: 0 },
+  { days: 120, text: "120 days", type: "xp", valueText: "+1.75x xp", img: "media/streak_xp.png", coins: 0, xp: 300 },
+  { days: 180, text: "180 days", type: "xp", valueText: "+500 xp", img: "media/streak_xp.png", coins: 0, xp: 500 },
+  { days: 365, text: "365 days", type: "xp", valueText: "+750 xp", img: "media/streak_xp.png", coins: 0, xp: 750 },
+];
+
+const PAGES_TIERS = [
+  [1, 3, 7, 14, 21],
+  [30, 45, 60, 90, 120],
+  [180, 365]
+];
+
 export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propIsRoomState = false }) {
-  const { playerData } = usePlayer();
+  const { playerData, updateCoins } = usePlayer();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -75,6 +97,11 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [showLeaveRoomModal, setShowLeaveRoomModal] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [showStreakModal, setShowStreakModal] = useState(false);
+
+  // Pagination & Claimed Rewards State
+  const [streakPageIndex, setStreakPageIndex] = useState(0);
+  const [claimedStreakDays, setClaimedStreakDays] = useState([1]);
 
   // Emoji picker & Scroll state
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -99,6 +126,10 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   // DOM Refs
   const chatMessagesContainerRef = useRef(null);
   const chatInputRef = useRef(null);
+
+  const baseUrl = import.meta.env.BASE_URL.endsWith('/')
+    ? import.meta.env.BASE_URL
+    : `${import.meta.env.BASE_URL}/`;
 
   // Auto Scroll Chat to Bottom on New Message
   useEffect(() => {
@@ -220,6 +251,14 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     }, 300);
   };
 
+  const handleClaimStreakReward = (rewardItem) => {
+    if (claimedStreakDays.includes(rewardItem.days)) return;
+    setClaimedStreakDays((prev) => [...prev, rewardItem.days]);
+    if (rewardItem.coins > 0 && updateCoins) {
+      updateCoins((playerData.coins || 0) + rewardItem.coins);
+    }
+  };
+
   return (
     <>
       <header className="relative z-10 pt-4 sm:pt-6 flex items-center justify-between md:justify-end w-full px-3 sm:px-6 shrink-0">
@@ -235,9 +274,9 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
         <div className="flex items-center gap-1 sm:gap-3 flex-nowrap justify-end max-w-full py-2 px-1">
           <div className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[30px] flex items-center justify-center gap-1 sm:gap-2 shrink-0 shadow-sm">
-            <img src="media/coin_logo.png" alt="Coin" className="w-3.5 h-3.5 sm:w-6 sm:h-6 object-contain shrink-0" />
+            <img src={`${baseUrl}media/coin_logo.png`} alt="Coin" className="w-3.5 h-3.5 sm:w-6 sm:h-6 object-contain shrink-0" />
             <span className="font-pressstart text-[8px] sm:text-[12px] text-[#3D2013]">
-              {playerData.coins.toLocaleString()}
+              {(playerData.coins || 0).toLocaleString()}
             </span>
           </div>
 
@@ -331,15 +370,20 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             <span className="font-pressstart text-[8px] sm:text-[12px] text-[#3D2013]">{myFriends.length}</span>
           </button>
 
-          <div className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-0.5 sm:gap-1.5 shrink-0 shadow-sm">
+          {/* CLICKABLE STREAK BUTTON */}
+          <button
+            onClick={() => setShowStreakModal(true)}
+            title="Streak Rewards"
+            className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-0.5 sm:gap-1.5 shrink-0 transition-all duration-150 retro-shadow cursor-pointer"
+          >
             <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#ED8C00]" viewBox="0 0 24 24">
               <path d="M0 0h24v24H0z" fill="none" />
               <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
             </svg>
             <span className="font-pressstart text-[8px] sm:text-[12px] text-[#3D2013]">
-              {playerData.streakDays}D
+              {playerData.streakDays ?? 0}D
             </span>
-          </div>
+          </button>
 
           {/* DYNAMIC ROOM STATE ACTION BUTTONS */}
           {isRoomState ? (
@@ -351,7 +395,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                 }}
                 className="h-8 sm:h-11 bg-[#FEF4E0] border-2 border-[#3D2013] transition-all duration-150 retro-shadow cursor-pointer px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer text-[#3D2013] shrink-0"
               >
-                <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" />
+                <img src={`${baseUrl}media/kitsu_logo.png`} alt="Kitsu AI Logo" className="w-4 h-4 sm:w-5 sm:h-5 object-contain shrink-0" />
                 <span className="nav-label font-pressstart text-[8px] sm:text-[10px]">KitsuAI</span>
               </button>
 
@@ -382,6 +426,221 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
           )}
         </div>
       </header>
+
+{/* STREAK REWARDS MODAL */}
+      {showStreakModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#3D2013]/50">
+          <div className="bg-[#FEF4E0] border-[3px] border-[#3D2013] rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            
+            {/* CLOSE BUTTON AT TOP RIGHT */}
+            <button
+              onClick={() => setShowStreakModal(false)}
+              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#3D2013] hover:text-[#A53914] font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+            >
+              ✕
+            </button>
+
+            {/* HEADER */}
+            <div className="flex flex-col items-center justify-center text-center gap-1 pt-1">
+              <h3 className="font-pressstart text-sm sm:text-[36px] text-[#3D2013] tracking-wide">
+                STREAK REWARDS
+              </h3>
+              <p className="font-pixel text-[7px] sm:text-[24px] text-[#3D2013]/70 px-4">
+                Stay consistent and earn awesome rewards!
+              </p>
+            </div>
+
+            {/* CARDS CONTAINER WITH NAVIGATION ARROWS */}
+            <div className="relative flex items-center justify-between w-full my-1 min-h-[190px] sm:min-h-[220px]">
+              
+              {/* LEFT ARROW */}
+              <button
+                disabled={streakPageIndex === 0}
+                onClick={() => setStreakPageIndex((prev) => Math.max(0, prev - 1))}
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                  streakPageIndex === 0
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    : 'cursor-pointer'
+                }`}
+              >
+                ◀
+              </button>
+
+              {/* HORIZONTAL CARDS DISPLAY */}
+              <div className="flex items-stretch justify-start sm:justify-center gap-2 sm:gap-3 flex-1 px-1 sm:px-2 overflow-x-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {PAGES_TIERS[streakPageIndex].map((dayValue) => {
+                  const item = STREAK_REWARDS_DATA.find((r) => r.days === dayValue);
+                  if (!item) return null;
+
+                  const isClaimed = claimedStreakDays.includes(item.days);
+                  const canClaim = (playerData.streakDays ?? 0) >= item.days && !isClaimed;
+                  const isLocked = !canClaim && !isClaimed;
+
+                  return (
+                    <div
+                      key={item.days}
+                      className={`w-28 sm:w-36 rounded-[12px] flex flex-col justify-between overflow-hidden shrink-0 border-[2px] sm:border-[2.5px] transition-all shadow-sm ${
+                        canClaim
+                          ? 'border-[#E87339] bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE]'
+                          : 'border-[#3D2013] bg-[#FEF4E0]'
+                      }`}
+                    >
+                      {/* CARD HEADER */}
+                      <div className="p-1.5 sm:p-2 text-center pt-2">
+                        <span className="font-pressstart text-[8px] sm:text-[10px] text-[#3D2013] uppercase block truncate">
+                          {item.text}
+                        </span>
+                      </div>
+
+                      {/* CARD BODY */}
+                      <div className="flex flex-col items-center justify-center gap-1 p-1.5 sm:p-2 my-auto">
+                        <img
+                          src={`${baseUrl}${item.img}`}
+                          alt={item.valueText}
+                          className="w-20 h-20 sm:w-30 sm:h-30 object-contain"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
+                        <span className="font-pixel text-[13px] sm:text-[15px] text-[#3D2013] text-center leading-tight">
+                          {item.valueText}
+                        </span>
+                      </div>
+
+                      {/* BORDER SEPARATOR */}
+                      <div className="w-full h-[2px] sm:h-[2px] bg-[#3D2013]" />
+
+                      {/* CARD FOOTER */}
+                      {isClaimed && (
+                        <div className="bg-[#C8DDB0] text-[#5C8D57] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                          <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" viewBox="0 0 32 32">
+                            <path d="M0 0h32v32H0z" fill="none" />
+                            <path fill="currentColor" d="m14 21.414l-5-5.001L10.413 15L14 18.586L21.585 11L23 12.415z" />
+                            <path fill="currentColor" d="M16 2a14 14 0 1 0 14 14A14 14 0 0 0 16 2m0 26a12 12 0 1 1 12-12a12 12 0 0 1-12 12" />
+                          </svg>
+                          <span>CLAIMED</span>
+                        </div>
+                      )}
+
+                      {canClaim && (
+                        <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
+                          <button
+                            onClick={() => handleClaimStreakReward(item)}
+                            className="w-full bg-[#E87339] text-[#FEF4E0] border-[1.5px] sm:border-[2px] border-[#3D2013] py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase"
+                          >
+                            CLAIM
+                          </button>
+                        </div>
+                      )}
+
+                      {isLocked && (
+                        <div className="bg-[#D8D0C4] text-[#8A786C] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                          <svg className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0" viewBox="0 0 16 16">
+                            <path d="M0 0h16v16H0z" fill="none" />
+                            <path fill="currentColor" d="M8 1a4 4 0 0 1 4 4v2l.204.01A2 2 0 0 1 14 9v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2V5a4 4 0 0 1 4-4m0 8a1 1 0 0 0-1 1v2a1 1 0 1 0 2 0v-2a1 1 0 0 0-1-1m0-6a2 2 0 0 0-2 2v2h4V5a2 2 0 0 0-2-2" />
+                          </svg>
+                          <span>LOCKED</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* RIGHT ARROW */}
+              <button
+                disabled={streakPageIndex === PAGES_TIERS.length - 1}
+                onClick={() => setStreakPageIndex((prev) => Math.min(PAGES_TIERS.length - 1, prev + 1))}
+                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-[#3D2013] hover:text-[#E87339] hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                  streakPageIndex === PAGES_TIERS.length - 1
+                    ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-[#3D2013]'
+                    : 'cursor-pointer'
+                }`}
+              >
+                ▶
+              </button>
+            </div>
+
+            {/* INFO TEXT & CIRCLE PAGE INDICATOR */}
+            <div className="flex flex-col items-center gap-1.5 pb-1">
+              <span className="font-pressstart text-[7px] sm:text-[9px] text-[#3D2013]/70 text-center">
+                Start a study session to claim the streak
+              </span>
+
+              <div className="flex items-center gap-2">
+                {PAGES_TIERS.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setStreakPageIndex(idx)}
+                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-[#3D2013] transition-colors cursor-pointer ${
+                      streakPageIndex === idx ? 'bg-[#E87339]' : 'bg-[#FAE9CE]'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* FOOTER SECTION WITH DISTINCT BACKGROUND */}
+            <div className="-mx-4 sm:-mx-6 -mb-4 sm:-mb-6 px-4 sm:px-6 py-3.5 sm:py-4 bg-[#FAE9CE] border-t-[2.5px] border-[#3D2013] rounded-b-[13px] flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4 mt-1">
+              
+              {/* LEFT: KITSU LOGO & TEXT */}
+              <div className="flex items-center gap-2.5 text-center md:text-left">
+                <img
+                  src={`${baseUrl}media/kitsu_logo.png`}
+                  alt="Kitsu Logo"
+                  className="w-8 h-8 sm:w-10 sm:h-10 object-contain shrink-0"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+                <div className="flex flex-col">
+                  <span className="font-pressstart text-[11px] sm:text-[16px] text-[#3D2013]">Keep it up!</span>
+                  <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/80 leading-4">
+                    Consistency is the key to mastery. <br /> You've got this!
+                  </span>
+                </div>
+              </div>
+
+              {/* RIGHT: DUAL STREAK STATS CARD */}
+              <div className="bg-[#FEF4E0] border-[2px] border-[#3D2013] rounded-[10px] p-2 sm:p-2.5 flex items-center justify-center gap-2 sm:gap-3 w-full md:w-auto shrink-0 shadow-xs">
+                
+                {/* CURRENT STREAK */}
+                <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2">
+                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-[#ED8C00] shrink-0" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
+                  </svg>
+                  <div className="flex flex-col text-left">
+                    <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">CURRENT STREAK</span>
+                    <span className="font-pressstart text-[8px] sm:text-[20px] text-[#FD923E]">
+                      {playerData.streakDays ?? 0} days
+                    </span>
+                  </div>
+                </div>
+
+                {/* VERTICAL BORDER SEPARATOR */}
+                <div className="w-[1.5px] h-6 sm:h-7 bg-[#3D2013]/30" />
+
+                {/* LONGEST STREAK */}
+                <div className="flex items-center gap-1.5 sm:gap-2 pl-1">
+                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-[#FD923E] shrink-0" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M7 21v-2h4v-3.1q-1.225-.275-2.187-1.037T7.4 12.95q-1.875-.225-3.137-1.637T3 8V7q0-.825.588-1.412T5 5h2V3h10v2h2q.825 0 1.413.588T21 7v1q0 1.9-1.263 3.313T16.6 12.95q-.45 1.15-1.412 1.913T13 15.9V19h4v2zm0-10.2V7H5v1q0 .95.55 1.713T7 10.8m10 0q.9-.325 1.45-1.088T19 8V7h-2z" />
+                  </svg>
+                  <div className="flex flex-col text-left">
+                    <span className="font-pixel text-[15px] sm:text-[20px] text-[#3D2013]/70">LONGEST STREAK</span>
+                    <span className="font-pressstart text-[8px] sm:text-[20px] text-[#3D2013]">
+                      {playerData.bestStreak ?? 0} days
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* LEAVE ROOM MODAL */}
       {showLeaveRoomModal && (
