@@ -197,7 +197,7 @@ export default function KitsuAI() {
           </div>
 
           <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[8px] sm:rounded-[12px] px-2 sm:px-4 py-1 sm:py-2 shadow-md flex items-center justify-center shrink min-w-0">
-            <h1 className="font-pressstart text-[10px] sm:text-[16px] text-[#482A1D] tracking-tight">
+            <h1 className="font-pressstart text-[10px] sm:text-[16px] text-theme-dark tracking-tight">
               Study Circle AI
             </h1>
           </div>
@@ -205,7 +205,7 @@ export default function KitsuAI() {
 
         <button
           onClick={handleClose}
-          className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-surface border-[2px] md:border-[3px] border-theme-dark text-theme-dark hover:bg-theme-primary hover:text-[#FFFFF6] rounded-full transition-all retro-shadow cursor-pointer flex items-center justify-center shrink-0"
+          className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-surface border-[2px] md:border-[3px] border-theme-dark text-theme-dark hover:bg-theme-primary hover:text-theme-white rounded-full transition-all retro-shadow cursor-pointer flex items-center justify-center shrink-0"
         >
           ✕
         </button>
@@ -224,7 +224,7 @@ export default function KitsuAI() {
               <div className="my-auto flex flex-col items-center justify-center text-center px-4 py-6 gap-3 max-w-xl mx-auto">
                 <div className="text-5xl mb-2">🦊</div>
                 <h3 className="font-pressstart text-lg sm:text-2xl text-theme-dark">
-                  Study with <span className="text-[#DD6E36]">Kitsu</span>
+                  Study with <span className="text-theme-primary">Kitsu</span>
                 </h3>
                 <p className="font-pixel text-sm sm:text-base text-theme-dark/80">
                   Ask questions, summarize documents, or generate quizzes directly from your sources.
@@ -341,7 +341,7 @@ export default function KitsuAI() {
                 <div className="mt-auto flex flex-col gap-2 pt-3 border-t border-theme-dark/20">
                   <button
                     onClick={() => setShowPdfModal(true)}
-                    className="w-full font-pressstart text-[10px] bg-theme-surface border-2 border-theme-dark py-2.5 rounded-lg retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+                    className="w-full font-pressstart text-[10px] bg-theme-surface border-2 border-theme-dark py-2.5 rounded-lg retro-shadow cursor-pointer hover:bg-theme-muted"
                   >
                     + Add Sources
                   </button>
@@ -411,7 +411,7 @@ export default function KitsuAI() {
                   <div className="flex flex-col gap-2 p-3 bg-[#FFF8EC] border-2 border-theme-dark rounded-xl max-h-60 overflow-y-auto">
                     {notesState.notesContent.map((sec, idx) => (
                       <div key={idx} className="flex flex-col gap-1">
-                        <h4 className="font-pressstart text-[9px] text-[#E34B00]">{sec.heading}</h4>
+                        <h4 className="font-pressstart text-[9px] text-theme-primary">{sec.heading}</h4>
                         {sec.body && <p className="font-pixel text-xs text-theme-dark">{sec.body}</p>}
                       </div>
                     ))}
@@ -463,7 +463,7 @@ export default function KitsuAI() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-theme-primary p-8 rounded-xl font-pressstart text-[10px] text-theme-dark cursor-pointer hover:bg-[#FDE4D0]"
+              className="border-2 border-dashed border-theme-primary p-8 rounded-xl font-pressstart text-[10px] text-theme-dark cursor-pointer hover:bg-theme-muted"
             >
               Click to select PDF
             </button>

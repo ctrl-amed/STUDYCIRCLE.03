@@ -197,7 +197,7 @@ export default function ChangePassword() {
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       {showNewPassword ? (
@@ -211,7 +211,7 @@ export default function ChangePassword() {
                     </svg>
                   </button>
                 </div>
-                {newPasswordErr && <p className="font-pixel text-sm text-[#A94A4A] mt-0.5">✘ {newPasswordErr}</p>}
+                {newPasswordErr && <p className="font-pixel text-sm text-theme-danger mt-0.5">✘ {newPasswordErr}</p>}
               </div>
 
               {/* Confirm New Password Field */}
@@ -233,7 +233,7 @@ export default function ChangePassword() {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
                   >
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       {showConfirmPassword ? (
@@ -249,7 +249,7 @@ export default function ChangePassword() {
                 </div>
                 <p
                   className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
-                    isConfirmPasswordCustomError ? 'text-[#A94A4A] text-sm' : 'text-theme-dark text-[10px] sm:text-[12px] md:text-[14px] lg:text-[16px]'
+                    isConfirmPasswordCustomError ? 'text-theme-danger text-sm' : 'text-theme-dark text-[10px] sm:text-[12px] md:text-[14px] lg:text-[16px]'
                   }`}
                 >
                   {isConfirmPasswordCustomError ? `✘ ${confirmPasswordErr}` : confirmPasswordErr}
@@ -278,7 +278,7 @@ export default function ChangePassword() {
                 <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
                 </svg>
-                <span className="font-pressstart text-[11px] sm:text-[12px] text-[#482A1D] tracking-wide whitespace-normal break-words leading-snug">
+                <span className="font-pressstart text-[11px] sm:text-[12px] text-theme-dark tracking-wide whitespace-normal break-words leading-snug">
                   {toast.message}
                 </span>
               </div>

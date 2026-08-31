@@ -146,36 +146,36 @@ export function ActiveSessionWidget({
 
   if (!activeSession) {
     return (
-      <section className="bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <h3 className="font-pressstart text-[20px] sm:text-[30px] text-theme-dark">READY TO FOCUS?</h3>
-          <p className="font-pixel text-[20px] sm:text-[24px] text-theme-dark leading-snug">
-            Select a task category and let StudyCircle recommend the right study technique for you.
-          </p>
-        </div>
+<section className="card-highlight border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
+  <div className="flex flex-col gap-2">
+    <h3 className="font-pressstart text-[20px] sm:text-[30px] text-theme-dark">READY TO FOCUS?</h3>
+    <p className="font-pixel text-[20px] sm:text-[24px] text-theme-dark leading-snug">
+      Select a task category and let StudyCircle recommend the right study technique for you.
+    </p>
+  </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
-          <button
-            type="button"
-            onClick={() => context?.openCreateSessionModal?.()}
-            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FFFFF6] bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
-          >
-            START SESSION
-          </button>
+  <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
+    <button
+      type="button"
+      onClick={() => context?.openCreateSessionModal?.()}
+      className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
+    >
+      START SESSION
+    </button>
 
-          <div className="flex items-center gap-4 sm:gap-6">
-            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-              <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Current Streak</span>
-              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{streakDays} days</span>
-            </div>
+    <div className="flex items-center gap-4 sm:gap-6">
+      <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+        <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Current Streak</span>
+        <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{streakDays} days</span>
+      </div>
 
-            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-              <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Today</span>
-              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{focusTimeFormatted}</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+        <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Today</span>
+        <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{focusTimeFormatted}</span>
+      </div>
+    </div>
+  </div>
+</section>
     );
   }
 
@@ -263,7 +263,7 @@ export function ActiveSessionWidget({
           <div>
             <button
               onClick={toggleTimer}
-              className="w-full font-pressstart text-[11px] sm:text-[13px] text-[#FFFFF6] bg-theme-primary border-2 border-theme-dark py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
+              className="w-full font-pressstart text-[11px] sm:text-[13px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
             >
               {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
             </button>
@@ -329,7 +329,7 @@ export function ActiveSessionWidget({
 
       <button
         onClick={handleConfirmNudge}
-        className="w-full font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-2 border-theme-dark py-2.5 hover:bg-[#d0622c] cursor-pointer shadow-sm uppercase transition-colors"
+        className="w-full font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 hover:bg-[#d0622c] cursor-pointer shadow-sm uppercase transition-colors"
       >
         YES, I'M HERE
       </button>
@@ -438,7 +438,7 @@ export function RecentActivityWidget({
         <h3 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark">RECENT ACTIVITY</h3>
         <button
           onClick={onViewAll}
-          className="text-theme-dark hover:text-[#EA781C] font-pressstart text-[8px] sm:text-[9px] px-2.5 py-1.5 rounded-[6px] transition-colors cursor-pointer"
+          className="text-theme-dark hover:text-theme-primary font-pressstart text-[8px] sm:text-[9px] px-2.5 py-1.5 rounded-[6px] transition-colors cursor-pointer"
         >
           VIEW ALL
         </button>

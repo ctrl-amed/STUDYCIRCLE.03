@@ -135,7 +135,7 @@ export function LoadingProvider({ children }) {
             {/* Title */}
             <h1
               className={`font-pixel text-4xl tracking-wide mb-2 drop-shadow-[2px_2px_0px_rgba(232,115,57,0.4)] ${
-                isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'
+                isAdmin ? 'text-theme-surface' : 'text-theme-dark'
               }`}
             >
               StudyCircle
@@ -144,7 +144,7 @@ export function LoadingProvider({ children }) {
             {/* Dynamic Status Subtitle */}
             <p
               className={`font-pixel text-xs tracking-widest uppercase mb-8 ${
-                isAdmin ? 'text-[#FD923E]' : 'text-theme-primary'
+                isAdmin ? 'text-theme-primary' : 'text-theme-primary'
               }`}
             >
               ◆ {statusText} ◆
@@ -167,7 +167,7 @@ export function LoadingProvider({ children }) {
             {/* Retro Bar Footnotes */}
             <div
               className={`w-full max-w-xs flex justify-between font-pixel text-lg mt-1 px-1 ${
-                isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'
+                isAdmin ? 'text-theme-surface' : 'text-theme-dark'
               }`}
             >
               <span>LOADING</span>
@@ -178,7 +178,7 @@ export function LoadingProvider({ children }) {
             <p
               className={`font-pixel text-xl italic tracking-wide mt-12 opacity-90 max-w-xs leading-snug transition-opacity duration-300 ${
                 quoteFade ? 'opacity-0' : 'opacity-100'
-              } ${isAdmin ? 'text-[#FBF2E3]' : 'text-theme-dark'}`}
+              } ${isAdmin ? 'text-theme-surface' : 'text-theme-dark'}`}
             >
               "{currentQuote}"
             </p>

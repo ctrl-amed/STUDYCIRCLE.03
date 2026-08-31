@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
 
@@ -39,6 +39,22 @@ export default function Sidebar({
   const { playerData } = usePlayer();
   const location = useLocation();
   const [appearanceRotated, setAppearanceRotated] = useState(false);
+
+  // Theme State (Persisted in localStorage)
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
+  // Sync theme with document element
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Modal State for Level Rewards
   const [showLevelModal, setShowLevelModal] = useState(false);
@@ -84,19 +100,6 @@ export default function Sidebar({
       ),
     },
     {
-      path: '/profile',
-      label: 'Profile',
-      icon: (
-        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path d="M0 0h24v24H0z" fill="none" />
-          <g fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-            <circle cx="12" cy="7" r="3" />
-          </g>
-        </svg>
-      ),
-    },
-    {
       path: '/rooms',
       label: 'Rooms',
       icon: (
@@ -121,9 +124,22 @@ export default function Sidebar({
       path: '/customizer',
       label: 'Customizer',
       icon: (
-        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 640 640">
-          <path d="M0 0h640v640H0z" fill="none" />
-          <path fill="currentColor" d="M320.2 176c44.2 0 80-35.8 80-80h53.5c17 0 33.3 6.7 45.3 18.7l118.6 118.7c12.5 12.5 12.5 32.8 0 45.3l-50.7 50.7c-12.5 12.5-32.8 12.5-45.3 0L480.2 288v224c0 35.3-28.7 64-64 64h-192c-35.3 0-64-28.7-64-64V288l-41.4 41.4c-12.5 12.5-32.8 12.5-45.3 0l-50.6-50.8c-12.5-12.5-12.5-32.8 0-45.3l118.6-118.6c12-12 28.3-18.7 45.3-18.7h53.5c0 44.2 35.8 80 80 80z" />
+        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24">
+          <path d="M0 0h24v24H0z" fill="none" />
+          <path fill="currentColor" d="m21.37 4.07l-5-2A.9.9 0 0 0 16 2h-1c-.55 0-1 .45-1 1c0 1.1-.9 2-2 2s-2-.9-2-2c0-.55-.45-1-1-1H8c-.13 0-.25.02-.37.07l-5 2A1 1 0 0 0 2 5v6c0 .55.45 1 1 1h2v9c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-9h2c.55 0 1-.45 1-1V5a1 1 0 0 0-.63-.93M20 10h-3v10H7V10H4V5.68l4.13-1.65c.45 1.71 2.02 2.98 3.87 2.98s3.41-1.26 3.87-2.98L20 5.68z" />
+        </svg>
+      ),
+    },
+    {
+      path: '/profile',
+      label: 'Profile',
+      icon: (
+        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M0 0h24v24H0z" fill="none" />
+          <g fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+            <circle cx="12" cy="7" r="3" />
+          </g>
         </svg>
       ),
     },
@@ -173,12 +189,12 @@ export default function Sidebar({
             )}
           </div>
 
-          {/* TOGGLE BUTTON: Hidden on mobile (hidden md:flex) */}
+          {/* TOGGLE BUTTON */}
           <button
             id="toggle-sidebar-btn"
             aria-label="Toggle Sidebar"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="hidden md:flex text-theme-dark hover:text-[#FD923E] transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
+            className="hidden md:flex text-theme-dark hover:text-theme-primary transition-colors p-1 rounded-md focus:outline-none shrink-0 cursor-pointer"
           >
             <svg
               id="toggle-icon"
@@ -204,7 +220,7 @@ export default function Sidebar({
           title="Click to view Level Rewards"
           className={`mb-4 cursor-pointer rounded-[10px] flex items-center gap-3 shrink-0 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] ${
             isExpanded || isMobileOpen
-              ? 'bg-theme-surface border-[2px] border-theme-dark p-2.5 justify-start hover:border-[#FD923E]'
+              ? 'bg-theme-surface border-[2px] border-theme-dark p-2.5 justify-start hover:border-theme-primary'
               : 'bg-transparent border-transparent p-0 justify-center'
           }`}
         >
@@ -218,7 +234,7 @@ export default function Sidebar({
                 </svg>
               )}
             </div>
-            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
+            <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
               <span id="player-level" className="font-pressstart text-[8px] text-theme-dark font-bold">
                 {playerData.level}
               </span>
@@ -233,7 +249,7 @@ export default function Sidebar({
               <div className="w-full bg-theme-muted border-[2px] border-theme-dark h-3.5 relative overflow-hidden rounded-[4px]">
                 <div
                   id="xp-bar-fill"
-                  className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r-2 border-theme-dark' : ''}`}
+                  className={`bg-theme-primary h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r-2 border-theme-dark' : ''}`}
                   style={{ width: `${xpPercent}%` }}
                 />
               </div>
@@ -258,8 +274,8 @@ export default function Sidebar({
                   onClick={() => setIsMobileOpen(false)}
                   className={`nav-item group font-pressstart text-[11px] p-2.5 rounded-[8px] transition-colors flex items-center gap-3 whitespace-nowrap ${
                     isActive
-                      ? 'active bg-[#FDE4D0] border-r-4 border-[#FD923E] text-[#EA781C]'
-                      : 'text-theme-dark hover:bg-[#FDE4D0] hover:text-[#EA781C]'
+                      ? 'active bg-theme-muted border-r-4 border-theme-primary text-theme-primary'
+                      : 'text-theme-dark hover:bg-theme-muted hover:text-theme-primary'
                   }`}
                 >
                   {item.icon}
@@ -280,18 +296,21 @@ export default function Sidebar({
               setIsMobileOpen(false);
               if (onOpenKitsu) onOpenKitsu();
             }}
-            className="w-full bg-[#FDE4D0] border-2 border-theme-dark hover:bg-[#FD923E] hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-theme-dark"
+            className="w-full bg-theme-muted border-2 border-theme-dark hover:bg-theme-primary hover:text-white transition-colors p-2 rounded-[8px] flex items-center justify-center gap-2 cursor-pointer text-theme-dark"
           >
             <img src="media/kitsu_logo.png" alt="Kitsu AI Logo" className="w-5 h-5 object-contain shrink-0" />
             {(isExpanded || isMobileOpen) && <span className="nav-label font-pressstart text-[10px]">KitsuAI</span>}
           </button>
 
-          <div className="bg-[#FDE4D0] rounded-[8px] p-1.5 flex flex-col gap-1.5">
+          <div className="bg-theme-muted rounded-[8px] p-1.5 flex flex-col gap-1.5">
             <button
               id="appearance-btn"
               title="Toggle Appearance"
-              onClick={() => setAppearanceRotated(!appearanceRotated)}
-              className="w-full text-theme-dark hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
+              onClick={() => {
+                setAppearanceRotated(!appearanceRotated);
+                setIsDarkMode((prev) => !prev);
+              }}
+              className="w-full text-theme-dark hover:text-theme-primary transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
             >
               <svg
                 id="appearance-icon"
@@ -317,7 +336,7 @@ export default function Sidebar({
             <button
               title="Feedback"
               onClick={() => setShowFeedbackModal(true)}
-              className="w-full text-theme-dark hover:text-[#FD923E] transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
+              className="w-full text-theme-dark hover:text-theme-primary transition-colors p-1.5 flex items-center justify-start gap-2 rounded-[6px] hover:bg-theme-muted cursor-pointer"
             >
               <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                 <path d="M0 0h24v24H0z" fill="none" />
@@ -417,7 +436,7 @@ export default function Sidebar({
 
                       {/* CARD FOOTER */}
                       {isClaimed && (
-                        <div className="bg-[#C8DDB0] text-[#5C8D57] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                        <div className="bg-[#C8DDB0] text-theme-safe p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
                           <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" viewBox="0 0 32 32">
                             <path d="M0 0h32v32H0z" fill="none" />
                             <path fill="currentColor" d="m14 21.414l-5-5.001L10.413 15L14 18.586L21.585 11L23 12.415z" />
@@ -512,7 +531,7 @@ export default function Sidebar({
                 {/* CURRENT LEVEL */}
                 <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2">
                   <svg
-                    className="w-5 h-5 sm:w-10 sm:h-10 text-[#FD923E] shrink-0"
+                    className="w-5 h-5 sm:w-10 sm:h-10 text-theme-primary shrink-0"
                     viewBox="0 0 24 24"
                     fill="currentColor"
                   >
@@ -521,7 +540,7 @@ export default function Sidebar({
                   </svg>
                   <div className="flex flex-col text-left">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70">CURRENT LEVEL</span>
-                    <span className="font-pressstart text-[8px] sm:text-[20px] text-[#FD923E]">
+                    <span className="font-pressstart text-[8px] sm:text-[20px] text-theme-primary">
                       {playerData.level ?? 1}
                     </span>
                   </div>
@@ -535,7 +554,7 @@ export default function Sidebar({
                   <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70">TOTAL XP</span>
                   <div className="w-full bg-theme-muted border-[1.5px] border-theme-dark h-2.5 sm:h-3 relative overflow-hidden rounded-[3px]">
                     <div
-                      className={`bg-[#FD923E] h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r border-theme-dark' : ''}`}
+                      className={`bg-theme-primary h-full transition-all duration-300 ${xpPercent > 0 ? 'border-r border-theme-dark' : ''}`}
                       style={{ width: `${xpPercent}%` }}
                     />
                   </div>
@@ -575,7 +594,7 @@ export default function Sidebar({
             {isSubmitted ? (
               <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
                 <span className="text-4xl">🎉</span>
-                <span className="font-pressstart text-[12px] text-[#FD923E]">THANK YOU!</span>
+                <span className="font-pressstart text-[12px] text-theme-primary">THANK YOU!</span>
                 <span className="font-pixel text-[16px] text-theme-dark/80">
                   Your feedback has been submitted successfully.
                 </span>
@@ -598,7 +617,7 @@ export default function Sidebar({
                           onClick={() => setSelectedRating(item.label)}
                           className={`flex flex-col items-center justify-center p-2 rounded-[12px] border-[2px] transition-all cursor-pointer ${
                             isSelected
-                              ? 'bg-[#FD923E] border-theme-dark scale-105 shadow-md'
+                              ? 'bg-theme-primary border-theme-dark scale-105 shadow-md'
                               : 'bg-theme-muted border-transparent hover:border-theme-dark/30 hover:scale-102'
                           }`}
                         >
@@ -636,7 +655,7 @@ export default function Sidebar({
                 {/* SUBMIT BUTTON */}
                 <button
                   type="submit"
-                  className="w-full bg-[#FD923E] text-theme-surface border-[2px] border-theme-dark py-2.5 sm:py-3 font-pressstart text-[10px] sm:text-[11px] rounded-[8px] hover:bg-[#d0622c] cursor-pointer transition-colors shadow-sm uppercase"
+                  className="w-full bg-theme-primary text-theme-surface border-[2px] border-theme-dark py-2.5 sm:py-3 font-pressstart text-[10px] sm:text-[11px] rounded-[8px] hover:bg-[#d0622c] cursor-pointer transition-colors shadow-sm uppercase"
                 >
                   Submit
                 </button>

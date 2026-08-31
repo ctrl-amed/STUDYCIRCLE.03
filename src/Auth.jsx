@@ -503,7 +503,7 @@ export default function Auth() {
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
                     >
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                         {showLoginPassword ? (
@@ -517,7 +517,7 @@ export default function Auth() {
                       </svg>
                     </button>
                   </div>
-                  {loginError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">{loginError}</p>}
+                  {loginError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger mt-0.5">{loginError}</p>}
                 </div>
 
                 <button
@@ -531,7 +531,7 @@ export default function Auth() {
                   <button
                     type="button"
                     onClick={() => switchView('reset')}
-                    className="font-pressstart text-[11px] text-[#563B2D] hover:underline decoration-2 transition-all duration-150 bg-transparent border-none p-0 cursor-pointer"
+                    className="font-pressstart text-[11px] text-theme-dark hover:underline decoration-2 transition-all duration-150 bg-transparent border-none p-0 cursor-pointer"
                   >
                     Forgot Password?
                   </button>
@@ -547,7 +547,7 @@ export default function Auth() {
                 <button
                   type="button"
                   onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -580,7 +580,7 @@ export default function Auth() {
                       signupUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {signupUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
+                  {signupUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger mt-0.5">✘ {signupUsernameErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -597,7 +597,7 @@ export default function Auth() {
                       signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {signupEmailErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
+                  {signupEmailErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger mt-0.5">✘ {signupEmailErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -619,7 +619,7 @@ export default function Auth() {
                     <button
                       type="button"
                       onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
                     >
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                         {showSignupPassword ? (
@@ -633,7 +633,7 @@ export default function Auth() {
                       </svg>
                     </button>
                   </div>
-                  {signupPasswordErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
+                  {signupPasswordErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger mt-0.5">✘ {signupPasswordErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -654,7 +654,7 @@ export default function Auth() {
                     <button
                       type="button"
                       onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#563B2D] hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
                     >
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                         {showSignupConfirmPassword ? (
@@ -670,7 +670,7 @@ export default function Auth() {
                   </div>
                   <p
                     className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
-                      isConfirmPasswordCustomError ? 'text-[#A94A4A] text-[15px] sm:text-[15px]' : 'text-theme-dark text-[15px] sm:text-[15px]'
+                      isConfirmPasswordCustomError ? 'text-theme-danger text-[15px] sm:text-[15px]' : 'text-theme-dark text-[15px] sm:text-[15px]'
                     }`}
                   >
                     {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
@@ -713,7 +713,7 @@ export default function Auth() {
                 <button
                   type="button"
                   onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#FDE4D0]"
+                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -806,7 +806,7 @@ export default function Auth() {
                       </button>.
                     </span>
                   </label>
-                  {signupTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {signupTermsErr}</p>}
+                  {signupTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger">✘ {signupTermsErr}</p>}
                 </div>
 
                 <div className="flex gap-2 justify-end mt-2">
@@ -869,7 +869,7 @@ export default function Auth() {
                   <p className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark mt-1">
                     Usernames can be changed at any time. They must be 1 to 20 characters, containing only letters a to z, numbers 0 to 9, hyphens, or underscores.
                   </p>
-                  {googleUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleUsernameErr}</p>}
+                  {googleUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger">✘ {googleUsernameErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1 mt-1">
@@ -902,7 +902,7 @@ export default function Auth() {
                       </button>.
                     </span>
                   </label>
-                  {googleTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleTermsErr}</p>}
+                  {googleTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-danger">✘ {googleTermsErr}</p>}
                 </div>
 
                 <div className="flex gap-2 justify-center mt-2">
@@ -985,7 +985,7 @@ export default function Auth() {
                 <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
                 </svg>
-                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-4 tracking-wide">{toast.message}</span>
+                <span className="font-pressstart text-[12px] text-theme-dark whitespace-normal break-words leading-4 tracking-wide">{toast.message}</span>
               </div>
               <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
                 <div className="w-full h-full bg-theme-safe animate-progress-center"></div>

@@ -40,7 +40,7 @@ export default function UserProfile() {
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5 pb-10">
       {/* ROW 1: HEADER & TITLE */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
+        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block level-up-gradient bg-clip-text text-transparent w-fit">
           PROFILE
         </h1>
         <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
@@ -66,7 +66,7 @@ export default function UserProfile() {
             </div>
 
             {/* LEVEL BADGE AT BOTTOM RIGHT OVERLAY */}
-            <div className="absolute bottom-1 right-1 bg-[#FD923E] border-[2px] border-theme-dark px-2 py-0.5 text-center flex items-center justify-center rounded-[6px] shadow-md z-10">
+            <div className="absolute bottom-1 right-1 bg-theme-primary border-[2px] border-theme-dark px-2 py-0.5 text-center flex items-center justify-center rounded-[6px] shadow-md z-10">
               <span className="font-pressstart text-[10px] text-theme-dark font-bold">
                 {playerData?.level ?? 1}
               </span>
@@ -84,7 +84,7 @@ export default function UserProfile() {
           <div className="w-full flex flex-col items-center gap-2 mt-1">
             <div className="w-full bg-theme-muted border-[2.5px] border-theme-dark h-5 relative overflow-hidden rounded-[6px]">
               <div
-                className="bg-[#FD923E] h-full transition-all duration-300 border-r-2 border-theme-dark"
+                className="bg-theme-primary h-full transition-all duration-300 border-r-2 border-theme-dark"
                 style={{ width: `${xpPercent}%` }}
               />
             </div>
@@ -182,7 +182,7 @@ export default function UserProfile() {
 
 {/* CARD D: BEST STREAK */}
 <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-3 flex flex-col items-center justify-between text-center gap-2 min-h-[110px]">
-  <svg className="w-6 h-6 text-[#ED8C00]" viewBox="0 0 24 24">
+  <svg className="w-6 h-6 text-theme-primary" viewBox="0 0 24 24">
     <path d="M0 0h24v24H0z" fill="none" />
     <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
   </svg>

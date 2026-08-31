@@ -404,7 +404,7 @@ export default function UserRooms() {
               setSelectedStatsRoom(room);
               setShowStatsModal(true);
             }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+            className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
           >
             STATISTICS
           </button>
@@ -417,7 +417,7 @@ export default function UserRooms() {
               };
               enterRoomSession(activeSessionRoom);
             }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+            className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
           >
             JOIN ROOM
           </button>
@@ -429,7 +429,7 @@ export default function UserRooms() {
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5 pb-10">
       <div className="flex flex-col gap-1">
-        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
+        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block level-up-gradient bg-clip-text text-transparent w-fit">
           ROOMS
         </h1>
         <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
@@ -452,7 +452,7 @@ export default function UserRooms() {
               setShowCreateModal(true);
             }
           }}
-          className="font-pressstart text-[9px] sm:text-[10px] bg-theme-primary text-[#FFFFF6] rounded-none border-[2px] border-theme-dark px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
+          className="font-pressstart text-[9px] sm:text-[10px] bg-theme-primary text-theme-white rounded-none border-[2px] border-theme-dark px-3.5 py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
         >
           Create Room
         </button>
@@ -465,8 +465,8 @@ export default function UserRooms() {
               onClick={() => setActiveTab('all-rooms')}
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'all-rooms'
-                  ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
+                  ? 'border-[#E16F37] text-theme-primary'
+                  : 'border-transparent text-theme-dark hover:text-theme-primary'
               }`}
             >
               ALL ROOMS
@@ -475,8 +475,8 @@ export default function UserRooms() {
               onClick={() => setActiveTab('my-rooms')}
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'my-rooms'
-                  ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
+                  ? 'border-[#E16F37] text-theme-primary'
+                  : 'border-transparent text-theme-dark hover:text-theme-primary'
               }`}
             >
               MY ROOMS
@@ -485,8 +485,8 @@ export default function UserRooms() {
               onClick={() => setActiveTab('history')}
               className={`font-pressstart text-[10px] pb-1 border-b-2 transition-colors cursor-pointer shrink-0 ${
                 activeTab === 'history'
-                  ? 'border-[#E16F37] text-[#E16F37]'
-                  : 'border-transparent text-theme-dark hover:text-[#E16F37]'
+                  ? 'border-[#E16F37] text-theme-primary'
+                  : 'border-transparent text-theme-dark hover:text-theme-primary'
               }`}
             >
               HISTORY
@@ -511,7 +511,7 @@ export default function UserRooms() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search rooms..."
-                className="w-full bg-theme-surface border-[2px] border-theme-dark rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none focus:ring-1 focus:ring-[#FD923E]"
+                className="w-full bg-theme-surface border-[2px] border-theme-dark rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none"
               />
 
               {/* SEARCH CLEAR (X) BUTTON */}
@@ -558,7 +558,7 @@ export default function UserRooms() {
                     }}
                     className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
                       !selectedCourseFilter
-                        ? 'bg-theme-primary text-[#FFFFF6]'
+                        ? 'bg-theme-primary text-theme-white'
                         : 'text-theme-dark hover:bg-theme-muted'
                     }`}
                   >
@@ -574,7 +574,7 @@ export default function UserRooms() {
                       }}
                       className={`px-3 py-2 font-pressstart text-[8px] rounded-[4px] cursor-pointer transition-colors ${
                         selectedCourseFilter === courseOption
-                          ? 'bg-theme-primary text-[#FFFFF6]'
+                          ? 'bg-theme-primary text-theme-white'
                           : 'text-theme-dark hover:bg-theme-muted'
                       }`}
                     >
@@ -677,7 +677,7 @@ export default function UserRooms() {
               </button>
               <button
                 onClick={handleConfirmPrivateJoin}
-                className="font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
+                className="font-pressstart text-[8px] sm:text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530]"
               >
                 JOIN
               </button>
@@ -837,7 +837,7 @@ export default function UserRooms() {
               <button
                 onClick={handleConfirmCreate}
                 disabled={!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers}
-                className={`font-pressstart text-[8px] sm:text-[9px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow ${
+                className={`font-pressstart text-[8px] sm:text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 transition-all duration-150 retro-shadow ${
                   newRoomName.trim() && newRoomName.length <= MAX_ROOM_NAME_LENGTH && newRoomMaxMembers
                     ? 'cursor-pointer hover:bg-[#d66530]'
                     : 'opacity-50 cursor-not-allowed'
@@ -875,7 +875,7 @@ export default function UserRooms() {
 
             <button
               onClick={() => setShowLimitModal(false)}
-              className="font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
+              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
             >
               GOT IT
             </button>
@@ -970,7 +970,7 @@ export default function UserRooms() {
             <div className="flex items-center justify-center pt-2">
               <button
                 onClick={() => setShowStatsModal(false)}
-                className="font-pressstart text-[9px] sm:text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+                className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
               >
                 CLOSE
               </button>
@@ -1045,7 +1045,7 @@ export default function UserRooms() {
                     enterRoomSession(activeSessionRoom);
                   }
                 }}
-                className="font-pressstart text-[10px] text-[#FFFFF6] bg-green-600 border-[2px] border-theme-dark py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
+                className="font-pressstart text-[10px] text-theme-white bg-green-600 border-[2px] border-theme-dark py-2.5 transition-colors retro-shadow cursor-pointer uppercase w-full"
               >
                 JOIN ROOM
               </button>
@@ -1054,7 +1054,7 @@ export default function UserRooms() {
             {(requestState === 'EXPIRED' || requestState === 'REJECTED') && (
               <button
                 onClick={() => setShowRequestModal(false)}
-                className="font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
+                className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 hover:bg-[#d66530] transition-colors retro-shadow cursor-pointer uppercase w-full"
               >
                 CLOSE
               </button>

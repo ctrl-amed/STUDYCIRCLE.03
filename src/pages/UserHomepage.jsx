@@ -630,7 +630,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       {/* 1ST ROW: 2 COLUMNS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
         {/* LEFT COLUMN: GREETING & AVATAR ROOM */}
-        <section className="flex flex-col gap-2 sm:gap-4 p-2 sm:p-4">
+        <section className="flex flex-col gap-2 sm:gap-4">
           <div>
             {isMultiplayer ? (
               <>
@@ -711,7 +711,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                             <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
                           </svg>
                         )}
-                        <span className="font-pressstart text-[6px] sm:text-[7px] text-[#FFFFFF]">
+                        <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
                           {member.username} {member.isCurrentUser}
                         </span>
                       </div>
@@ -730,7 +730,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 className="w-full h-full object-cover"
                               />
                             </div>
-                            <div className="absolute -bottom-1 -right-1 bg-[#FD923E] border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
+                            <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
                               <span className="font-pressstart text-[8px] text-theme-dark font-bold">
                                 {member.level || 1}
                               </span>
@@ -743,7 +743,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 {member.username}
                               </h2>
                               {member.isHost && (
-                                <span className="bg-theme-primary text-[#FFFFF6] font-pressstart text-[5px] px-1 py-0.5 rounded shrink-0">
+                                <span className="bg-theme-primary text-theme-white font-pressstart text-[5px] px-1 py-0.5 rounded shrink-0">
                                   HOST
                                 </span>
                               )}
@@ -766,7 +766,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
                                   isFriendRequestSent
                                     ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
-                                    : 'bg-theme-primary text-[#FFFFF6] border-theme-dark hover:bg-[#d0622c]'
+                                    : 'bg-theme-primary text-theme-white border-theme-dark hover:bg-[#d0622c]'
                                 }`}
                               >
                                 {isFriendRequestSent ? 'SENT' : '+ ADD'}
@@ -792,7 +792,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                   e.stopPropagation();
                                   handleKickMember(member.id, member.username);
                                 }}
-                                className="bg-theme-danger text-[#FFFFF6] font-pressstart text-[6px] px-2 py-1 rounded border border-theme-dark hover:bg-red-800 transition-colors cursor-pointer"
+                                className="bg-theme-danger text-theme-white font-pressstart text-[6px] px-2 py-1 rounded border border-theme-dark hover:bg-red-800 transition-colors cursor-pointer"
                                 title="Kick player from room"
                               >
                                 KICK
@@ -821,7 +821,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   }}
                 >
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 bg-[#000000]/20 px-2 sm:px-3 py-1 sm:py-1.5 rounded-[4px] whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center z-30">
-                    <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-[#FFFFFF] leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                    <span id="avatar-nametag" className="font-pressstart text-[6px] sm:text-[8px] text-theme-white leading-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
                       {player.username}
                     </span>
                   </div>
@@ -1116,7 +1116,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       <div className="flex items-center gap-1">
                         <span className="font-pressstart text-[9px] text-theme-dark truncate">{member.username}</span>
                         {member.isHost && (
-                          <span className="bg-theme-primary text-[#FFFFF6] font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
+                          <span className="bg-theme-primary text-theme-white font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
                         )}
                         {member.isCurrentUser && (
                           <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
@@ -1166,7 +1166,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   onClick={() => setActiveTab(tab)}
                   className={`flex-1 py-1.5 font-pressstart text-[8px] sm:text-[9px] rounded-none! border-[1.5px] sm:border-2 border-theme-dark transition-all duration-150 retro-shadow cursor-pointer ${
                     activeTab === tab
-                      ? 'bg-theme-primary text-[#FFFFF6]'
+                      ? 'bg-theme-primary text-theme-white'
                       : 'bg-theme-muted text-theme-dark hover:bg-[#f3dcba]'
                   }`}
                 >
@@ -1232,7 +1232,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   <span className="font-pressstart text-[7px] text-theme-dark/60 mb-0.5">{msg.sender}</span>
                   <div className={`px-2.5 py-1.5 font-pixel text-[14px] rounded-[6px] border ${
                     msg.sender === player.username 
-                      ? 'bg-theme-primary text-[#FFFFF6] border-theme-dark' 
+                      ? 'bg-theme-primary text-theme-white border-theme-dark' 
                       : 'bg-theme-surface text-theme-dark border-theme-dark/30'
                   }`}>
                     {msg.text}
@@ -1266,7 +1266,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </div>
               <button
                 type="submit"
-                className="bg-theme-primary text-[#FFFFF6] border-2 border-theme-dark px-3 py-1.5 rounded-[8px] font-pressstart text-[9px] hover:bg-[#d0622c] cursor-pointer"
+                className="bg-theme-primary text-theme-white border-2 border-theme-dark px-3 py-1.5 rounded-[8px] font-pressstart text-[9px] hover:bg-[#d0622c] cursor-pointer"
               >
                 SEND
               </button>
@@ -1564,7 +1564,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
             <button
               onClick={timer.closeRewardModal}
-              className="mt-2 font-pressstart text-[10px] text-[#FFFFF6] bg-theme-primary border-2 border-theme-dark px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
             >
               CLAIM REWARD
             </button>

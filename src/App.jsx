@@ -528,10 +528,10 @@ export default function App() {
           </div>
 
           <div className="text-center mt-2 flex flex-col gap-2">
-            <h4 className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-[#FD923E] tracking-wider uppercase">
+            <h4 className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">
               Still have questions?
             </h4>
-            <a href="mailto:studycircle@gmail.com" className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-dark tracking-wide underline decoration-2 underline-offset-4 hover:text-[#FD923E] transition-colors duration-150">
+            <a href="mailto:studycircle@gmail.com" className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-dark tracking-wide underline decoration-2 underline-offset-4 hover:text-theme-primary transition-colors duration-150">
               Contact us at studycircle@gmail.com
             </a>
           </div>

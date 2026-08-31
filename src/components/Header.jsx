@@ -265,7 +265,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         <button
           onClick={onMobileToggle}
           aria-label="Open Mobile Navigation"
-          className="md:hidden bg-theme-surface border-2 border-theme-dark text-theme-dark h-8 sm:h-11 w-8 sm:w-11 flex items-center justify-center rounded-[8px] sm:rounded-[10px] shadow-sm hover:bg-[#FDE4D0] transition-colors focus:outline-none cursor-pointer shrink-0"
+          className="md:hidden bg-theme-surface border-2 border-theme-dark text-theme-dark h-8 sm:h-11 w-8 sm:w-11 flex items-center justify-center rounded-[8px] sm:rounded-[10px] shadow-sm hover:bg-theme-muted transition-colors focus:outline-none cursor-pointer shrink-0"
         >
           <svg className="w-4 h-4 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
@@ -293,7 +293,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             </button>
 
             {unreadNotifCount > 0 && (
-              <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-theme-primary border-[1.5px] sm:border-2 border-theme-dark text-[#FFFFF6] font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none">
+              <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-theme-primary border-[1.5px] sm:border-2 border-theme-dark text-theme-white font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none">
                 {unreadNotifCount}
               </div>
             )}
@@ -335,7 +335,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                             key={friend.id}
                             onClick={() => handleOpenChat(friend.id)}
                             className={`flex items-center justify-between gap-3 p-2.5 rounded-[8px] cursor-pointer hover:bg-[#F3D3A8] transition-all duration-200 ${
-                              friend.isUnread ? 'bg-[#FDE4D0] border-2 border-theme-primary shadow-sm' : 'bg-theme-surface border-2 border-theme-dark'
+                              friend.isUnread ? 'bg-theme-muted border-2 border-theme-primary shadow-sm' : 'bg-theme-surface border-2 border-theme-dark'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -376,7 +376,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             title="Streak Rewards"
             className="h-8 sm:h-11 bg-theme-surface border-2 border-theme-dark px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-0.5 sm:gap-1.5 shrink-0 transition-all duration-150 retro-shadow cursor-pointer"
           >
-            <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#ED8C00]" viewBox="0 0 24 24">
+            <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-theme-primary" viewBox="0 0 24 24">
               <path d="M0 0h24v24H0z" fill="none" />
               <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
             </svg>
@@ -512,7 +512,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
                       {/* CARD FOOTER */}
                       {isClaimed && (
-                        <div className="bg-[#C8DDB0] text-[#5C8D57] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                        <div className="bg-[#C8DDB0] text-theme-safe p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
                           <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" viewBox="0 0 32 32">
                             <path d="M0 0h32v32H0z" fill="none" />
                             <path fill="currentColor" d="m14 21.414l-5-5.001L10.413 15L14 18.586L21.585 11L23 12.415z" />
@@ -606,13 +606,13 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                 
                 {/* CURRENT STREAK */}
                 <div className="flex items-center gap-1.5 sm:gap-2 pr-1.5 sm:pr-2">
-                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-[#ED8C00] shrink-0" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-theme-primary shrink-0" viewBox="0 0 24 24">
                     <path d="M0 0h24v24H0z" fill="none" />
                     <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
                   </svg>
                   <div className="flex flex-col text-left">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70">CURRENT STREAK</span>
-                    <span className="font-pressstart text-[8px] sm:text-[20px] text-[#FD923E]">
+                    <span className="font-pressstart text-[8px] sm:text-[20px] text-theme-primary">
                       {playerData.streakDays ?? 0} days
                     </span>
                   </div>
@@ -623,7 +623,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
                 {/* LONGEST STREAK */}
                 <div className="flex items-center gap-1.5 sm:gap-2 pl-1">
-                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-[#FD923E] shrink-0" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-10 sm:h-10 text-theme-primary shrink-0" viewBox="0 0 24 24">
                     <path fill="currentColor" d="M7 21v-2h4v-3.1q-1.225-.275-2.187-1.037T7.4 12.95q-1.875-.225-3.137-1.637T3 8V7q0-.825.588-1.412T5 5h2V3h10v2h2q.825 0 1.413.588T21 7v1q0 1.9-1.263 3.313T16.6 12.95q-.45 1.15-1.412 1.913T13 15.9V19h4v2zm0-10.2V7H5v1q0 .95.55 1.713T7 10.8m10 0q.9-.325 1.45-1.088T19 8V7h-2z" />
                   </svg>
                   <div className="flex flex-col text-left">
@@ -692,7 +692,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                   onClick={() => setActiveFriendsTab(tab)}
                   className={`flex-1 min-w-0 h-11 min-h-[44px] px-1 flex items-center justify-center text-center font-pressstart text-[8px] sm:text-[10px] leading-tight rounded-[6px] transition-all cursor-pointer ${
                     activeFriendsTab === tab
-                      ? 'bg-[#FDE4D0] text-theme-primary border-2 border-transparent'
+                      ? 'bg-theme-muted text-theme-primary border-2 border-transparent'
                       : 'bg-theme-muted text-theme-dark border-2 border-theme-dark'
                   }`}
                 >
@@ -743,7 +743,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                               <span className={`font-pressstart text-[8px] ${statusTextColor}`}>{friend.status}</span>
                             </div>
                             <div className="flex items-center justify-end gap-1.5">
-                              <button onClick={() => { setShowFriendsModal(false); handleOpenChat(friend.id); }} title="Message" className="p-1.5 text-theme-dark hover:text-[#FD923E] cursor-pointer">
+                              <button onClick={() => { setShowFriendsModal(false); handleOpenChat(friend.id); }} title="Message" className="p-1.5 text-theme-dark hover:text-theme-primary cursor-pointer">
                                 💬
                               </button>
                               <button onClick={() => { setPendingRemoveFriend(friend); setShowRemoveModal(true); }} title="Remove" className="p-1.5 text-theme-dark hover:text-theme-danger cursor-pointer">
@@ -795,7 +795,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
                           <div className="grid grid-cols-3 divide-x divide-[#3D2013]/20 font-pixel text-theme-dark">
                             <div className="flex items-center justify-center gap-1 px-1">
-                              <svg className="w-3.5 h-3.5 text-[#ED8C00] shrink-0" viewBox="0 0 24 24">
+                              <svg className="w-3.5 h-3.5 text-theme-primary shrink-0" viewBox="0 0 24 24">
                                 <path d="M0 0h24v24H0z" fill="none" />
                                 <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
                               </svg>
@@ -871,8 +871,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                               <span className="font-pressstart text-[9px] text-theme-danger animate-pulse">REJECTED</span>
                             ) : (
                               <>
-                                <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="p-1 text-theme-safe hover:text-[#637545] cursor-pointer font-bold">✓</button>
-                                <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="p-1 text-theme-danger hover:text-[#832c0f] cursor-pointer font-bold">✕</button>
+                                <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="p-1 text-theme-safe cursor-pointer font-bold">✓</button>
+                                <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="p-1 text-theme-danger cursor-pointer font-bold">✕</button>
                               </>
                             )}
                           </div>

@@ -1,20 +1,22 @@
 @import "tailwindcss";
 
 /* ========================================================= */
-/* TAILWIND V4 THEME CONFIGURATION (Enables /10, /50 Opacities) */
+/* TAILWIND V4 THEME CONFIGURATION                           */
+/* Bound to CSS custom variables for instant theme swapping  */
 /* ========================================================= */
 @theme {
-  --color-theme-primary: #E87339;
-  --color-theme-dark: #3D2013;
-  --color-theme-surface: #FEF4E0;
-  --color-theme-muted: #FAE9CE;
-  --color-theme-danger: #A53914;
-  --color-theme-safe: #788D55;
+  --color-theme-primary: var(--color-primary);
+  --color-theme-dark: var(--color-dark);
+  --color-theme-surface: var(--color-surface);
+  --color-theme-muted: var(--color-surface-muted);
+  --color-theme-danger: var(--color-danger);
+  --color-theme-safe: var(--color-safe);
 }
 
 /* ========================================================= */
 /* COLOR PALETTE & THEME VARIABLES                           */
 /* ========================================================= */
+/* DEFAULT / LIGHT THEME */
 :root {
   /* Solid Colors */
   --color-primary: #E87339;       /* Primary Accent */
@@ -22,15 +24,33 @@
   --color-surface: #FEF4E0;       /* Base White / Light Card BG */
   --color-surface-muted: #FAE9CE; /* Darker White / Cream BG */
   --color-danger: #A53914;        /* Negative Actions (Sign out, Leave room, Delete) */
-  --color-safe: #788D55;
+  --color-safe: #788D55;          /* Positive Actions */
+  --color-white: #FFFFF6;
 
   /* Gradients */
   --gradient-highlight-card: linear-gradient(180deg, #FDE4D0 0%, #FFD2AE 100%);
   --gradient-highlight-text: linear-gradient(90deg, #E87339 0%, #3D2013 100%);
+  --gradient-level-up: linear-gradient(90deg, #DD6E36 0%, #511B00 100%);
+}
+
+/* DARK THEME OVERRIDES */
+[data-theme="dark"] {
+  /* Solid Colors */
+  --color-primary: #E87339;       /* Primary Accent */
+  --color-dark: #FEF4E0;          /* High-Contrast Text & Borders (Warm Cream) */
+  --color-surface: #3A271D;       /* Deep Page Background */
+  --color-surface-muted: #1B120E; /* Card / Surface Background */
+  --color-danger: #A53914;        /* Vivid Red for dark background contrast */
+  --color-safe: #8BA664;          /* Vivid Green for dark background contrast */
+
+  /* Gradients */
+  --gradient-highlight-card: linear-gradient(180deg, #8b4e2d 0%, #463025 100%);
+  --gradient-highlight-text: linear-gradient(90deg, #E87339 0%, #FEF4E0 100%);
+  --gradient-level-up: linear-gradient(90deg, #E87339 0%, #FFD2AE 100%);
 }
 
 /* ========================================================= */
-/* 1. LOCAL FONT DEFINITIONS (Loaded from public/fonts/)      */
+/* 1. LOCAL FONT DEFINITIONS (Loaded from public/fonts/)     */
 /* ========================================================= */
 @font-face {
   font-family: 'Press Start 2P';
@@ -70,6 +90,7 @@
 .text-theme-safe { color: var(--color-safe); }
 .text-theme-surface { color: var(--color-surface); }
 .text-theme-muted { color: var(--color-muted); }
+.text-theme-white { color: var(--color-white); }
 
 
 .border-theme-dark { border-color: var(--color-dark); }
@@ -79,13 +100,13 @@
 .border-theme-muted { border-color: var(--color-muted); }
 .border-theme-primary { border-color: var(--color-primary); }
 
-
 .bg-theme-surface { background-color: var(--color-surface); }
 .bg-theme-muted { background-color: var(--color-surface-muted); }
 .bg-theme-primary { background-color: var(--color-primary); }
 .bg-theme-danger { background-color: var(--color-danger); }
 .bg-theme-safe { background-color: var(--color-safe); }
 .bg-theme-dark { background-color: var(--color-dark); }
+.bg-theme-white { background-color: var(--color-white); }
 
 
 .card-highlight {
@@ -100,7 +121,7 @@
 }
 
 /* ========================================================= */
-/* 4. RETRO SHADOWS, BUTTONS & GRADIENTS                    */
+/* 4. RETRO SHADOWS, BUTTONS & GRADIENTS                     */
 /* ========================================================= */
 .retro-shadow {
   border-color: var(--color-dark) !important;
@@ -137,7 +158,7 @@
 }
 
 .level-up-gradient {
-  background: linear-gradient(to Right, #DD6E36 0%, #511B00 100%);
+  background: var(--gradient-level-up);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   display: inline-block;

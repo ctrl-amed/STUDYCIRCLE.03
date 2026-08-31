@@ -181,7 +181,7 @@ export default function CreateSession() {
           type="button"
           onClick={handleClose}
           title="Close and Go Back"
-          className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-surface border-[2px] md:border-[3px] border-theme-dark text-theme-dark hover:bg-theme-primary hover:text-[#FFFFF6] transition-all duration-150 retro-shadow cursor-pointer flex items-center justify-center shrink-0 rounded-full"
+          className="w-8 h-8 sm:w-10 sm:h-10 bg-theme-surface border-[2px] md:border-[3px] border-theme-dark text-theme-dark hover:bg-theme-primary hover:text-theme-white transition-all duration-150 retro-shadow cursor-pointer flex items-center justify-center shrink-0 rounded-full"
         >
           <svg className="w-4 h-4 sm:w-6 sm:h-6" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -218,7 +218,7 @@ export default function CreateSession() {
             <section className="flex flex-col justify-between h-full flex-1">
               <div className="space-y-4 sm:space-y-6">
                 <div className="text-center mb-6 sm:mb-10">
-                  <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
+                  <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block level-up-gradient bg-clip-text text-transparent leading-relaxed">
                     WHAT ARE YOU WORKING ON?
                   </h1>
                   <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
@@ -238,11 +238,11 @@ export default function CreateSession() {
                           : ''
                       }`}
                     >
-                      <span className="text-xl sm:text-3xl mb-2 sm:mb-4 block text-[#E16F37]">
+                      <span className="text-xl sm:text-3xl mb-2 sm:mb-4 block text-theme-primary">
                         {opt.icon}
                       </span>
                       <div className="space-y-1 sm:space-y-2">
-                        <span className="font-pressstart text-[11px] sm:text-[20px] md:text-[24px] block text-[#511B00] leading-none">
+                        <span className="font-pressstart text-[11px] sm:text-[20px] md:text-[24px] block text-theme-dark leading-none">
                           {opt.label}
                         </span>
                         <span className="font-pixel text-[13px] sm:text-[16px] md:text-[20px] text-theme-dark/70 leading-tight block">
@@ -278,7 +278,7 @@ export default function CreateSession() {
             <section className="flex flex-col justify-between h-full flex-1">
               <div className="space-y-4 sm:space-y-6">
                 <div className="text-center mb-6 sm:mb-10">
-                  <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
+                  <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block level-up-gradient bg-clip-text text-transparent leading-relaxed">
                     WHAT’S YOUR TASK?
                   </h2>
                   <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
@@ -288,8 +288,8 @@ export default function CreateSession() {
 
                 <div className="bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-6 flex flex-col h-[280px] sm:h-[320px] max-w-xl mx-auto w-full">
                   <div className="flex items-center gap-2 mb-3 shrink-0">
-                    <span className="text-lg sm:text-xl block text-[#E16F37]">✏️</span>
-                    <label className="font-pressstart text-[11px] sm:text-[13px] text-[#511B00] block">
+                    <span className="text-lg sm:text-xl block text-theme-primary">✏️</span>
+                    <label className="font-pressstart text-[11px] sm:text-[13px] text-theme-dark block">
                       YOUR TASK
                     </label>
                   </div>
@@ -356,7 +356,7 @@ export default function CreateSession() {
             <section className="flex flex-col justify-between h-full flex-1">
               <div className="space-y-4 sm:space-y-6">
                 <div className="text-center mb-6 sm:mb-10">
-                  <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
+                  <h2 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block level-up-gradient bg-clip-text text-transparent leading-relaxed">
                     RECOMMENDED FOR YOU
                   </h2>
                   <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
@@ -375,7 +375,7 @@ export default function CreateSession() {
                         : ''
                     }`}
                   >
-                    <div className="font-pressstart text-[30px] sm:text-[40px] leading-snug tracking-wide bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent">
+                    <div className="font-pressstart text-[30px] sm:text-[40px] leading-snug tracking-wide level-up-gradient bg-clip-text text-transparent">
                       STUDY TECHNIQUE
                     </div>
                     <div className="w-full h-[1px] bg-theme-dark/20" />
@@ -383,10 +383,10 @@ export default function CreateSession() {
                       <div className="flex items-center justify-center gap-3 px-1">
                         <span className="text-theme-primary text-2xl">⏱</span>
                         <div className="flex flex-col text-left">
-                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
+                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark ">
                             {mockRecommendedData.focus}m
                           </span>
-                          <span className="font-pixel text-[15px] sm:text-[20px] text-[#511B00]/70 mt-1">
+                          <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             FOCUS TIME
                           </span>
                         </div>
@@ -394,10 +394,10 @@ export default function CreateSession() {
                       <div className="flex items-center justify-center gap-3 px-1">
                         <span className="text-theme-primary text-2xl">☕</span>
                         <div className="flex flex-col text-left">
-                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
+                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark ">
                             {mockRecommendedData.break}m
                           </span>
-                          <span className="font-pixel text-[15px] sm:text-[20px] text-[#511B00]/70 mt-1">
+                          <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             BREAK TIME
                           </span>
                         </div>
@@ -405,10 +405,10 @@ export default function CreateSession() {
                       <div className="flex items-center justify-center gap-3 px-1">
                         <span className="text-theme-primary text-2xl">🎯</span>
                         <div className="flex flex-col text-left">
-                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-[#511B00]">
+                          <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark ">
                             {mockRecommendedData.number_session}
                           </span>
-                          <span className="font-pixel text-[15px] sm:text-[20px] text-[#511B00]/70 mt-1">
+                          <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             SESSIONS
                           </span>
                         </div>
@@ -438,7 +438,7 @@ export default function CreateSession() {
                             : ''
                         }`}
                       >
-                        <div className="font-pressstart text-[10px] sm:text-[11px] text-[#511B00] leading-snug uppercase">
+                        <div className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark leading-snug uppercase">
                           {item.title}
                         </div>
                         <div className="text-[15px] sm:text-[20px] font-pixel text-theme-dark/70 mt-2">
@@ -469,7 +469,7 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(2)}
-                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-[#511B00] border-[2px] border-theme-dark px-5 py-3 w-fit text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-theme-dark border-[2px] border-theme-dark px-5 py-3 w-fit text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>
@@ -489,7 +489,7 @@ export default function CreateSession() {
             <section className="flex flex-col justify-between h-full flex-1">
               <div className="space-y-4 sm:space-y-6 max-w-2xl mx-auto w-full">
                 <div className="text-center mb-6 sm:mb-10">
-                  <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent leading-relaxed">
+                  <h1 className="font-pressstart text-xl sm:text-3xl md:text-4xl inline-block level-up-gradient bg-clip-text text-transparent leading-relaxed">
                     REVIEW YOUR SESSION
                   </h1>
                   <p className="font-pressstart text-[9px] sm:text-xs text-theme-dark/80 mt-2">
@@ -513,7 +513,7 @@ export default function CreateSession() {
                     const review = getReviewDetails();
                     return (
                       <div className="bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3">
-                        <div className="font-pressstart text-[18px] sm:text-[24px] leading-snug tracking-wide bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent uppercase">
+                        <div className="font-pressstart text-[18px] sm:text-[24px] leading-snug tracking-wide level-up-gradient bg-clip-text text-transparent uppercase">
                           {review.title}
                         </div>
                         <div className="w-full h-[1px] bg-theme-dark/20" />
@@ -521,10 +521,10 @@ export default function CreateSession() {
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
                             <span className="text-theme-primary text-xl">⏱</span>
                             <div className="flex flex-col text-left">
-                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
+                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-theme-dark ">
                                 {review.focus}m
                               </span>
-                              <span className="font-pixel text-[12px] sm:text-[16px] text-[#511B00]/70 mt-1">
+                              <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70 mt-1">
                                 FOCUS TIME
                               </span>
                             </div>
@@ -532,10 +532,10 @@ export default function CreateSession() {
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
                             <span className="text-theme-primary text-xl">☕</span>
                             <div className="flex flex-col text-left">
-                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
+                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-theme-dark ">
                                 {review.break}m
                               </span>
-                              <span className="font-pixel text-[12px] sm:text-[16px] text-[#511B00]/70 mt-1">
+                              <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70 mt-1">
                                 BREAK TIME
                               </span>
                             </div>
@@ -543,10 +543,10 @@ export default function CreateSession() {
                           <div className="flex items-center justify-center gap-2 sm:gap-3 px-1">
                             <span className="text-theme-primary text-xl">🎯</span>
                             <div className="flex flex-col text-left">
-                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-[#511B00]">
+                              <span className="font-pressstart text-[13px] sm:text-[18px] leading-none text-theme-dark ">
                                 {review.sessions}
                               </span>
-                              <span className="font-pixel text-[12px] sm:text-[16px] text-[#511B00]/70 mt-1">
+                              <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70 mt-1">
                                 SESSIONS
                               </span>
                             </div>
@@ -561,7 +561,7 @@ export default function CreateSession() {
                     <span className="block font-pressstart uppercase text-[8px] sm:text-[10px] text-theme-dark/60 mb-2">
                       Checklist Items
                     </span>
-                    <ul className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 font-pixel text-[13px] sm:text-[16px] text-[#511B00]">
+                    <ul className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1 font-pixel text-[13px] sm:text-[16px] text-theme-dark ">
                       {draftTasks
                         .filter((t) => t.trim() !== '')
                         .map((task, idx) => (
@@ -582,7 +582,7 @@ export default function CreateSession() {
                 <button
                   type="button"
                   onClick={() => setCurrentStep(3)}
-                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-[#511B00] border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
+                  className="font-pressstart text-[8px] sm:text-[10px] bg-theme-surface text-theme-dark border-[2px] border-theme-dark px-5 py-3 w-1/2 sm:w-44 text-center cursor-pointer hover:bg-theme-surface hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] transition-all"
                 >
                   BACK
                 </button>

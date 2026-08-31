@@ -29,8 +29,8 @@ export default function AdminLayout() {
                 to={item.path}
                 className={`font-pressstart text-[10px] p-2.5 rounded-[6px] border border-theme-dark transition-all ${
                   isActive
-                    ? 'bg-theme-primary text-[#FFFFF6]'
-                    : 'bg-theme-muted hover:bg-[#FDE4D0] text-theme-dark'
+                    ? 'bg-theme-primary text-theme-white'
+                    : 'bg-theme-muted hover:bg-theme-muted text-theme-dark'
                 }`}
               >
                 {item.label}

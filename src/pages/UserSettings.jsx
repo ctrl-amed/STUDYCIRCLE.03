@@ -244,7 +244,7 @@ export default function UserSettings() {
           <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
         </svg>
         {/* Allow wrapping with break-words */}
-        <span className="font-pressstart text-[11px] sm:text-[12px] text-[#482A1D] tracking-wide break-words leading-relaxed">
+        <span className="font-pressstart text-[11px] sm:text-[12px] text-theme-dark tracking-wide break-words leading-relaxed">
           {toastMessage}
         </span>
       </div>
@@ -257,7 +257,7 @@ export default function UserSettings() {
 
       {/* ROW 1: TITLE & SUBTEXT */}
       <div className="flex flex-col gap-1">
-        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block bg-gradient-to-r from-[#DD6E36] via-[#D06631] to-[#511B00] bg-clip-text text-transparent w-fit">
+        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block level-up-gradient bg-clip-text text-transparent w-fit">
           SETTINGS
         </h1>
         <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
@@ -288,7 +288,7 @@ export default function UserSettings() {
               </div>
               <button
                 onClick={handleOpenUsernameModal}
-                className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+                className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-theme-muted"
               >
                 <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-theme-dark" viewBox="0 0 24 24" fill="none">
                   <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
@@ -308,7 +308,7 @@ export default function UserSettings() {
   </div>
   <button
     onClick={handleOpenEmailModal}
-    className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-[#FDE4D0]"
+    className="h-8 sm:h-11 bg-theme-muted border-[2px] border-theme-dark px-2 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 retro-shadow shrink-0 cursor-pointer hover:bg-theme-muted"
   >
     <svg className="w-3.5 h-3.5 sm:w-5 sm:h-5 text-theme-dark" viewBox="0 0 24 24" fill="none">
       <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34l-3.75-3.75-2.53 2.54 3.75 3.75 2.53-2.54z" />
@@ -383,7 +383,7 @@ export default function UserSettings() {
                     </span>
                     <button
                       onClick={() => setShowTimePicker(!showTimePicker)}
-                      className="font-pressstart text-[8px] bg-theme-primary text-[#FFFFF6] border border-theme-dark px-2 py-1 cursor-pointer hover:bg-[#d6652d]"
+                      className="font-pressstart text-[8px] bg-theme-primary text-theme-white border border-theme-dark px-2 py-1 cursor-pointer hover:bg-[#d6652d]"
                     >
                       EDIT
                     </button>
@@ -399,7 +399,7 @@ export default function UserSettings() {
                       />
                       <button
                         onClick={handleSaveTime}
-                        className="font-pressstart text-[8px] bg-[#2E7D32] text-[#FFFFF6] border border-theme-dark px-3 py-1.5 cursor-pointer hover:bg-green-700"
+                        className="font-pressstart text-[8px] bg-[#2E7D32] text-theme-white border border-theme-dark px-3 py-1.5 cursor-pointer hover:bg-green-700"
                       >
                         SAVE
                       </button>
@@ -426,7 +426,7 @@ export default function UserSettings() {
                   />
                   <button
                     onClick={handleAddManualReminder}
-                    className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                    className="font-pressstart text-[9px] bg-theme-primary text-theme-white border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
                   >
                     SAVE
                   </button>
@@ -449,7 +449,7 @@ export default function UserSettings() {
                         </span>
                         <button
                           onClick={() => handleRemoveManualReminder(rem.id)}
-                          className="text-[#A94A4A] font-pressstart text-[8px] hover:underline cursor-pointer"
+                          className="text-theme-danger font-pressstart text-[8px] hover:underline cursor-pointer"
                         >
                           REMOVE
                         </button>
@@ -473,7 +473,7 @@ export default function UserSettings() {
               <h3 className="font-pressstart text-[12px] text-theme-primary">Edit Username</h3>
               <button
                 onClick={() => setShowUsernameModal(false)}
-                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-theme-primary cursor-pointer"
               >
                 ✕
               </button>
@@ -501,7 +501,7 @@ export default function UserSettings() {
                     {newUsername.length}/20
                   </span>
                 </div>
-                <p className={`font-pixel text-[12px] mt-1 leading-tight ${usernameError ? 'text-[#A94A4A]' : 'text-theme-dark/70'}`}>
+                <p className={`font-pixel text-[12px] mt-1 leading-tight ${usernameError ? 'text-theme-danger' : 'text-theme-dark/70'}`}>
                   {usernameError ? `✘ ${usernameError}` : 'Usernames must be 6-20 characters long and can include letters, numbers, and special characters.'}
                 </p>
               </div>
@@ -518,7 +518,7 @@ export default function UserSettings() {
               <button
                 onClick={handleSaveUsername}
                 type="button"
-                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-theme-white border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>
@@ -535,7 +535,7 @@ export default function UserSettings() {
               <h3 className="font-pressstart text-[12px] text-theme-primary">Edit Email</h3>
               <button
                 onClick={() => setShowEmailModal(false)}
-                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-theme-primary cursor-pointer"
               >
                 ✕
               </button>
@@ -556,7 +556,7 @@ export default function UserSettings() {
                   className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 font-pixel text-[15px] rounded-[6px] outline-none"
                 />
                 {emailError && (
-                  <p className="font-pixel text-[12px] text-[#A94A4A] mt-1 leading-tight">
+                  <p className="font-pixel text-[12px] text-theme-danger mt-1 leading-tight">
                     ✘ {emailError}
                   </p>
                 )}
@@ -574,7 +574,7 @@ export default function UserSettings() {
               <button
                 onClick={handleSaveEmail}
                 type="button"
-                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-theme-white border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>
@@ -591,7 +591,7 @@ export default function UserSettings() {
               <h3 className="font-pressstart text-[12px] text-theme-primary">Change password</h3>
               <button
                 onClick={() => setShowPasswordModal(false)}
-                className="font-pressstart text-[10px] text-theme-dark hover:text-[#FD923E] cursor-pointer"
+                className="font-pressstart text-[10px] text-theme-dark hover:text-theme-primary cursor-pointer"
               >
                 ✕
               </button>
@@ -624,7 +624,7 @@ export default function UserSettings() {
                   </button>
                 </div>
                 {oldPassError && (
-                  <p className="font-pixel text-[12px] text-[#A94A4A] mt-1 leading-tight">
+                  <p className="font-pixel text-[12px] text-theme-danger mt-1 leading-tight">
                     ✘ {oldPassError}
                   </p>
                 )}
@@ -653,7 +653,7 @@ export default function UserSettings() {
                   </button>
                 </div>
                 {newPassError && (
-                  <p className="font-pixel text-[12px] text-[#A94A4A] mt-1 leading-tight">
+                  <p className="font-pixel text-[12px] text-theme-danger mt-1 leading-tight">
                     ✘ {newPassError}
                   </p>
                 )}
@@ -681,7 +681,7 @@ export default function UserSettings() {
                     </svg>
                   </button>
                 </div>
-                <p className={`font-pixel text-[12px] mt-1 leading-tight ${passwordNote ? 'text-[#A94A4A]' : 'text-theme-dark'}`}>
+                <p className={`font-pixel text-[12px] mt-1 leading-tight ${passwordNote ? 'text-theme-danger' : 'text-theme-dark'}`}>
                   {passwordNote ? `✘ ${passwordNote}` : 'Create a strong password using 8 or more characters, including uppercase and lowercase letters, a number, and a special character.'}
                 </p>
               </div>
@@ -698,7 +698,7 @@ export default function UserSettings() {
               <button
                 onClick={handleSavePassword}
                 type="button"
-                className="font-pressstart text-[9px] bg-theme-primary text-[#FFFFF6] border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
+                className="font-pressstart text-[9px] bg-theme-primary text-theme-white border-[2px] border-theme-dark px-4 py-2 hover:bg-[#d66530] cursor-pointer"
               >
                 Save
               </button>
