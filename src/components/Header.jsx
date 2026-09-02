@@ -416,12 +416,12 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
               title="Logout"
               className="h-8 sm:h-11 bg-theme-danger border-2 border-theme-dark px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 retro-shadow cursor-pointer"
             >
-              <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-theme-surface" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-[#FEF4E0]" viewBox="0 0 24 24">
                 <path d="M0 0h24v24H0z" fill="none" />
                 <path fill="currentColor" d="M9 20.75H6a2.64 2.64 0 0 1-2.75-2.53V5.78A2.64 2.64 0 0 1 6 3.25h3a.75.75 0 0 1 0 1.5H6a1.16 1.16 0 0 0-1.25 1v12.47a1.16 1.16 0 0 0 1.25 1h3a.75.75 0 0 1 0 1.5Zm7-4a.74.74 0 0 1-.53-.22a.75.75 0 1 1 0-1.06L18.94 12l-3.47-3.47a.75.75 0 1 1 1.06-1.06l4 4a.75.75 0 0 1 0 1.06l-4 4a.74.74 0 0 1-.53.22" />
                 <path fill="currentColor" d="M20 12.75H9a.75.75 0 0 1 0-1.5h11a.75.75 0 0 1 0 1.5" />
               </svg>
-              <span className="font-pressstart text-[8px] sm:text-[11px] text-theme-surface hidden sm:inline">SIGN OUT</span>
+              <span className="font-pressstart text-[8px] sm:text-[11px] text-[#FEF4E0] hidden sm:inline">SIGN OUT</span>
             </button>
           )}
         </div>

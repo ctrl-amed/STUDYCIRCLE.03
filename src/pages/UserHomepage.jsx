@@ -55,8 +55,8 @@ const memberPositionsByCount = {
     { bottom: '25%', left: '18%', scale: 0.85 },
     { bottom: '30%', left: '31%', scale: 0.85 },
     { bottom: '25%', left: '44%', scale: 0.85 },
-    { bottom: '35%', left: '56%', scale: 0.85 },
-    { bottom: '30%', left: '69%', scale: 0.85 },
+    { bottom: '35%', left: '59%', scale: 0.85 },
+    { bottom: '20%', left: '69%', scale: 0.85 },
     { bottom: '25%', left: '82%', scale: 0.85 }
   ]
 };
@@ -217,6 +217,41 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const chatContainerRef = useRef(null);
 
+  // ROBLOX VOICE CHAT STATE (Joins room MUTED by default)
+  const [isLocalMicMuted, setIsLocalMicMuted] = useState(true);
+  const [remoteMuteState, setRemoteMuteState] = useState({});
+  const [speakingLevels, setSpeakingLevels] = useState({});
+
+  // Simulated Speaking Levels for Mocks
+  useEffect(() => {
+    if (!isMultiplayer) return;
+    const interval = setInterval(() => {
+      const newLevels = {};
+      roomData.members.forEach((m) => {
+        if (!m.isCurrentUser && !remoteMuteState[m.id]) {
+          newLevels[m.id] = Math.random() > 0.4 ? Math.floor(Math.random() * 80 + 20) : 0;
+        }
+      });
+      if (!isLocalMicMuted) {
+        newLevels['user_me'] = Math.floor(Math.random() * 90 + 10);
+      }
+      setSpeakingLevels(newLevels);
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, [isMultiplayer, roomData.members, remoteMuteState, isLocalMicMuted]);
+
+  const toggleSelfMute = () => {
+    setIsLocalMicMuted((prev) => !prev);
+  };
+
+  const toggleRemoteUserMute = (memberId) => {
+    setRemoteMuteState((prev) => ({
+      ...prev,
+      [memberId]: !prev[memberId],
+    }));
+  };
+
   // Music Player State
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -332,13 +367,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       // Filter out current user from mock pool if present
       const availableMocks = mockPlayerList.filter((m) => m.username !== player.username);
 
-      // If current user is host or room count is 1
       let membersList = [];
 
       if (totalMemberCount <= 1) {
         membersList = [currentUser];
       } else {
-        // Need (totalMemberCount - 1) mock members
         const otherMembersCount = totalMemberCount - 1;
         const otherMembers = availableMocks.slice(0, otherMembersCount).map((m) => ({
           ...m,
@@ -346,7 +379,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${m.username}`,
         }));
 
-        // Ensure host is always included if present in mock pool
         if (!currentUser.isHost && !otherMembers.some((m) => m.isHost)) {
           otherMembers[0] = {
             ...mockPlayerList[0],
@@ -356,7 +388,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           };
         }
 
-        // Insert current user into center index if 3 or 5 members
         const midIndex = Math.floor(otherMembers.length / 2);
         otherMembers.splice(midIndex, 0, currentUser);
         membersList = otherMembers;
@@ -366,7 +397,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         ...prev,
         roomName: parsed?.name || parsed?.roomName || prev.roomName,
         course: parsed?.course || prev.course,
-        privacy: parsed?.privacy || prev.privacy || "public",
+        privacy: parsed?.privacy || parsed?.privacy || "public",
         maxMembers: parsed?.maxMembers || 6,
         members: membersList,
       }));
@@ -682,6 +713,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const isProfileOpen = activeProfileId === memberKey;
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
+                  const isMuted = member.isCurrentUser
+                    ? isLocalMicMuted
+                    : !!remoteMuteState[member.id];
+
+                  const level = speakingLevels[member.isCurrentUser ? 'user_me' : member.id] || 0;
+
                   return (
                     <div
                       key={memberKey}
@@ -698,6 +735,57 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
+                      {/* ROBLOX-STYLE VOICE CHAT SPEECH BUBBLE (PLACED ABOVE THE NAMETAG) */}
+                      <div className="absolute bottom-[calc(100%+28px)] left-1/2 -translate-x-1/2 z-40">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (member.isCurrentUser) {
+                              toggleSelfMute();
+                            } else {
+                              toggleRemoteUserMute(member.id);
+                            }
+                          }}
+                          className="relative bg-[#f8f5ee] border-2 border-[#3d2013] rounded-[14px] p-2 shadow-md flex items-center justify-center transition-transform hover:scale-105 cursor-pointer w-10 h-10"
+                          title={
+                            member.isCurrentUser
+                              ? isMuted ? 'Unmute Mic' : 'Mute Mic'
+                              : isMuted ? 'Unmute User' : 'Mute User'
+                          }
+                        >
+                          {/* SPEECH BUBBLE POINTER TAIL */}
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-x-6 border-x-transparent border-t-[8px] border-t-[#3d2013]" />
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-x-4 border-x-transparent border-t-[6px] border-t-[#f8f5ee]" />
+
+                          {/* MICROPHONE ICON */}
+                          <div className="relative w-5 h-5 flex flex-col items-center justify-center">
+                            {/* Inner Mic Capsule */}
+                            <div className="relative w-2.5 h-3.5 bg-[#3a3f47] rounded-full overflow-hidden flex flex-col justify-end">
+                              {!isMuted && (
+                                <div
+                                  className="w-full bg-[#1db963] transition-all duration-75"
+                                  style={{ height: `${Math.min(100, Math.max(0, level))}%` }}
+                                />
+                              )}
+                            </div>
+                            {/* Outer Mic Stand Curve */}
+                            <div className={`w-3.5 h-2 border-b-2 border-x-2 rounded-b-full -mt-1 z-10 ${
+                              isMuted ? 'border-[#3a3f47]' : 'border-[#1db963]'
+                            }`} />
+                            {/* Base Stem */}
+                            <div className={`w-0.5 h-1 ${isMuted ? 'bg-[#3a3f47]' : 'bg-[#1db963]'}`} />
+                            {/* Base Plate */}
+                            <div className={`w-2 h-0.5 rounded-full ${isMuted ? 'bg-[#3a3f47]' : 'bg-[#1db963]'}`} />
+
+                            {/* Red Diagonal Slash when Muted */}
+                            {isMuted && (
+                              <div className="absolute w-5 h-0.5 bg-red-500 rounded-full rotate-45 z-20 shadow-xs" />
+                            )}
+                          </div>
+                        </button>
+                      </div>
+
                       {/* PLAYER NAMETAG */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
                         {member.isHost && (
@@ -712,11 +800,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                           </svg>
                         )}
                         <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
-                          {member.username} {member.isCurrentUser}
+                          {member.username} {member.isCurrentUser ? '(YOU)' : ''}
                         </span>
                       </div>
 
-                      {/* AVATAR PROFILE POPOVER */}
+                      {/* AVATAR PROFILE POPOVER (HIGHEST Z-INDEX SO IT IS NEVER COVERED) */}
                       {isProfileOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
@@ -951,32 +1039,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </div>
           </div>
 
-{/* VINYL CD ANIMATION */}
-<div className="flex items-center justify-center my-1">
-  <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
-    {/* Outer Vinyl Body */}
-    <div className={`w-full h-full rounded-full bg-[#121212] border-4 border-theme-dark shadow-md flex items-center justify-center relative overflow-hidden ${
-      isPlaying ? 'animate-spin [animation-duration:4s]' : ''
-    }`}>
-      {/* Vinyl Grooves */}
-      <div className="absolute w-[85%] h-[85%] rounded-full border border-white/10" />
-      <div className="absolute w-[70%] h-[70%] rounded-full border border-white/10" />
-      <div className="absolute w-[55%] h-[55%] rounded-full border border-white/10" />
-      
-      {/* Dynamic Light Reflection Cones (Sheen) */}
-      <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.2)_45deg,transparent_90deg,transparent_180deg,rgba(255,255,255,0.2)_225deg,transparent_270deg)] pointer-events-none" />
-
-      {/* Center Sticker */}
-      <div className="w-[40%] h-[40%] rounded-full bg-theme-primary border-2 border-theme-dark flex items-center justify-center relative">
-        {/* Label Marker Dot (Makes rotation unmistakably visible) */}
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/50 rounded-full" />
-        
-        {/* Center Hole */}
-        <div className="w-2.5 h-2.5 rounded-full bg-theme-surface border border-theme-dark z-10" />
-      </div>
-    </div>
-  </div>
-</div>
+          {/* VINYL CD ANIMATION */}
+          <div className="flex items-center justify-center my-1">
+            <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
+              <div className={`w-full h-full rounded-full bg-[#121212] border-4 border-theme-dark shadow-md flex items-center justify-center relative overflow-hidden ${
+                isPlaying ? 'animate-spin [animation-duration:4s]' : ''
+              }`}>
+                <div className="absolute w-[85%] h-[85%] rounded-full border border-white/10" />
+                <div className="absolute w-[70%] h-[70%] rounded-full border border-white/10" />
+                <div className="absolute w-[55%] h-[55%] rounded-full border border-white/10" />
+                <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.2)_45deg,transparent_90deg,transparent_180deg,rgba(255,255,255,0.2)_225deg,transparent_270deg)] pointer-events-none" />
+                <div className="w-[40%] h-[40%] rounded-full bg-theme-primary border-2 border-theme-dark flex items-center justify-center relative">
+                  <div className="absolute top-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/50 rounded-full" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-theme-surface border border-theme-dark z-10" />
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* TRACK DROPDOWN SELECTOR */}
           <div className="flex flex-col gap-1">
@@ -1007,7 +1086,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           {/* SPOTIFY STYLE CONTROLS */}
           <div className="flex flex-col gap-2 pt-1">
             <div className="flex items-center justify-between px-2">
-              {/* SHUFFLE BUTTON */}
               <button
                 onClick={() => setIsShuffle((prev) => !prev)}
                 className={`p-1 rounded cursor-pointer transition-colors ${
@@ -1020,7 +1098,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 </svg>
               </button>
 
-              {/* PREVIOUS TRACK */}
               <button
                 onClick={handlePrevTrack}
                 className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
@@ -1031,7 +1108,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 </svg>
               </button>
 
-              {/* PLAY/PAUSE */}
               <button
                 onClick={togglePlay}
                 className="w-8 h-8 rounded-full bg-theme-primary border-2 border-theme-dark text-theme-surface flex items-center justify-center hover:bg-[#d0622c] cursor-pointer shadow-xs transition-transform active:scale-95"
@@ -1048,7 +1124,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 )}
               </button>
 
-              {/* NEXT TRACK */}
               <button
                 onClick={handleNextTrack}
                 className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
@@ -1059,7 +1134,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 </svg>
               </button>
 
-              {/* LOOP BUTTON */}
               <button
                 onClick={() => setIsLoop((prev) => !prev)}
                 className={`p-1 rounded cursor-pointer transition-colors ${
@@ -1073,7 +1147,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
             </div>
 
-            {/* VOLUME SLIDER */}
             <div className="flex items-center gap-2 px-1 pt-1">
               <svg className="w-3.5 h-3.5 text-theme-dark/60 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
@@ -1547,7 +1620,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </h3>
 
             <p className="font-pixel text-[18px] text-theme-dark leading-snug">
-              Awesome job! You finished all your planned study sessions.
+              Awesome job! You received all your planned rewards.
             </p>
 
             <div className="bg-theme-muted border-2 border-theme-dark p-3 rounded-[8px] w-full flex items-center justify-around">
