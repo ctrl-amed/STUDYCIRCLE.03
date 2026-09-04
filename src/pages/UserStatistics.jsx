@@ -1,0 +1,398 @@
+import React, { useState, useEffect } from 'react';
+import { usePlayer } from '../context/PlayerContext';
+
+export default function UserStatistics() {
+  const { playerData } = usePlayer();
+  const userEmail = playerData?.email || sessionStorage.getItem('active_user_email') || localStorage.getItem('active_user_email');
+
+  const [focusTime, setFocusTime] = useState({ hours: 0, minutes: 0 });
+  const [totalSessionsCount, setTotalSessionsCount] = useState(0);
+  const [dynamicWeeklyActivity, setDynamicWeeklyActivity] = useState([]);
+  const [heatmapWeeks, setHeatmapWeeks] = useState([]);
+  const [monthsRow, setMonthsRow] = useState([]);
+  const [productiveDays, setProductiveDays] = useState([
+    { day: 'Mon', count: 0 },
+    { day: 'Tue', count: 0 },
+    { day: 'Wed', count: 0 },
+    { day: 'Thu', count: 0 },
+    { day: 'Fri', count: 0 },
+    { day: 'Sat', count: 0 },
+    { day: 'Sun', count: 0 },
+  ]);
+
+  // Fetch real statistics from Supabase database
+  const fetchDatabaseStats = async () => {
+    if (!userEmail) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${encodeURIComponent(userEmail)}`);
+      const data = await response.json();
+
+      if (data.success && data.sessions) {
+        const sessions = data.sessions;
+
+        // 1. Total Sessions Count
+        setTotalSessionsCount(sessions.length);
+
+        // 2. Focus Time Calculation (duration_minutes)
+        let totalMinutes = 0;
+        sessions.forEach((s) => {
+          totalMinutes += parseInt(s.duration_minutes || 0, 10);
+        });
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        setFocusTime({ hours, minutes });
+
+        // 3. Dynamic Weekly Activity Map (Current Week)
+        const today = new Date();
+        const currentDayOfWeek = (today.getDay() + 6) % 7; // Mon = 0, Sun = 6
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - currentDayOfWeek);
+        monday.setHours(0, 0, 0, 0);
+
+        const dayLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+        const countsPerDay = [0, 0, 0, 0, 0, 0, 0];
+        const totalPerDayAccumulator = [0, 0, 0, 0, 0, 0, 0]; // For Most Productive Day chart
+
+        sessions.forEach((entry) => {
+          if (entry.created_at) {
+            const entryDate = new Date(entry.created_at);
+            const dayIndex = (entryDate.getDay() + 6) % 7;
+
+            totalPerDayAccumulator[dayIndex] += 1;
+
+            if (entryDate >= monday) {
+              countsPerDay[dayIndex] += 1;
+            }
+          }
+        });
+
+        const initialWeekly = dayLabels.map((day) => ({ day, count: 0, completed: false }));
+        const updatedWeekly = initialWeekly.map((item, idx) => {
+          const liveCount = countsPerDay[idx];
+          return {
+            ...item,
+            count: liveCount,
+            completed: liveCount > 0,
+          };
+        });
+        setDynamicWeeklyActivity(updatedWeekly);
+
+        // Most Productive Days chart update
+        const dayNamesOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const updatedProductiveDays = dayNamesOrder.map((dayName, idx) => ({
+          day: dayName,
+          count: totalPerDayAccumulator[idx],
+        }));
+        setProductiveDays(updatedProductiveDays);
+
+        // 4. Yearly Activity Heatmap Generation from Database Dates
+        const dateCountMap = {};
+        sessions.forEach((entry) => {
+          if (entry.created_at) {
+            const dateStr = new Date(entry.created_at).toISOString().split('T')[0];
+            dateCountMap[dateStr] = (dateCountMap[dateStr] || 0) + 1;
+          }
+        });
+
+        const daysData = [];
+        for (let i = 364; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(today.getDate() - i);
+          const dateStr = d.toISOString().split('T')[0];
+          const count = dateCountMap[dateStr] || 0;
+
+          daysData.push({
+            date: dateStr,
+            count,
+          });
+        }
+
+        const weeks = [];
+        let currentWeek = [];
+        daysData.forEach((day, index) => {
+          currentWeek.push(day);
+          if (currentWeek.length === 7 || index === daysData.length - 1) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+          }
+        });
+
+        const monthNames = [
+          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+        ];
+        const months = [];
+        let lastMonth = -1;
+
+        weeks.forEach((week) => {
+          const firstDayOfWeek = new Date(week[0].date);
+          const month = firstDayOfWeek.getMonth();
+          if (month !== lastMonth) {
+            months.push({ name: monthNames[month], weekIndex: weeks.indexOf(week) });
+            lastMonth = month;
+          }
+        });
+
+        setHeatmapWeeks(weeks);
+        setMonthsRow(months);
+      }
+    } catch (err) {
+      console.error("Error fetching database stats:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchDatabaseStats();
+  }, [userEmail, playerData]);
+
+  const maxProductiveCount = Math.max(...productiveDays.map((d) => d.count), 1);
+  const currentDayIndex = (new Date().getDay() + 6) % 7;
+
+  return (
+    <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5 pb-10">
+      {/* PAGE HEADER */}
+      <div className="flex flex-col gap-1">
+        <h1 className="font-pressstart text-3xl sm:text-4xl md:text-5xl inline-block level-up-gradient bg-clip-text text-transparent w-fit">
+          STATISTICS
+        </h1>
+        <p className="font-pressstart text-[10px] sm:text-xs text-theme-dark/80">
+          Track your focus time, streaks, and study sessions.
+        </p>
+      </div>
+
+      {/* TOP STAT CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        
+        {/* CARD 1: CURRENT STREAK */}
+        <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 mb-3">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-theme-muted border-2 border-theme-primary rounded-[10px] flex items-center justify-center text-theme-primary shrink-0 text-2xl sm:text-3xl">
+              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary" viewBox="0 0 24 24">
+                <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7.8 9.4Q11 7 12 3q2.5 5 0 10q3 0 5-2.9a7 7 0 1 1-9.2-.7" />
+              </svg>
+            </div>
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="font-pressstart text-lg sm:text-2xl text-theme-dark font-bold leading-none truncate">
+                {playerData?.streakDays ?? 0} Days
+              </span>
+              <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
+                Current Streak
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 2: BEST STREAK */}
+        <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 mb-3">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-theme-muted border-2 border-theme-safe rounded-[10px] flex items-center justify-center text-theme-safe shrink-0 text-2xl sm:text-3xl">
+              <svg width="1em" height="1em" viewBox="0 0 24 24">
+                <path fill="currentColor" d="M7 21v-2h4v-3.1q-1.225-.275-2.187-1.037T7.4 12.95q-1.875-.225-3.137-1.637T3 8V7q0-.825.588-1.412T5 5h2V3h10v2h2q.825 0 1.413.588T21 7v1q0 1.9-1.263 3.313T16.6 12.95q-.45 1.15-1.412 1.913T13 15.9V19h4v2zm0-10.2V7H5v1q0 .95.55 1.713T7 10.8m10 0q.9-.325 1.45-1.088T19 8V7h-2z" />
+              </svg>
+            </div>
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="font-pressstart text-lg sm:text-2xl text-theme-dark font-bold leading-none truncate">
+                {playerData?.bestStreak ?? 0} Days
+              </span>
+              <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
+                Best Streak
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 3: TOTAL SESSIONS */}
+        <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 mb-3">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-theme-muted border-2 border-theme-dark rounded-[10px] flex items-center justify-center text-theme-dark shrink-0 text-2xl sm:text-3xl">
+              <svg width="1em" height="1em" viewBox="0 0 16 16">
+                <g fill="currentColor">
+                  <path d="M1.5 1a.5.5 0 0 1 .5.5V14h12.5a.5.5 0 0 1 0 1h-13a.5.5 0 0 1-.5-.5v-13a.5.5 0 0 1 .5-.5" />
+                  <path d="M5 8a1 1 0 0 1 1 1v4H3V9a1 1 0 0 1 1-1zm4-6a1 1 0 0 1 1 1v10H7V3a1 1 0 0 1 1-1zm4 4a1 1 0 0 1 1 1v6h-3V7a1 1 0 0 1 1-1z" />
+                </g>
+              </svg>
+            </div>
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="font-pressstart text-lg sm:text-2xl text-theme-dark font-bold leading-none truncate">
+                {totalSessionsCount}
+              </span>
+              <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
+                Total Sessions
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* CARD 4: FOCUS TIME */}
+        <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 mb-3">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 bg-theme-muted border-2 border-theme-primary rounded-[10px] flex items-center justify-center text-theme-primary shrink-0 text-2xl sm:text-3xl">
+              <svg className="w-[1em] h-[1em]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+              </svg>
+            </div>
+            <div className="flex flex-col min-w-0 overflow-hidden">
+              <span className="font-pressstart text-base sm:text-xl text-theme-dark font-bold leading-none truncate">
+                {focusTime.hours}h {focusTime.minutes}m
+              </span>
+              <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
+                Focus Time
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* THIS WEEK TRACKER WITH DYNAMIC COUNTS */}
+      <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-4">
+        <div className="flex items-center justify-between border-b-2 border-theme-dark/20 pb-3">
+          <h3 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark">THIS WEEK</h3>
+          <span className="font-pixel text-[14px] text-theme-dark/70">Mon - Sun</span>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-4 text-center">
+          {dynamicWeeklyActivity.map((item, idx) => {
+            const isFuture = idx > currentDayIndex;
+            const isCurrent = idx === currentDayIndex;
+            const countDisplay = isFuture ? '-' : item.count;
+            const dotBg = isFuture
+              ? 'bg-theme-dark/10 border-theme-dark/20'
+              : item.completed || item.count > 0
+              ? 'bg-theme-primary border-theme-dark'
+              : 'bg-theme-dark/20 border-theme-dark/40';
+
+            return (
+              <div
+                key={item.day}
+                className={`flex flex-col items-center justify-between p-2 rounded-[8px] bg-theme-surface border-2 ${
+                  isCurrent ? 'border-theme-primary shadow-sm' : 'border-theme-dark/30'
+                }`}
+              >
+                <span className="font-pixel text-[13px] sm:text-[15px] text-theme-dark uppercase">
+                  {item.day}
+                </span>
+                <div className={`my-2 w-5 h-5 rounded-full border-[1.5px] ${dotBg} flex items-center justify-center`} />
+                <span className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark">
+                  {countDisplay}
+                </span>
+                {isCurrent ? (
+                  <div className="w-full h-[3px] bg-theme-primary mt-2 rounded-full" />
+                ) : (
+                  <div className="w-full h-[3px] bg-transparent mt-2" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* YEARLY ACTIVITY HEATMAP */}
+      <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b-2 border-theme-dark/20 pb-3 gap-2">
+          <h3 className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">
+            {totalSessionsCount} study sessions in the last year
+          </h3>
+          <div className="flex items-center gap-2 text-[10px] font-pixel text-theme-dark">
+            <span>Less</span>
+            <div className="flex gap-1 items-center">
+              <span className="w-3 h-3 bg-theme-muted border border-theme-dark/30 rounded-sm" />
+              <span className="w-3 h-3 bg-theme-primary/30 border border-theme-dark/30 rounded-sm" />
+              <span className="w-3 h-3 bg-theme-primary/60 border border-theme-dark/30 rounded-sm" />
+              <span className="w-3 h-3 bg-theme-primary border border-theme-dark/30 rounded-sm" />
+            </div>
+            <span>More</span>
+          </div>
+        </div>
+
+        <div className="w-full overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
+          <div className="min-w-[700px] relative">
+            <div className="flex flex-col gap-2 w-max">
+              <div className="flex pl-7 relative h-4 font-pixel text-[11px] text-theme-dark/70">
+                {monthsRow.map((m, idx) => {
+                  const nextWeekIdx = monthsRow[idx + 1]
+                    ? monthsRow[idx + 1].weekIndex
+                    : heatmapWeeks.length;
+                  const spanWeeks = nextWeekIdx - m.weekIndex;
+                  return (
+                    <div
+                      key={idx}
+                      style={{ width: `${spanWeeks * 20}px` }}
+                      className="shrink-0"
+                    >
+                      {m.name}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-start gap-2">
+                <div className="flex flex-col justify-between text-[10px] font-pixel text-theme-dark/70 h-[108px] pr-1 select-none shrink-0">
+                  <span>Mon</span>
+                  <span>Wed</span>
+                  <span>Fri</span>
+                </div>
+
+                <div className="flex gap-1.5 justify-start">
+                  {heatmapWeeks.map((week, wIdx) => (
+                    <div key={wIdx} className="flex flex-col gap-1.5">
+                      {week.map((d, dIdx) => {
+                        let bgColor = 'bg-theme-muted';
+                        if (d.count > 0 && d.count <= 2) bgColor = 'bg-theme-primary/30';
+                        else if (d.count > 2 && d.count <= 4) bgColor = 'bg-theme-primary/60';
+                        else if (d.count > 4) bgColor = 'bg-theme-primary';
+
+                        return (
+                          <div
+                            key={dIdx}
+                            className={`w-3.5 h-3.5 rounded-sm border border-theme-dark/20 ${bgColor} relative group cursor-pointer`}
+                          >
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:flex flex-col items-center z-50 pointer-events-none whitespace-nowrap bg-theme-dark text-theme-surface font-pixel text-[10px] px-2 py-1 rounded shadow-lg">
+                              <span>
+                                {d.count} study sessions on {d.date}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* MOST PRODUCTIVE DAY CHART */}
+      <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-4">
+        <div className="border-b-2 border-theme-dark/20 pb-3">
+          <h3 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark">
+            MOST PRODUCTIVE DAY
+          </h3>
+        </div>
+        <div className="flex flex-col gap-3 pt-1">
+          {productiveDays.map((d) => {
+            const percentage = Math.round((d.count / maxProductiveCount) * 100);
+            const isPeak = d.count === maxProductiveCount && d.count > 0;
+
+            return (
+              <div key={d.day} className="flex items-center gap-3 font-pixel text-[14px] text-theme-dark">
+                <span className="w-8 font-pressstart text-[10px] uppercase">{d.day}</span>
+                <div className="flex-1 h-4 bg-theme-dark/10 border-[1.5px] border-theme-dark/30 rounded-[4px] overflow-hidden p-[2px]">
+                  <div
+                    className={`h-full rounded-[2px] ${
+                      isPeak ? 'bg-theme-primary' : 'bg-theme-dark/60'
+                    } transition-all duration-300`}
+                    style={{ width: `${Math.max(percentage, 4)}%` }}
+                  />
+                </div>
+                <span className="w-6 text-right font-pressstart text-[10px]">{d.count}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </main>
+  );
+}
