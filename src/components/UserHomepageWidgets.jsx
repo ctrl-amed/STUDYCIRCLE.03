@@ -44,7 +44,6 @@ export function ActiveSessionWidget({
   const context = useOutletContext();
   const dragPosRef = useRef({ isDragging: false, startX: 0, startY: 0, initialLeft: 0, initialTop: 0 });
 
-  // Enable smooth dragging when widget is in floating mode
   useEffect(() => {
     const card = cardRef?.current;
     if (!card || !isWidgetFloating) return;
@@ -146,36 +145,36 @@ export function ActiveSessionWidget({
 
   if (!activeSession) {
     return (
-<section className="card-highlight border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
-  <div className="flex flex-col gap-2">
-    <h3 className="font-pressstart text-[20px] sm:text-[30px] text-theme-dark">READY TO FOCUS?</h3>
-    <p className="font-pixel text-[20px] sm:text-[24px] text-theme-dark leading-snug">
-      Select a task category and let StudyCircle recommend the right study technique for you.
-    </p>
-  </div>
+      <section className="card-highlight border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h3 className="font-pressstart text-[20px] sm:text-[30px] text-theme-dark">READY TO FOCUS?</h3>
+          <p className="font-pixel text-[20px] sm:text-[24px] text-theme-dark leading-snug">
+            Select a task category and let StudyCircle recommend the right study technique for you.
+          </p>
+        </div>
 
-  <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
-    <button
-      type="button"
-      onClick={() => context?.openCreateSessionModal?.()}
-      className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
-    >
-      START SESSION
-    </button>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
+          <button
+            type="button"
+            onClick={() => context?.openCreateSessionModal?.()}
+            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
+          >
+            START SESSION
+          </button>
 
-    <div className="flex items-center gap-4 sm:gap-6">
-      <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-        <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Current Streak</span>
-        <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{streakDays} days</span>
-      </div>
+          <div className="flex items-center gap-4 sm:gap-6">
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+              <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Current Streak</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{streakDays} days</span>
+            </div>
 
-      <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
-        <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Today</span>
-        <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{focusTimeFormatted}</span>
-      </div>
-    </div>
-  </div>
-</section>
+            <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
+              <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Today</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{focusTimeFormatted}</span>
+            </div>
+          </div>
+        </div>
+      </section>
     );
   }
 
@@ -196,7 +195,6 @@ export function ActiveSessionWidget({
 
   const content = (
     <>
-      {/* RETRO TOAST NOTIFICATION */}
       {toastMessage && (
         <div className="fixed top-6 right-6 z-[10001] bg-theme-surface border-3 border-theme-dark px-4 py-3 rounded-[8px] shadow-2xl flex items-center gap-3 animate-bounce-short">
           <span className="text-xl">⚠️</span>
@@ -290,52 +288,48 @@ export function ActiveSessionWidget({
         </div>
       </section>
 
-{/* FOCUS VERIFICATION NUDGE MODAL WITH REAL-TIME COUNTDOWN */}
-{showNudgeModal && (
-  <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
-    <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-fade-in">
-      
-      {/* KITSU LOGO ICON */}
-      <img
-        src={`${baseUrl || '/'}media/kitsu_logo.png`}
-        alt="Kitsu Logo"
-        className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0 animate-bounce-short"
-        onError={(e) => {
-          e.currentTarget.src = '/media/kitsu_logo.png';
-        }}
-      />
+      {showNudgeModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-fade-in">
+            <img
+              src={'/media/kitsu_logo.png'}
+              alt="Kitsu Logo"
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain shrink-0 animate-bounce-short"
+              onError={(e) => {
+                e.currentTarget.src = '/media/kitsu_logo.png';
+              }}
+            />
 
-      <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">
-        ARE YOU STILL HERE?
-      </h3>
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">
+              ARE YOU STILL HERE?
+            </h3>
 
-      <p className="font-pixel text-[18px] text-theme-dark leading-snug">
-        Just checking in - are you still focused on today’s goal?
-      </p>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              Just checking in - are you still focused on today’s goal?
+            </p>
 
-      {/* VISUAL REAL-TIME COUNTDOWN DISPLAY */}
-      <div className="w-full flex flex-col items-center gap-1.5 my-1">
-        <span className="font-pressstart text-[10px] text-theme-danger uppercase tracking-wider">
-          CLOSING IN {nudgeCountdown}S
-        </span>
-        
-        <div className="w-full bg-theme-muted border-2 border-theme-dark h-3.5 rounded-full overflow-hidden p-0.5">
-          <div
-            className="bg-theme-primary h-full rounded-full transition-all duration-1000 ease-linear"
-            style={{ width: `${progressPercent}%` }}
-          />
+            <div className="w-full flex flex-col items-center gap-1.5 my-1">
+              <span className="font-pressstart text-[10px] text-theme-danger uppercase tracking-wider">
+                CLOSING IN {nudgeCountdown}S
+              </span>
+              
+              <div className="w-full bg-theme-muted border-2 border-theme-dark h-3.5 rounded-full overflow-hidden p-0.5">
+                <div
+                  className="bg-theme-primary h-full rounded-full transition-all duration-1000 ease-linear"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleConfirmNudge}
+              className="w-full font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 hover:bg-[#d0622c] cursor-pointer shadow-sm uppercase transition-colors"
+            >
+              YES, I'M HERE
+            </button>
+          </div>
         </div>
-      </div>
-
-      <button
-        onClick={handleConfirmNudge}
-        className="w-full font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 hover:bg-[#d0622c] cursor-pointer shadow-sm uppercase transition-colors"
-      >
-        YES, I'M HERE
-      </button>
-    </div>
-  </div>
-)}
+      )}
     </>
   );
 

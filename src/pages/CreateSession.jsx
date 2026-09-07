@@ -5,9 +5,9 @@ export default function CreateSession() {
   const { playerData } = usePlayer();
 
   // --- AI RECOMMENDATION STATE ---
-  const [mockRecommendedData, setMockRecommendedData] = useState({
-    techniqueName: 'Pomodoro (25m focus / 5m break)',
-    number_session: 4,
+  const [recommendedData, setRecommendedData] = useState({
+    techniqueName: 'Pomodoro',
+    sessions: 4,
     focus: 25,
     break: 5,
   });
@@ -21,7 +21,7 @@ export default function CreateSession() {
   const [selectedTechnique, setSelectedTechnique] = useState('recommended');
   const [customSessionCount, setCustomSessionCount] = useState('1');
 
-  // Fetch AI Study Recommendation based on user study history when entering Step 3
+  // Fetch AI Study Recommendation based on user study history and current session inputs when entering Step 3
   useEffect(() => {
     if (currentStep === 3) {
       const fetchAIRecommendation = async () => {
@@ -30,11 +30,35 @@ export default function CreateSession() {
           const response = await fetch('http://localhost:5000/api/ai-recommendation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: playerData?.email }),
+            body: JSON.stringify({
+              email: playerData?.email,
+              workType: selectedWorkType,
+              tasks: draftTasks.filter(t => t.trim() !== '')
+            }),
           });
           const data = await response.json();
-          if (data.success && data.recommendation) {
-            setAiRationale(data.recommendation);
+          if (data.success) {
+            setAiRationale(data.recommendation || "Keep your momentum going with balanced intervals!");
+            
+            // Kung nagpapadala ang backend mo ng structured data, pwede mo itong i-update dito.
+            // Halimbawa kung ang AI ay nagrekomenda ng 52-17 o Ultradian batay sa work type at tasks:
+            if (data.focus && data.break) {
+              setRecommendedData({
+                techniqueName: data.techniqueName || 'AI Custom Strategy',
+                focus: data.focus,
+                break: data.break,
+                sessions: data.sessions || 3
+              });
+            } else {
+              // Smart fallback base sa selectedWorkType kung text lang ang nanggaling sa Gemini
+              if (selectedWorkType === 'creation' || selectedWorkType === 'writing') {
+                setRecommendedData({ techniqueName: 'Ultradian Rhythm', focus: 90, break: 20, sessions: 2 });
+              } else if (selectedWorkType === 'reading') {
+                setRecommendedData({ techniqueName: '52-17 Rule', focus: 52, break: 17, sessions: 3 });
+              } else {
+                setRecommendedData({ techniqueName: 'Pomodoro', focus: 25, break: 5, sessions: 4 });
+              }
+            }
           }
         } catch (err) {
           console.error("Failed to fetch AI study recommendation:", err);
@@ -45,7 +69,7 @@ export default function CreateSession() {
       };
       fetchAIRecommendation();
     }
-  }, [currentStep, playerData?.email]);
+  }, [currentStep, playerData?.email, selectedWorkType, draftTasks]);
 
   // Work Type Options
   const workOptions = [
@@ -120,12 +144,12 @@ export default function CreateSession() {
   // Specific Techniques
   const techniqueDetails = {
     recommended: {
-      title: 'AI Recommended Strategy',
-      focus: mockRecommendedData.focus,
-      break: mockRecommendedData.break,
-      sessions: mockRecommendedData.number_session,
+      title: recommendedData.techniqueName,
+      focus: recommendedData.focus,
+      break: recommendedData.break,
+      sessions: recommendedData.sessions,
     },
-    pomodoro: { title: 'Pomodoro', focus: 25, break: 5 },
+    pomodoro: { title: 'Pomodoro', focus: 3, break: 1 },
     '52-17': { title: '52-17 Method', focus: 52, break: 17 },
     '90m': { title: '90m Deep Work', focus: 90, break: 20 },
   };
@@ -177,7 +201,7 @@ export default function CreateSession() {
     const focusTime = activeTech.focus;
     const breakTime = activeTech.break;
     const finalSessions =
-      selectedTechnique === 'recommended' ? mockRecommendedData.number_session : customSessionCount || '1';
+      selectedTechnique === 'recommended' ? recommendedData.sessions : customSessionCount || '1';
 
     const newSession = {
       workType: selectedWorkType || 'General Work',
@@ -216,7 +240,7 @@ export default function CreateSession() {
       title: activeTech.title,
       focus: activeTech.focus,
       break: activeTech.break,
-      sessions: selectedTechnique === 'recommended' ? mockRecommendedData.number_session : customSessionCount || '1',
+      sessions: selectedTechnique === 'recommended' ? recommendedData.sessions : customSessionCount || '1',
     };
   };
 
@@ -430,7 +454,7 @@ export default function CreateSession() {
                       <span className="font-pixel text-sm text-theme-dark/70 animate-pulse">Analyzing your study habits...</span>
                     ) : (
                       <p className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/90 px-2 italic">
-                        "{aiRationale || mockRecommendedData.techniqueName}"
+                        "{aiRationale || recommendedData.techniqueName}"
                       </p>
                     )}
 
@@ -440,7 +464,7 @@ export default function CreateSession() {
                         <span className="text-theme-primary text-2xl">⏱</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark">
-                            {mockRecommendedData.focus}m
+                            {recommendedData.focus}m
                           </span>
                           <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             FOCUS TIME
@@ -451,7 +475,7 @@ export default function CreateSession() {
                         <span className="text-theme-primary text-2xl">☕</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark">
-                            {mockRecommendedData.break}m
+                            {recommendedData.break}m
                           </span>
                           <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             BREAK TIME
@@ -462,7 +486,7 @@ export default function CreateSession() {
                         <span className="text-theme-primary text-2xl">🎯</span>
                         <div className="flex flex-col text-left">
                           <span className="font-pressstart text-[15px] sm:text-[20px] leading-none text-theme-dark">
-                            {mockRecommendedData.number_session}
+                            {recommendedData.sessions}
                           </span>
                           <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark/70 mt-1">
                             SESSIONS

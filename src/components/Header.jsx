@@ -269,7 +269,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     localStorage.removeItem('activeRoomSession');
     setShowLeaveRoomModal(false);
     setIsRoomState(false);
-    navigate('/dashboard', { replace: true, state: { isMultiplayer: false } });
+    navigate('/rooms', { replace: true }); // Ibabalik ka sa room list sa halip na dashboard
   };
 
   const handleChatScroll = () => {
@@ -553,6 +553,32 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
               {playerData?.streakDays ?? 0}D
             </span>
           </button>
+
+          {/* LEAVE ROOM MODAL */}
+      {showLeaveRoomModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
+            <h3 className="font-pressstart text-[12px] text-theme-dark">Leave Room</h3>
+            <p className="font-pressstart text-[9px] text-theme-dark/80 leading-normal">
+              Are you sure you want to leave this study room?
+            </p>
+            <div className="flex gap-3 justify-center mt-2">
+              <button 
+                onClick={handleLeaveRoom} 
+                className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
+              >
+                Yes
+              </button>
+              <button 
+                onClick={() => setShowLeaveRoomModal(false)} 
+                className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}    
 
           {/* DYNAMIC ROOM STATE ACTION BUTTONS */}
           {isRoomState ? (

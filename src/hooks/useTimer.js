@@ -377,8 +377,7 @@ export function useTimer() {
             incrementTotalSessions(totalSessions);
           }
 
-          localStorage.removeItem('activeSession');
-          setActiveSession(null);
+          // Dito lang natin bubuksan ang tanging nag-iisang tamang reward modal ng UserHomepage
           setShowRewardModal(true);
 
           if (pipWindowRef.current && !pipWindowRef.current.closed) {
@@ -426,7 +425,11 @@ export function useTimer() {
     }
   };
 
-  const closeRewardModal = () => setShowRewardModal(false);
+  const closeRewardModal = () => {
+    setShowRewardModal(false);
+    setActiveSession(null);
+    localStorage.removeItem('activeSession');
+  };
 
   // Sync state updates to open PiP window
   useEffect(() => {
@@ -603,7 +606,5 @@ export function useTimer() {
     toggleFullscreen,
   };
 }
-
-
 
 export default useTimer;

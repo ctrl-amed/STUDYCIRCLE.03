@@ -8,7 +8,6 @@ import CustomAvatar from '../components/CustomAvatar';
 import EmojiPicker from 'emoji-picker-react';
 import { io } from 'socket.io-client';
 
-// --- LOFI TRACKS DATA ---
 const LOFI_TRACKS = [
   { id: 'lofi1', name: 'Midnight Coffee', artist: 'Lofi Girl & Chill', src: 'media/BGM/LOFI1.mp3' },
   { id: 'lofi2', name: 'Rainy Study Session', artist: 'Pixel Beats', src: 'media/BGM/LOFI2.mp3' },
@@ -16,7 +15,6 @@ const LOFI_TRACKS = [
   { id: 'lofi4', name: 'Cosmic Chillout', artist: 'StudyCircle Sound', src: 'media/BGM/LOFI4.mp3' },
 ];
 
-// --- MULTIPLAYER & SINGLEPLAYER AVATAR POSITIONS ---
 const avatarConfig = {
   scale: 0.85,
   bottom: '15%',
@@ -25,18 +23,15 @@ const avatarConfig = {
   offsetY: 0,
 };
 
-// Dynamic position maps based on total member count in the room
 const memberPositionsByCount = {
-  1: [
-    { bottom: '25%', left: '50%', scale: 0.85 } // Center
-  ],
+  1: [{ bottom: '25%', left: '50%', scale: 0.85 }],
   2: [
     { bottom: '25%', left: '38%', scale: 0.85 },
     { bottom: '25%', left: '62%', scale: 0.85 }
   ],
   3: [
     { bottom: '28%', left: '32%', scale: 0.85 },
-    { bottom: '25%', left: '50%', scale: 0.85 }, // Center User
+    { bottom: '25%', left: '50%', scale: 0.85 },
     { bottom: '28%', left: '68%', scale: 0.85 }
   ],
   4: [
@@ -48,7 +43,7 @@ const memberPositionsByCount = {
   5: [
     { bottom: '25%', left: '22%', scale: 0.85 },
     { bottom: '30%', left: '36%', scale: 0.85 },
-    { bottom: '25%', left: '50%', scale: 0.85 }, // Center User
+    { bottom: '25%', left: '50%', scale: 0.85 },
     { bottom: '30%', left: '64%', scale: 0.85 },
     { bottom: '25%', left: '78%', scale: 0.85 }
   ],
@@ -62,7 +57,6 @@ const memberPositionsByCount = {
   ]
 };
 
-// Mock pool of available players
 const mockPlayerList = [
   { 
     id: 1, 
@@ -106,7 +100,6 @@ const mockPlayerList = [
   }
 ];
 
-// --- MOCK FALLBACK ROOM DATA ---
 const mockRoomData = {
   roomName: "Algorithms & Data Structures Study Group",
   course: "CS 201 - Data Structures",
@@ -114,28 +107,9 @@ const mockRoomData = {
   maxMembers: 6,
   hostId: "m1",
   members: [],
-  auditLogs: [
-    { id: 1, user: "ACORN_HERO", action: "started a 52-17 focus session", time: "2m ago" },
-    { id: 2, user: "LOFI_LUNA", action: "completed a task: Binary Search Trees", time: "5m ago" },
-    { id: 3, user: "PIXEL_SAM", action: "joined the room", time: "12m ago" },
-    { id: 4, user: "NIGHT_OWL", action: "paused their focus timer", time: "18m ago" },
-    { id: 5, user: "COZY_CAT", action: "joined the room", time: "25m ago" },
-  ],
-  chatMessages: [
-    { sender: "LOFI_LUNA", text: "Hey everyone! Let's get through Module 4 today.", time: "10:15 AM" },
-    { sender: "PIXEL_SAM", text: "Focused mode on 🚀", time: "10:16 AM" },
-    { sender: "ACORN_HERO", text: "Let's do this!", time: "10:18 AM" },
-  ]
+  auditLogs: [],
+  chatMessages: []
 };
-
-const initialRecentActivities = [
-  { activity: 'Reading', technique: '52-17', duration: '1h 45m', date: 'Today' },
-  { activity: 'Writing', technique: 'Pomodoro', duration: '2h 15m', date: 'Today' },
-  { activity: 'Review', technique: '90m Focus', duration: '45m', date: 'Yesterday' },
-  { activity: 'Practice', technique: 'Pomodoro', duration: '1h 10m', date: 'Yesterday' },
-  { activity: 'Memorize', technique: '52-17', duration: '30m', date: 'Aug 15, 2026' },
-  { activity: 'Creation', technique: '90m Focus', duration: '1h 30m', date: 'Aug 12, 2026' },
-];
 
 const activityIcons = {
   Reading: (
@@ -162,6 +136,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const player = {
     username: playerData?.username || 'ACORN_HERO',
+    email: playerData?.email || '',
     streakDays: playerData?.streakDays ?? 0,
     level: playerData?.level ?? 1,
     coins: playerData?.coins ?? 0,
@@ -169,25 +144,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     maxXP: playerData?.maxXP ?? 10000,
   };
 
-  const userActivities = playerData?.userActivities || {};
-  const timer = useTimer(player);
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [userActivities, setUserActivities] = useState({});
+
+  const timer = useTimer();
   const activeCardRef = useRef(null);
 
-  // Singleplayer Date & Greeting State
   const [greetingText, setGreetingText] = useState('Good Afternoon');
   const [currentDateStr, setCurrentDateStr] = useState('');
 
-  // Modals Visibility Controls
   const [showRecentModal, setShowRecentModal] = useState(false);
   const [showRoomActivityModal, setShowRoomActivityModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
-  // Active Member Profile Popover State
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [sentFriendRequests, setSentFriendRequests] = useState([]);
 
-  // LEADERBOARD DYNAMIC STATE (Fetched from backend)
   const [activeTab, setActiveTab] = useState('all-time');
   const [leaderboardData, setLeaderboardData] = useState({
     'all-time': [],
@@ -195,11 +168,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     streaks: [],
   });
 
-  // Calendar State & Touch Popover Control
-  const [currentCalDate, setCurrentCalDate] = useState(new Date(2026, 7, 1));
+  const [currentCalDate, setCurrentCalDate] = useState(new Date());
   const [activePopoverDate, setActivePopoverDate] = useState(null);
 
-  // Dynamic Room / Multiplayer Detection
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [roomData, setRoomData] = useState(mockRoomData);
   const [roomChat, setRoomChat] = useState(mockRoomData.chatMessages);
@@ -207,7 +178,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const chatContainerRef = useRef(null);
 
-  // Music Player State
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -217,7 +187,69 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const audioRef = useRef(null);
   const currentTrack = LOFI_TRACKS[currentTrackIndex];
 
-  // Helper function to safely parse avatar config for leaderboard users
+  // Dynamic v2.1 rewards calculation
+  const savedSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
+  const durationMins = timer.activeSession?.focusTime || savedSession.focusTime || 25;
+  const rawTech = (timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro').toUpperCase();
+  const techKey = rawTech.includes('52') ? '52-17' : rawTech.includes('90') ? 'ULTRADIAN' : 'POMODORO';
+
+  const currentTasks = timer.tasksList && timer.tasksList.length > 0
+    ? timer.tasksList
+    : (savedSession.tasks || []).map((t) => ({ text: t, completed: true }));
+
+  const totalTasks = currentTasks.length;
+  const completedTasks = currentTasks.filter((t) => t.completed).length;
+
+  const techMultipliers = { 'POMODORO': 1.0, '52-17': 1.1, 'ULTRADIAN': 1.2 };
+  const techMult = techMultipliers[techKey] || 1.0;
+  const checklistMult = 1.0 + Math.min(completedTasks * 0.05, 0.25);
+  const baseRate = 0.4;
+  const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
+  const calculatedCoins = Math.floor(durationMins * 0.2);
+
+  const handleClaimAndSaveToDB = async () => {
+    const userEmail = player.email || playerData?.email || localStorage.getItem('user_email') || '';
+
+    try {
+      const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userEmail,
+          durationMinutes: durationMins,
+          technique: timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro',
+          tasksCompleted: completedTasks,
+          totalTasks: totalTasks,
+          activity: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
+          isMultiplayer: isMultiplayer,
+          isHost: isCurrentUserHost,
+          roomSize: roomData.members.length || 1
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log("v2.1 Server-side Calculation Successful:", data);
+        
+        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        storedUser.coins = data.coins;
+        storedUser.currentXP = data.currentXP;
+        storedUser.level = data.level;
+        storedUser.maxXP = data.maxXP;
+        localStorage.setItem('user', JSON.stringify(storedUser));
+
+        localStorage.removeItem('activeSession');
+        window.location.reload();
+      } else {
+        console.error("Backend failed to save:", data.error);
+      }
+    } catch (err) {
+      console.error("Error committing session and v2.1 transaction:", err);
+    } finally {
+      timer.closeRewardModal();
+    }
+  };
+
   const getLeaderboardAvatarConfig = (item) => {
     if (!item) return null;
     const rawConfig = item.avatar_config || item.avatarConfig || item.config;
@@ -231,24 +263,94 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return null;
   };
 
-  // --- SOCKETIO REarium & CONNECTION SETUP ---
+  useEffect(() => {
+    const fetchUserSessions = async () => {
+      if (!player.email) return;
+      try {
+        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${player.email}`);
+        const data = await response.json();
+        if (data.success && data.sessions) {
+          const rawSessions = data.sessions;
+
+          const formattedRecent = rawSessions.map((s) => {
+            const sessionDate = new Date(s.created_at);
+            const today = new Date();
+            let dateStr = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            
+            if (sessionDate.toDateString() === today.toDateString()) {
+              dateStr = 'Today';
+            } else {
+              const yesterday = new Date();
+              yesterday.setDate(today.getDate() - 1);
+              if (sessionDate.toDateString() === yesterday.toDateString()) {
+                dateStr = 'Yesterday';
+              }
+            }
+
+            return {
+              activity: s.activity_name || 'Focus Session',
+              technique: s.technique || 'Pomodoro',
+              duration: `${s.duration_minutes || 0}m`,
+              date: dateStr,
+            };
+          });
+          setRecentActivities(formattedRecent);
+
+          const groupedByDate = {};
+          rawSessions.forEach((s) => {
+            if (!s.created_at) return;
+            const sessionDate = new Date(s.created_at);
+            const yyyy = sessionDate.getFullYear();
+            const mm = String(sessionDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(sessionDate.getDate()).padStart(2, '0');
+            const dateKey = `${yyyy}-${mm}-${dd}`;
+
+            if (!groupedByDate[dateKey]) {
+              groupedByDate[dateKey] = [];
+            }
+            groupedByDate[dateKey].push({
+              name: s.activity_name || 'Focus Session',
+              duration: `${s.duration_minutes || 0} mins`,
+              technique: s.technique || 'Pomodoro',
+            });
+          });
+          setUserActivities(groupedByDate);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user sessions for homepage:", err);
+      }
+    };
+
+    fetchUserSessions();
+  }, [player.email]);
+
   const socketRef = useRef(null);
 
   useEffect(() => {
     if (isMultiplayer) {
       socketRef.current = io('http://localhost:5000');
       
+      const currentStatus = timer.activeSession ? "IN SESSION" : "ONLINE";
+
       socketRef.current.emit('join_room', { 
         room: roomData.roomName, 
-        username: player.username 
+        username: player.username,
+        level: player.level,
+        status: currentStatus,
+        avatar_config: playerData?.avatar_config || playerData?.config || playerData?.avatarConfig || null
+      });
+
+      socketRef.current.on('room_update', (data) => {
+        if (data.members) {
+          setRoomData(prev => ({ ...prev, members: data.members }));
+        }
+        if (data.logs && data.logs.length > 0) {
+          setRoomData(prev => ({ ...prev, auditLogs: [...data.logs, ...prev.auditLogs] }));
+        }
       });
 
       socketRef.current.on('receive_room_message', (msg) => {
         setRoomChat((prev) => [...prev, msg]);
-      });
-
-      socketRef.current.on('timer_update', (timerData) => {
-        console.log("Real-time timer sync received:", timerData);
       });
 
       return () => {
@@ -276,15 +378,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
     if (socketRef.current && isMultiplayer) {
       socketRef.current.emit('send_room_message', msgPayload);
-    } else {
-      setRoomChat((prev) => [...prev, msgPayload]);
     }
 
     setChatInput('');
     setShowEmojiPicker(false);
   };
 
-  // Control audio play/pause and volume changes
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
@@ -322,7 +421,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   };
 
-  // Fetch Real Leaderboard Data from Backend API
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
@@ -338,7 +436,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     fetchLeaderboard();
   }, []);
 
-  // Listen for session updates from CreateSession modal iframe
   useEffect(() => {
     const handleMessage = (e) => {
       if (e.data === 'CLOSE_CREATE_SESSION_MODAL') {
@@ -368,7 +465,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return () => window.removeEventListener('message', handleMessage);
   }, [player.username]);
 
-  // Read Room Session from localStorage or router state on load/route change
   useEffect(() => {
     const storedSession = localStorage.getItem('activeRoomSession');
     const stateIsMultiplayer = location.state?.isMultiplayer;
@@ -378,64 +474,69 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       
       let parsed = null;
       if (storedSession) {
-        try {
-          parsed = JSON.parse(storedSession);
-        } catch (e) {
-          console.error("Error parsing room session:", e);
-        }
+        try { parsed = JSON.parse(storedSession); } catch (e) { console.error(e); }
       } else if (location.state?.room) {
         parsed = location.state.room;
       }
 
-      const hostUsername = parsed?.host || "CodeWizard";
-      const totalMemberCount = Math.min(parsed?.currentMembers || 2, parsed?.maxMembers || 6);
+      const roomName = parsed?.name || parsed?.roomName || "Study Room";
+      const hostUsername = parsed?.host || player.username;
 
+      // Initial local user bilang unang miyembro
       const currentUser = {
-        id: "user_me",
+        id: player.email || player.username,
         username: player.username,
         isHost: hostUsername === player.username,
-        status: "IN SESSION",
+        status: "ONLINE",
         avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${player.username}`,
         level: player.level,
-        totalFocusTime: "150h 20m",
         isCurrentUser: true,
       };
 
-      const availableMocks = mockPlayerList.filter((m) => m.username !== player.username);
-      let membersList = [];
-
-      if (totalMemberCount <= 1) {
-        membersList = [currentUser];
-      } else {
-        const otherMembersCount = totalMemberCount - 1;
-        const otherMembers = availableMocks.slice(0, otherMembersCount).map((m) => ({
-          ...m,
-          isHost: m.username === hostUsername,
-          avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${m.username}`,
-        }));
-
-        if (!currentUser.isHost && !otherMembers.some((m) => m.isHost)) {
-          otherMembers[0] = {
-            ...mockPlayerList[0],
-            username: hostUsername,
-            isHost: true,
-            avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${hostUsername}`,
-          };
-        }
-
-        const midIndex = Math.floor(otherMembers.length / 2);
-        otherMembers.splice(midIndex, 0, currentUser);
-        membersList = otherMembers;
-      }
-
       setRoomData((prev) => ({
         ...prev,
-        roomName: parsed?.name || parsed?.roomName || prev.roomName,
-        course: parsed?.course || prev.course,
-        privacy: parsed?.privacy || prev.privacy || "public",
+        roomName: roomName,
+        course: parsed?.course || 'General Studies',
+        privacy: parsed?.privacy || 'public',
+        code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
-        members: membersList,
+        members: [currentUser], // Magsisimula sa totoong user na pumasok
+        auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
+
+      // --- SOCKET.IO REAL-TIME CONNECTION ---
+      socketRef.current = io('http://localhost:5000');
+
+      socketRef.current.emit('join_room', {
+        room: roomName,
+        username: player.username,
+        level: player.level,
+      });
+
+      // Makinig sa mga bagong miyembro na sumali sa room
+      socketRef.current.on('room_update', (data) => {
+        if (data.members) {
+          setRoomData(prev => ({ ...prev, members: data.members }));
+        }
+        if (data.logs) {
+          setRoomData(prev => ({ ...prev, auditLogs: data.logs }));
+        }
+      });
+
+      // Makinig sa mga bagong chat messages
+      socketRef.current.on('receive_room_message', (msg) => {
+        setRoomChat((prev) => [...prev, msg]);
+      });
+
+      return () => {
+        if (socketRef.current) {
+          socketRef.current.emit('leave_room', {
+            room: roomName,
+            username: player.username,
+          });
+          socketRef.current.disconnect();
+        }
+      };
     } else {
       setIsMultiplayer(false);
     }
@@ -506,9 +607,29 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     setActiveProfileId(null);
   };
 
-  const handleAddFriend = (memberId) => {
-    if (!sentFriendRequests.includes(memberId)) {
-      setSentFriendRequests((prev) => [...prev, memberId]);
+  const handleAddFriend = async (member) => {
+    const identifier = member.email || member.username;
+    const memberKey = member.id || member.username;
+    
+    if (!identifier || sentFriendRequests.includes(memberKey)) return;
+
+    try {
+      const response = await fetch('http://localhost:5000/api/send-friend-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderEmail: player.email,
+          receiverEmail: identifier // Pwedeng email o username
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSentFriendRequests((prev) => [...prev, memberKey]);
+      } else {
+        alert(data.message || "Failed to send friend request.");
+      }
+    } catch (error) {
+      console.error('Error sending friend request from room modal:', error);
     }
   };
 
@@ -681,14 +802,22 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   {roomData.roomName}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
-                  <span className="bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-[4px] font-pressstart text-[9px]">
-                    {roomData.members.length}/{roomData.maxMembers} MEMBERS
-                  </span>
-                  <span>|</span>
-                  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
-                  <span>|</span>
-                  <span className="truncate">{roomData.course}</span>
-                </div>
+  <span className="bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-[4px] font-pressstart text-[9px]">
+    {roomData.members.length}/{roomData.maxMembers} MEMBERS
+  </span>
+  <span>|</span>
+  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
+  <span>|</span>
+  <span className="truncate">{roomData.course}</span>
+  {roomData.code && (
+    <>
+      <span>|</span>
+      <span className="text-theme-primary font-pressstart text-[9px] uppercase">
+        CODE: {roomData.code}
+      </span>
+    </>
+  )}
+</div>
               </>
             ) : (
               <>
@@ -741,25 +870,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
-                      {/* PLAYER NAMETAG */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
-                        {member.isHost && (
-                          <svg
-                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            title="Host"
-                          >
-                            <path d="M0 0h24v24H0z" fill="none" />
-                            <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
-                          </svg>
-                        )}
-                        <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
-                          {member.username} {member.isCurrentUser}
-                        </span>
-                      </div>
+  {member.isHost && (
+    <svg
+      className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      title="Host"
+    >
+      <path d="M0 0h24v24H0z" fill="none" />
+      <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
+    </svg>
+  )}
+  <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
+    {member.username}
+  </span>
+</div>
 
-                      {/* AVATAR PROFILE POPOVER */}
                       {isProfileOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
@@ -804,16 +931,16 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
                             {!member.isCurrentUser && (
                               <button
-                                onClick={() => handleAddFriend(memberKey)}
-                                disabled={isFriendRequestSent}
-                                className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
-                                  isFriendRequestSent
-                                    ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
-                                    : 'bg-theme-primary text-theme-white border-theme-dark hover:bg-[#d0622c]'
-                                }`}
-                              >
-                                {isFriendRequestSent ? 'SENT' : '+ ADD'}
-                              </button>
+                              onClick={() => handleAddFriend(member)}
+                              disabled={isFriendRequestSent}
+                              className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
+                                isFriendRequestSent
+                                  ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
+                                  : 'bg-theme-primary text-theme-white border-theme-dark hover:bg-[#d0622c]'
+                              }`}
+                            >
+                              {isFriendRequestSent ? 'SENT' : '+ ADD'}
+                            </button>
                             )}
                           </div>
 
@@ -875,7 +1002,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           </div>
         </section>
 
-        {/* RIGHT COLUMN: TIMER & (ROOM ACTIVITY OR RECENT ACTIVITY) */}
+        {/* RIGHT COLUMN: TIMER & RECENT ACTIVITY */}
         <div className="flex flex-col gap-5 w-full">
           <ActiveSessionWidget
             activeSession={timer.activeSession}
@@ -907,17 +1034,15 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       {completedTasksCount}/{timer.tasksList.length} COMPLETED
                     </span>
                   ) : (
-                    <>
-                      <button
-                        onClick={() => setShowRoomActivityModal(true)}
-                        className="p-1 text-theme-dark hover:text-theme-primary transition-colors cursor-pointer"
-                        title="View All Logs"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
-                        </svg>
-                      </button>
-                    </>
+                    <button
+                      onClick={() => setShowRoomActivityModal(true)}
+                      className="p-1 text-theme-dark hover:text-theme-primary transition-colors cursor-pointer"
+                      title="View All Logs"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 20H4v-5m0 5l6.5-6.5M15 4h5v5m0-5l-6.5 6.5" />
+                      </svg>
+                    </button>
                   )}
                 </div>
               </div>
@@ -962,14 +1087,14 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               activeSession={timer.activeSession}
               tasksList={timer.tasksList}
               toggleTaskCompletion={timer.toggleTaskCompletion}
-              recentActivities={initialRecentActivities}
+              recentActivities={recentActivities}
               onViewAll={() => setShowRecentModal(true)}
             />
           )}
         </div>
       </div>
 
-      {/* 2ND ROW: FOCUS MUSIC, (MEMBERS OR LEADERBOARD), AND (ROOM CHAT OR CALENDAR) */}
+      {/* 2ND ROW: FOCUS MUSIC, LEADERBOARD, AND CALENDAR */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 w-full">
         {/* FOCUS MUSIC SECTION */}
         <section className="md:col-span-3 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col gap-3 justify-between">
@@ -979,7 +1104,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             onEnded={handleTrackEnd}
           />
 
-          {/* HEADER */}
           <div className="flex items-center justify-between pb-2 border-b-2 border-theme-dark/20">
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -994,7 +1118,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </div>
           </div>
 
-          {/* VINYL CD ANIMATION */}
           <div className="flex items-center justify-center my-1">
             <div className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center">
               <div className={`w-full h-full rounded-full bg-[#121212] border-4 border-theme-dark shadow-md flex items-center justify-center relative overflow-hidden ${
@@ -1012,7 +1135,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </div>
           </div>
 
-          {/* TRACK DROPDOWN SELECTOR */}
           <div className="flex flex-col gap-1">
             <label className="font-pressstart text-[7px] text-theme-dark/60 uppercase">CHOOSE TRACK</label>
             <select
@@ -1028,7 +1150,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </select>
           </div>
 
-          {/* TRACK METADATA */}
           <div className="flex flex-col text-center">
             <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-dark truncate">
               {currentTrack.name}
@@ -1038,7 +1159,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </span>
           </div>
 
-          {/* SPOTIFY STYLE CONTROLS */}
           <div className="flex flex-col gap-2 pt-1">
             <div className="flex items-center justify-between px-2">
               <button
@@ -1102,7 +1222,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
             </div>
 
-            {/* VOLUME SLIDER */}
             <div className="flex items-center gap-2 px-1 pt-1">
               <svg className="w-3.5 h-3.5 text-theme-dark/60 shrink-0" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
@@ -1130,40 +1249,58 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </div>
 
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[250px] pr-1">
-              {roomData.members.map((member, idx) => (
-                <div
-                  key={member.id || idx}
-                  className={`flex items-center justify-between p-2.5 rounded-[8px] border-[1.5px] ${
-                    member.isHost 
-                      ? 'bg-theme-surface border-theme-primary shadow-sm' 
-                      : 'bg-theme-muted/40 border-theme-dark/20'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <img src={member.avatar} alt="PFP" className="w-7 h-7 rounded-full border border-theme-dark bg-theme-surface shrink-0" />
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className="font-pressstart text-[9px] text-theme-dark truncate">{member.username}</span>
-                        {member.isHost && (
-                          <span className="bg-theme-primary text-theme-white font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
-                        )}
-                        {member.isCurrentUser && (
-                          <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
+              {roomData.members.map((member, idx) => {
+                const memberAvatarConfig = getLeaderboardAvatarConfig(member);
+                return (
+                  <div
+                    key={member.id || idx}
+                    className={`flex items-center justify-between p-2.5 rounded-[8px] border-[1.5px] ${
+                      member.isHost 
+                        ? 'bg-theme-surface border-theme-primary shadow-sm' 
+                        : 'bg-theme-muted/40 border-theme-dark/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0 w-7 h-7 rounded-[4px] border border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
+                        {memberAvatarConfig ? (
+                          <div 
+                            className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                            style={{ transform: 'scale(0.38) translateY(12px)' }}
+                          >
+                            <CustomAvatar config={memberAvatarConfig} state="idle" />
+                          </div>
+                        ) : (
+                          <img
+                            src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
+                            alt={member.username}
+                            className="w-full h-full object-cover"
+                          />
                         )}
                       </div>
-                      <span className="font-pressstart text-[7px] text-theme-dark/60">LVL {member.level}</span>
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1">
+                          <span className="font-pressstart text-[9px] text-theme-dark truncate">{member.username}</span>
+                          {member.isHost && (
+                            <span className="bg-theme-primary text-theme-white font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
+                          )}
+                          {member.isCurrentUser && (
+                            <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
+                          )}
+                        </div>
+                        <span className="font-pressstart text-[7px] text-theme-dark/60">LVL {member.level || 1}</span>
+                      </div>
                     </div>
-                  </div>
 
-                  <span className={`font-pressstart text-[7px] px-2 py-1 rounded border ${
-                    member.status === 'IN SESSION'
-                      ? 'bg-theme-safe/20 text-theme-safe border-theme-safe'
-                      : 'bg-theme-dark/10 text-theme-dark/70 border-theme-dark/30'
-                  }`}>
-                    {member.status}
-                  </span>
-                </div>
-              ))}
+                    <span className={`font-pressstart text-[7px] px-2 py-1 rounded border ${
+                      member.status === 'IN SESSION'
+                        ? 'bg-theme-safe/20 text-theme-safe border-theme-safe'
+                        : 'bg-theme-dark/10 text-theme-dark/70 border-theme-dark/30'
+                    }`}>
+                      {member.status || 'ONLINE'}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </section>
         ) : (
@@ -1396,7 +1533,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             </div>
 
             <div className="flex flex-col gap-1.5 overflow-y-auto pr-1 max-h-[60vh]">
-              {initialRecentActivities.map((item, idx) => renderActivityItem(item, idx))}
+              {recentActivities.length === 0 ? (
+                <p className="font-pressstart text-[9px] text-theme-dark/60 text-center py-6">No recorded sessions yet.</p>
+              ) : (
+                recentActivities.map((item, idx) => renderActivityItem(item, idx))
+              )}
             </div>
           </div>
         </div>
@@ -1546,7 +1687,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 <div className="flex items-center gap-1">
                   <button 
                     onClick={handlePrevMonth} 
-                    className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
                     aria-label="Previous Month"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24">
@@ -1556,7 +1697,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   </button>
                   <button 
                     onClick={handleNextMonth} 
-                    className="p-1 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
+                    className="p-1 sm:p-1.5 rounded-[4px] text-theme-dark hover:bg-theme-muted transition-colors cursor-pointer"
                     aria-label="Next Month"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24">
@@ -1609,18 +1750,18 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
             <div className="bg-theme-muted border-2 border-theme-dark p-3 rounded-[8px] w-full flex items-center justify-around dark:bg-zinc-800">
               <div className="flex flex-col">
-                <span className="font-pressstart text-[12px] text-theme-primary">+50 XP</span>
+                <span className="font-pressstart text-[12px] text-theme-primary">+{calculatedExp} XP</span>
                 <span className="font-pixel text-[14px] text-theme-dark/70">REWARD</span>
               </div>
               <div className="w-[1px] h-8 bg-theme-dark/20" />
               <div className="flex flex-col">
-                <span className="font-pressstart text-[12px] text-theme-primary">+10 COINS</span>
+                <span className="font-pressstart text-[12px] text-theme-primary">+{calculatedCoins} COINS</span>
                 <span className="font-pixel text-[14px] text-theme-dark/70">BONOS</span>
               </div>
             </div>
 
             <button
-              onClick={timer.closeRewardModal}
+              onClick={handleClaimAndSaveToDB}
               className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
             >
               CLAIM REWARD
