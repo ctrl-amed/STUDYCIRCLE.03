@@ -15,6 +15,7 @@ import json
 import google.generativeai as genai
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from pypdf import PdfReader
+import uuid
 
 load_dotenv()
 
@@ -635,33 +636,163 @@ def send_message():
 # --- 8. SAVE STUDY SESSION ---
 @app.route('/api/save-session', methods=['POST'])
 def save_session():
-    data = request.json
+    data = request.json or {}
     email = data.get('email')
     activity = data.get('activity', 'Focus Session')
     technique = data.get('technique', 'Pomodoro')
-    duration = data.get('duration', 0) # in minutes
+    duration = int(data.get('duration', 0))
+    total_tasks = int(data.get('totalTasks', 0))
+    completed_tasks = int(data.get('completedTasks', 0))
     
     try:
         supabase.table('study_sessions').insert({
             "email": email,
             "activity_name": activity,
             "technique": technique,
-            "duration_minutes": duration
+            "duration_minutes": duration,
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks
         }).execute()
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 9. GET RECENT SESSIONS ---
-@app.route('/api/get-sessions', methods=['GET'])
-def get_sessions():
-    email = request.args.get('email')
-    try:
-        response = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).execute()
-        return jsonify({"success": True, "sessions": response.data}), 200
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500    
 
+# --- 9. v2.1 EXP ENGINE & API SPECIFICATION CONTROLLER ---
+@app.route('/api/v1/sessions/complete', methods=['POST'])
+def complete_focus_session():
+    data = request.json or {}
+    raw_email = data.get('email', '').strip()
+    duration_minutes = int(data.get('durationMinutes', 25))
+    technique = data.get('technique', 'Pomodoro').strip()
+    tasks_completed = max(0, int(data.get('tasksCompleted', 0)))
+    total_tasks = max(tasks_completed, int(data.get('totalTasks', tasks_completed)))
+    activity_name = data.get('activity', 'Focus Session')
+    
+    is_multiplayer = data.get('isMultiplayer', False)
+    is_host = data.get('isHost', False)
+    room_size = int(data.get('roomSize', 1))
+
+    if not raw_email:
+        return jsonify({"success": False, "error": "Email is required."}), 400
+
+    try:
+        if room_size > 6:
+            return jsonify({"success": False, "error": f"Group room size exceeds strict limit: N = {room_size}. Max N = 6."}), 400
+
+        user_res = supabase.table('users').select('*').ilike('email', raw_email).execute()
+        if not user_res.data:
+            return jsonify({"success": False, "error": f"User record not found for {raw_email}"}), 404
+
+        user = user_res.data[0]
+        user_id = user['id']
+        current_xp = float(user.get('cumulative_xp') or user.get('current_xp') or 0.0)
+        current_coins = int(user.get('coins') or 0)
+        current_level = int(user.get('current_level') or user.get('level') or 1)
+
+        # v2.1 Master EXP Formula
+        R_base = 0.4
+        tech_upper = technique.upper()
+        if '52' in tech_upper:
+            tech_key = '52-17'
+            mu_tech = 1.1
+        elif '90' in tech_upper or 'ULTRADIAN' in tech_upper:
+            tech_key = 'ULTRADIAN'
+            mu_tech = 1.2
+        else:
+            tech_key = 'POMODORO'
+            mu_tech = 1.0
+
+        mu_checklist = 1.0 + min(tasks_completed * 0.05, 0.25)
+
+        if not is_multiplayer or room_size <= 1:
+            session_type = 'SOLO'
+            SessMult = 1.00
+        elif is_host:
+            session_type = 'HOST'
+            SessMult = 1.15
+        else:
+            session_type = 'MEMBER'
+            SessMult = 1.05
+
+        if room_size <= 1:
+            CapMult = 1.00
+        elif room_size == 2:
+            CapMult = 1.05
+        elif room_size <= 5:
+            CapMult = 1.10
+        elif room_size == 6:
+            CapMult = 1.15
+        else:
+            CapMult = 1.00
+
+        bonus_exp = 4.0 if (tech_key == 'ULTRADIAN' and duration_minutes >= 90) else 0.0
+
+        base_calc = duration_minutes * R_base * mu_tech * mu_checklist
+        calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
+        rounded_exp_gained = round(calculated_exp, 4)
+
+        base_coins_gained = int(duration_minutes * 0.2)
+
+        new_xp = current_xp + rounded_exp_gained
+        new_coins = current_coins + base_coins_gained
+
+        LEVEL_MATRIX = [
+            {"level": 1, "cumulativeXP": 0, "nextXP": 1701},
+            {"level": 5, "cumulativeXP": 1701, "nextXP": 11102},
+            {"level": 10, "cumulativeXP": 11102, "nextXP": 31993},
+            {"level": 15, "cumulativeXP": 31993, "nextXP": 67128},
+            {"level": 20, "cumulativeXP": 67128, "nextXP": 118800},
+            {"level": 25, "cumulativeXP": 118800, "nextXP": 189018},
+            {"level": 30, "cumulativeXP": 189018, "nextXP": 392183},
+            {"level": 40, "cumulativeXP": 392183, "nextXP": 689494},
+            {"level": 50, "cumulativeXP": 689494, "nextXP": 689494}
+        ]
+
+        new_level = current_level
+        new_max_xp = 1701
+        for item in LEVEL_MATRIX:
+            if new_xp >= item["cumulativeXP"]:
+                new_level = item["level"]
+                new_max_xp = item["nextXP"]
+
+        # 1. Update users table
+        supabase.table('users').update({
+            "cumulative_exp": new_xp,
+            "current_xp": int(round(new_xp)),
+            "coins": new_coins,
+            "current_level": new_level,
+            "level": new_level,
+            "max_xp": new_max_xp
+        }).eq('id', user_id).execute()
+
+        # 2. Insert study_sessions table na may kasamang tasks metrics
+        supabase.table('study_sessions').insert({
+            "email": user['email'],
+            "activity_name": activity_name,
+            "technique": technique,
+            "duration_minutes": duration_minutes,
+            "total_tasks": total_tasks,
+            "completed_tasks": tasks_completed
+        }).execute()
+
+        print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{base_coins_gained} Coins, Tasks: {tasks_completed}/{total_tasks}")
+
+        return jsonify({
+            "success": True,
+            "expGained": rounded_exp_gained,
+            "currentXP": int(round(new_xp)),
+            "totalExp": new_xp,
+            "coins": new_coins,
+            "level": new_level,
+            "maxXP": new_max_xp,
+            "didLevelUp": new_level > current_level
+        }), 200
+
+    except Exception as e:
+        print("[v2.1 EXP ERROR]:", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+    
 # 1. Endpoint para sa AI Chat (Kitsu AI Chat)
 @app.route('/api/kitsu-chat', methods=['POST'])
 def kitsu_chat():
@@ -805,8 +936,10 @@ def handle_sync_timer(data):
 
 @app.route('/api/ai-recommendation', methods=['POST'])
 def ai_recommendation():
-    data = request.get_json()
+    data = request.get_json() or {}
     email = data.get('email')
+    work_type = data.get('workType', 'General Work')
+    tasks = data.get('tasks', [])
 
     if not email:
         return jsonify({'success': False, 'error': 'Email is required.'}), 400
@@ -817,16 +950,20 @@ def ai_recommendation():
         user_history = sessions_res.data
 
         history_summary = f"User study history records: {user_history}" if user_history else "New user with no prior recorded sessions."
+        tasks_summary = f"Current tasks planned: {tasks}" if tasks else "No specific tasks listed yet."
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-3.6-flash')
 
         prompt = f"""
         You are Kitsu AI, an expert study coach inside StudyCircle. 
-        Analyze the following study habits and history of the user:
-        {history_summary}
+        Analyze the following user profile and session context:
+        - Work Type / Focus: {work_type}
+        - {tasks_summary}
+        - {history_summary}
 
-        Based on their habits, focus duration patterns, and consistency, recommend the best study technique for them (Choose strictly from: Pomodoro, 52-17 Rule, or Ultradian 90-Minute Rhythm). 
+        Based on their habits, focus duration patterns, consistency, current work type, and checklist load, recommend the best study technique for them. 
+        Choose strictly from: Pomodoro (25m focus / 5m break), 52-17 Rule (52m focus / 17m break), or Ultradian 90-Minute Rhythm (90m focus / 20m break). 
         Provide a short, friendly, and motivating explanation (max 3 sentences) on why this technique fits them right now.
         """
 
@@ -1205,6 +1342,108 @@ You have received a new feedback and feature idea from a user:
     except Exception as e:
         print("Error sending feedback email:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/rooms', methods=['GET'])
+def get_rooms():
+    try:
+        res = supabase.table('rooms').select('*').order('created_at', desc=True).execute()
+        return jsonify({'success': True, 'rooms': res.data}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/rooms', methods=['POST'])
+def create_room():
+    data = request.get_json() or {}
+    try:
+        room_payload = {
+            "name": data.get('name'),
+            "course": data.get('course', 'General Studies'),
+            "host": data.get('host'),
+            "privacy": data.get('privacy', 'public'),
+            "code": data.get('code'),
+            "current_members": data.get('current_members', 1),
+            "max_members": data.get('max_members', 4),
+            "technique": data.get('technique', 'Pomodoro'),
+            "focus": data.get('focus', '1h 00m'),
+            "break_time": data.get('breakTime', '0h 15m'),
+            "sessions": data.get('sessions', 1),
+            "tasks": data.get('tasks', []),
+            "xp": data.get('xp', 0),
+            "coins": data.get('coins', 0)
+        }
+        res = supabase.table('rooms').insert(room_payload).execute()
+        return jsonify({'success': True, 'room': res.data[0]}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# Halimbawa ng in-memory room members tracker para sa real-time sync
+room_members = {}
+
+@socketio.on('join_room')
+def on_join_room(data):
+    room = data.get('room')
+    username = data.get('username')
+    avatar_config = data.get('avatar_config')
+    status = data.get('status', 'ONLINE')
+    level = data.get('level', 1)
+    
+    join_room(room)
+    
+    if room not in room_members:
+        room_members[room] = []
+    
+    existing_user = next((m for m in room_members[room] if m['username'] == username), None)
+    if existing_user:
+        existing_user['status'] = status
+        if avatar_config:
+            existing_user['avatar_config'] = avatar_config
+        existing_user['level'] = level
+    else:
+        room_members[room].append({
+            'id': username,
+            'username': username,
+            'status': status,
+            'avatar_config': avatar_config,
+            'level': level,
+            'isHost': False
+        })
+    
+    emit('room_update', {
+        'members': room_members[room],
+        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+    }, room=room)
+
+@socketio.on('update_status')
+def on_update_status(data):
+    room = data.get('room')
+    username = data.get('username')
+    status = data.get('status')
+    
+    if room in room_members:
+        for m in room_members[room]:
+            if m['username'] == username:
+                m['status'] = status
+        emit('room_update', {'members': room_members[room], 'logs': []}, room=room)
+
+@socketio.on('leave_room')
+def on_leave_room(data):
+    room = data.get('room')
+    username = data.get('username')
+    
+    leave_room(room)
+    
+    if room in room_members:
+        room_members[room] = [m for m in room_members[room] if m['username'] != username]
+        emit('room_update', {
+            'members': room_members[room],
+            'logs': [{'id': 'leave_' + username, 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+        }, room=room)
+
+@socketio.on('send_room_message')
+def on_send_room_message(data):
+    room = data.get('room')
+    # I-broadcast sa lahat ng nasa room kasama ang nag-send
+    emit('receive_room_message', data, room=room)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
