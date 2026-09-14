@@ -3,17 +3,17 @@ import { usePlayer } from '../context/PlayerContext';
 
 const TECHNIQUE_CONFIGS = {
   POMODORO: {
-    gracePeriodMs: 3 * 60 * 1000,
+    gracePeriodMs: 3 * 60 * 1000, // 3 minutes grace period
     cooldownMs: 5 * 60 * 1000,
     maxCap: 2,
   },
   MEDIUM: {
-    gracePeriodMs: 5 * 60 * 1000,
+    gracePeriodMs: 5 * 60 * 1000, // 5 minutes grace period
     cooldownMs: 10 * 60 * 1000,
     maxCap: 3,
   },
   ULTRADIAN: {
-    gracePeriodMs: 10 * 60 * 1000,
+    gracePeriodMs: 10 * 60 * 1000, // 10 minutes grace period
     cooldownMs: 15 * 60 * 1000,
     maxCap: 4,
   },
@@ -308,7 +308,7 @@ export function useTimer() {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
         setIsIdle(true);
-      }, 120000);
+      }, 120000); // 2 minutes of actual inactivity before triggering nudge
     };
 
     window.addEventListener('mousemove', handleUserActivity);

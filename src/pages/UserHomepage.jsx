@@ -1719,6 +1719,45 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
+      {/* AFK / NUDGE VERIFICATION MODAL */}
+      {timer.showNudgeModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl animate-bounce">👀</div>
+            
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">
+              STUDY CHECK!
+            </h3>
+
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              Are you still studying? Confirm your presence to keep the focus timer running!
+            </p>
+
+            <div className="bg-theme-muted border-2 border-theme-dark px-4 py-2 rounded-[8px] w-full flex items-center justify-center gap-2 dark:bg-zinc-800">
+              <span className="font-pressstart text-[10px] text-theme-dark/70">Pausing in:</span>
+              <span className="font-pressstart text-[14px] text-theme-danger font-bold">{timer.nudgeCountdown}s</span>
+            </div>
+
+            <button
+              onClick={timer.handleConfirmNudge}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              YES, I'M HERE!
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* RETRO TOAST NOTIFICATION */}
+      {timer.toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999] bg-theme-surface border-2 border-theme-dark px-4 py-3 rounded-[8px] shadow-2xl flex items-center gap-3 animate-bounce-short dark:bg-zinc-900">
+          <span className="text-xl">⚠️</span>
+          <span className="font-pressstart text-[9px] text-theme-dark">
+            {timer.toastMessage}
+          </span>
+        </div>
+      )}
+
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short dark:bg-zinc-900">
