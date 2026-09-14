@@ -1010,68 +1010,131 @@ def handle_sync_timer(data):
     room = data.get('room')
     emit('timer_update', data, room=room, include_self=False)
 
+# WSM Constants mula sa Architecture Spec
+TASK_WEIGHTS = {
+    "Creation": {"df": 0.8, "fm": 0.1, "cs": 0.1},
+    "Writing": {"df": 0.7, "fm": 0.2, "cs": 0.1},
+    "Practicing": {"df": 0.6, "fm": 0.3, "cs": 0.1},
+    "Reading": {"df": 0.5, "fm": 0.4, "cs": 0.1},
+    "Review": {"df": 0.2, "fm": 0.4, "cs": 0.4},
+    "Memorize": {"df": 0.1, "fm": 0.5, "cs": 0.4}
+}
+
+FRAMEWORK_SCORES = {
+    "Pomodoro": {"df": 2, "fm": 10, "cs": 9},
+    "52-17 Method": {"df": 6, "fm": 6, "cs": 5},
+    "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
+}
+
 @app.route('/api/ai-recommendation', methods=['POST'])
 def ai_recommendation():
     data = request.get_json() or {}
     email = data.get('email')
-    work_type = data.get('workType', 'General Work')
+    work_type = data.get('workType', 'Reading')
     tasks = data.get('tasks', [])
 
     if not email:
         return jsonify({'success': False, 'error': 'Email is required.'}), 400
 
     try:
-        # Kunin ang nakaraang study history ng user mula sa Supabase para malaman ang completion patterns
-        sessions_res = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).limit(5).execute()
-        user_history = sessions_res.data
+        # 1. Kunin ang history mula sa Supabase para sa Historical Modifier ($H_f$)
+        sessions_res = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).limit(20).execute()
+        user_history = sessions_res.data or []
 
-        history_summary = f"Recent history records: {user_history}" if user_history else "New user with no prior recorded sessions."
-        tasks_summary = f"Task list ({len(tasks)} items): {tasks}" if tasks else "No specific tasks listed yet."
+        perf_tracking = {
+            "Pomodoro": {"attempts": 0, "successes": 0},
+            "52-17 Method": {"attempts": 0, "successes": 0},
+            "90m Deep Work": {"attempts": 0, "successes": 0}
+        }
+        for s in user_history:
+            tech = s.get('technique', 'Pomodoro')
+            if tech in perf_tracking:
+                perf_tracking[tech]["attempts"] += 1
+                if s.get('status') in ['early', 'on-time', 'completed']:
+                    perf_tracking[tech]["successes"] += 1
 
+        def get_historical_modifier(fw_name):
+            rec = perf_tracking[fw_name]
+            if rec["attempts"] < 3:
+                return 1.0
+            return max(0.5, rec["successes"] / rec["attempts"])
+
+        # 2. WSM Session Weight Calculation (Averaging weights across tasks)
+        matched_categories = []
+        for t in tasks:
+            t_lower = str(t).lower()
+            matched = "Reading"
+            for cat in TASK_WEIGHTS.keys():
+                if cat.lower() in t_lower or cat.lower() in work_type.lower():
+                    matched = cat
+                    break
+            matched_categories.append(matched)
+        
+        if not matched_categories:
+            matched_categories = ["Reading"]
+
+        num_tasks = len(matched_categories)
+        total_df = sum(TASK_WEIGHTS[cat]["df"] for cat in matched_categories)
+        total_fm = sum(TASK_WEIGHTS[cat]["fm"] for cat in matched_categories)
+        total_cs = sum(TASK_WEIGHTS[cat]["cs"] for cat in matched_categories)
+
+        session_weights = {
+            "df": total_df / num_tasks,
+            "fm": total_fm / num_tasks,
+            "cs": total_cs / num_tasks
+        }
+
+        # 3. WSM Framework Scoring & Selection
+        best_framework = "Pomodoro"
+        highest_score = -1
+        framework_details = {
+            "Pomodoro": {"focus": 25, "break": 5, "sessions": 4},
+            "52-17 Method": {"focus": 52, "break": 17, "sessions": 3},
+            "90m Deep Work": {"focus": 90, "break": 20, "sessions": 2}
+        }
+
+        for fw, scores in FRAMEWORK_SCORES.items():
+            base_score = (
+                (session_weights["df"] * scores["df"]) +
+                (session_weights["fm"] * scores["fm"]) +
+                (session_weights["cs"] * scores["cs"])
+            )
+            h_mod = get_historical_modifier(fw)
+            final_score = base_score * h_mod
+
+            if final_score > highest_score:
+                highest_score = final_score
+                best_framework = fw
+
+        config = framework_details[best_framework]
+
+        # 4. Gamitin ang Gemini 1.5 Flash para sa user-facing explanation rationale
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-3.6-flash')
 
         prompt = f"""
         You are Kitsu AI, an expert adaptive study coach inside StudyCircle. 
-        Analyze the following user context deeply:
-        - Work Type / Focus: {work_type}
-        - {tasks_summary}
-        - {history_summary}
-
-        Instructions for Recommendation:
-        1. Evaluate the *weight/complexity* of the tasks (e.g., writing a heavy chapter vs. writing a quick essay).
-        2. Evaluate the *volume* of the task list (many items vs. few items).
-        3. Look at past *history*: If past sessions show incomplete tasks or short focus spans, adjust to more sustainable intervals. If they finish successfully, you can suggest deep work.
-        4. Choose strictly one technique configuration matching these rules:
-           - Pomodoro -> Name: "Pomodoro", Focus: 25, Break: 5, Sessions: 4
-           - 52-17 Rule -> Name: "52-17 Method", Focus: 52, Break: 17, Sessions: 3
-           - Deep Work -> Name: "90m Deep Work", Focus: 90, Break: 20, Sessions: 2
-
-        Return the output strictly as a valid JSON object in this exact format, with no markdown code blocks or extra text:
-        {{
-          "techniqueName": "Pomodoro",
-          "focus": 25,
-          "break": 5,
-          "sessions": 4,
-          "recommendation": "A short, friendly, and motivating explanation (max 3 sentences) acknowledging their specific tasks, weight, and history."
-        }}
+        A Weighted Sum Model algorithm determined that the user should use the '{best_framework}' technique ({config['focus']}m focus / {config['break']}m break) based on their tasks: {tasks}.
+        Write a short, friendly, and motivating explanation (max 3 sentences) acknowledging their specific tasks and why this technique matches their cognitive profile.
+        Return ONLY the explanation text.
         """
 
         response = model.generate_content(prompt)
-        result_text = response.text.strip()
-        
-        if result_text.startswith("```json"):
-            result_text = result_text[7:]
-        if result_text.endswith("```"):
-            result_text = result_text[:-3]
+        rationale = response.text.strip()
 
-        parsed_data = json.loads(result_text.strip())
-        return jsonify({'success': True, **parsed_data}), 200
+        return jsonify({
+            'success': True,
+            'techniqueName': best_framework,
+            'focus': config['focus'],
+            'break': config['break'],
+            'sessions': config['sessions'],
+            'recommendation': rationale
+        }), 200
 
     except Exception as e:
-        print("AI Recommendation Error:", str(e))
+        print("WSM AI Recommendation Error:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
-
+    
 @app.route('/api/update-coins', methods=['POST'])
 def update_coins_db():
     data = request.json
