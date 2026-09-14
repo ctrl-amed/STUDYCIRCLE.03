@@ -266,6 +266,7 @@ export function ActiveSessionWidget({
               {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
             </button>
           </div>
+          
 
           <div className="grid grid-cols-3 gap-2 border-t border-theme-dark/20 pt-3 text-center">
             <div className="flex items-center justify-center gap-2">

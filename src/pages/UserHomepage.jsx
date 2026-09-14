@@ -57,49 +57,6 @@ const memberPositionsByCount = {
   ]
 };
 
-const mockPlayerList = [
-  { 
-    id: 1, 
-    username: "PIXEL_SAM", 
-    level: 5,
-    status: "IN SESSION",
-    totalFocusTime: "124h 15m",
-    config: { body: "BODY1", face: "FACE2", tops: "TOP3", bottoms: "BOTTOM2", hair: "HAIR1" }
-  },
-  { 
-    id: 2, 
-    username: "LOFI_LUNA", 
-    level: 12,
-    status: "ONLINE",
-    totalFocusTime: "88h 40m",
-    config: { body: "BODY1", face: "FACE1", tops: "TOP5", bottoms: "BOTTOM4", hair: "HAIR3" }
-  },
-  { 
-    id: 3, 
-    username: "STUDY_BEAR", 
-    level: 3,
-    status: "IN SESSION",
-    totalFocusTime: "45h 10m",
-    config: { body: "BODY1", face: "FACE3", tops: "TOP1", bottoms: "BOTTOM1" }
-  },
-  { 
-    id: 4, 
-    username: "COZY_CAT",  
-    level: 8,
-    status: "ONLINE",
-    totalFocusTime: "92h 05m",
-    config: { body: "BODY1", face: "FACE4", tops: "TOP2", bottoms: "BOTTOM3", hair: "HAIR2" }
-  },
-  { 
-    id: 5, 
-    username: "NIGHT_OWL", 
-    level: 15,
-    status: "IN SESSION",
-    totalFocusTime: "210h 30m",
-    config: { body: "BODY1", face: "FACE1", tops: "TOP4", bottoms: "BOTTOM6", hair: "HAIR4" }
-  }
-];
-
 const mockRoomData = {
   roomName: "Algorithms & Data Structures Study Group",
   course: "CS 201 - Data Structures",
@@ -160,6 +117,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [sentFriendRequests, setSentFriendRequests] = useState([]);
+  const [incomingRequest, setIncomingRequest] = useState(null);
 
   const [activeTab, setActiveTab] = useState('all-time');
   const [leaderboardData, setLeaderboardData] = useState({
@@ -187,28 +145,55 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const audioRef = useRef(null);
   const currentTrack = LOFI_TRACKS[currentTrackIndex];
 
-  // Dynamic v2.1 rewards calculation
+  const getUserEmail = () => {
+    if (player.email) return player.email;
+    if (playerData?.email) return playerData.email;
+    if (localStorage.getItem('user_email')) return localStorage.getItem('user_email');
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+      if (storedUser.email) return storedUser.email;
+    } catch (e) {}
+    return '';
+  };
+
   const savedSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
   const durationMins = timer.activeSession?.focusTime || savedSession.focusTime || 25;
   const rawTech = (timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro').toUpperCase();
   const techKey = rawTech.includes('52') ? '52-17' : rawTech.includes('90') ? 'ULTRADIAN' : 'POMODORO';
 
-  const currentTasks = timer.tasksList && timer.tasksList.length > 0
-    ? timer.tasksList
-    : (savedSession.tasks || []).map((t) => ({ text: t, completed: true }));
+  const getSessionTasks = () => {
+    if (timer.tasksList && timer.tasksList.length > 0) {
+      return timer.tasksList;
+    }
+    if (timer.activeSession?.tasks && timer.activeSession.tasks.length > 0) {
+      return timer.activeSession.tasks.map(t => typeof t === 'string' ? { text: t, completed: true } : t);
+    }
+    if (savedSession.tasks && savedSession.tasks.length > 0) {
+      return savedSession.tasks.map(t => typeof t === 'string' ? { text: t, completed: true } : t);
+    }
+    return [];
+  };
 
+  const currentTasks = getSessionTasks();
   const totalTasks = currentTasks.length;
-  const completedTasks = currentTasks.filter((t) => t.completed).length;
+  const completedTasks = currentTasks.filter((t) => t.completed || t.status === 'completed').length;
 
   const techMultipliers = { 'POMODORO': 1.0, '52-17': 1.1, 'ULTRADIAN': 1.2 };
   const techMult = techMultipliers[techKey] || 1.0;
   const checklistMult = 1.0 + Math.min(completedTasks * 0.05, 0.25);
   const baseRate = 0.4;
   const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
-  const calculatedCoins = Math.floor(durationMins * 0.2);
+  const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
+
+  const isCurrentUserHost = roomData.members.some((m) => m.isCurrentUser && m.isHost);
 
   const handleClaimAndSaveToDB = async () => {
-    const userEmail = player.email || playerData?.email || localStorage.getItem('user_email') || '';
+    const userEmail = getUserEmail();
+
+    if (!userEmail) {
+      alert("Error: User email not found. Please log in again.");
+      return;
+    }
 
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
@@ -220,6 +205,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           technique: timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro',
           tasksCompleted: completedTasks,
           totalTasks: totalTasks,
+          tasksList: currentTasks,
           activity: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
           isMultiplayer: isMultiplayer,
           isHost: isCurrentUserHost,
@@ -229,8 +215,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
       const data = await response.json();
       if (data.success) {
-        console.log("v2.1 Server-side Calculation Successful:", data);
-        
         const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
         storedUser.coins = data.coins;
         storedUser.currentXP = data.currentXP;
@@ -238,13 +222,24 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         storedUser.maxXP = data.maxXP;
         localStorage.setItem('user', JSON.stringify(storedUser));
 
+        const historyItem = {
+          workType: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
+          techniqueName: timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro',
+          focusTime: durationMins,
+          sessionCount: 1,
+          tasks: currentTasks,
+          finishedAt: new Date().toISOString()
+        };
+        const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+        localStorage.setItem('completed_sessions_history', JSON.stringify([historyItem, ...existingHistory]));
+
         localStorage.removeItem('activeSession');
         window.location.reload();
       } else {
-        console.error("Backend failed to save:", data.error);
+        alert("Failed to save session: " + data.error);
       }
     } catch (err) {
-      console.error("Error committing session and v2.1 transaction:", err);
+      alert("Network error while saving session.");
     } finally {
       timer.closeRewardModal();
     }
@@ -263,11 +258,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return null;
   };
 
+  const handleHostDecision = (approved) => {
+    if (socketRef.current && incomingRequest) {
+      socketRef.current.emit('host_room_response', {
+        room: roomData.roomName,
+        username: incomingRequest.username,
+        approved: approved
+      });
+    }
+    setIncomingRequest(null);
+  };
+
   useEffect(() => {
     const fetchUserSessions = async () => {
-      if (!player.email) return;
+      const emailToUse = getUserEmail();
+      if (!emailToUse) return;
       try {
-        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${player.email}`);
+        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
         const data = await response.json();
         if (data.success && data.sessions) {
           const rawSessions = data.sessions;
@@ -353,6 +360,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         setRoomChat((prev) => [...prev, msg]);
       });
 
+      socketRef.current.on('incoming_join_request', (data) => {
+        if (isCurrentUserHost) {
+          setIncomingRequest(data);
+        }
+      });
+
       return () => {
         if (socketRef.current) {
           socketRef.current.emit('leave_room', { 
@@ -363,7 +376,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         }
       };
     }
-  }, [isMultiplayer, roomData.roomName, player.username]);
+  }, [isMultiplayer, roomData.roomName, player.username, isCurrentUserHost]);
 
   const handleSendRoomMessage = (e) => {
     e.preventDefault();
@@ -437,35 +450,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   }, []);
 
   useEffect(() => {
-    const handleMessage = (e) => {
-      if (e.data === 'CLOSE_CREATE_SESSION_MODAL') {
-        const raw = localStorage.getItem('activeSession');
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (parsed && Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-              const newLogs = parsed.tasks.map((taskText, index) => ({
-                id: `session_task_${index}_${Date.now()}`,
-                user: player.username,
-                action: `task: ${taskText}`,
-                time: 'Just now',
-              }));
-              setRoomData((prev) => ({
-                ...prev,
-                auditLogs: newLogs,
-              }));
-            }
-          } catch (err) {
-            console.error('Error parsing activeSession:', err);
-          }
-        }
-      }
-    };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [player.username]);
-
-  useEffect(() => {
     const storedSession = localStorage.getItem('activeRoomSession');
     const stateIsMultiplayer = location.state?.isMultiplayer;
 
@@ -482,7 +466,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       const roomName = parsed?.name || parsed?.roomName || "Study Room";
       const hostUsername = parsed?.host || player.username;
 
-      // Initial local user bilang unang miyembro
       const currentUser = {
         id: player.email || player.username,
         username: player.username,
@@ -500,43 +483,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         privacy: parsed?.privacy || 'public',
         code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
-        members: [currentUser], // Magsisimula sa totoong user na pumasok
+        members: [currentUser],
         auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
-
-      // --- SOCKET.IO REAL-TIME CONNECTION ---
-      socketRef.current = io('http://localhost:5000');
-
-      socketRef.current.emit('join_room', {
-        room: roomName,
-        username: player.username,
-        level: player.level,
-      });
-
-      // Makinig sa mga bagong miyembro na sumali sa room
-      socketRef.current.on('room_update', (data) => {
-        if (data.members) {
-          setRoomData(prev => ({ ...prev, members: data.members }));
-        }
-        if (data.logs) {
-          setRoomData(prev => ({ ...prev, auditLogs: data.logs }));
-        }
-      });
-
-      // Makinig sa mga bagong chat messages
-      socketRef.current.on('receive_room_message', (msg) => {
-        setRoomChat((prev) => [...prev, msg]);
-      });
-
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.emit('leave_room', {
-            room: roomName,
-            username: player.username,
-          });
-          socketRef.current.disconnect();
-        }
-      };
     } else {
       setIsMultiplayer(false);
     }
@@ -618,8 +567,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          senderEmail: player.email,
-          receiverEmail: identifier // Pwedeng email o username
+          senderEmail: getUserEmail(),
+          receiverEmail: identifier
         })
       });
       const data = await response.json();
@@ -787,13 +736,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const memberCountKey = Math.min(Math.max(roomData.members.length, 1), 6);
   const activePositionMap = memberPositionsByCount[memberCountKey] || memberPositionsByCount[1];
-  const isCurrentUserHost = roomData.members.some((m) => m.isCurrentUser && m.isHost);
 
   return (
     <main className="relative flex-1 min-h-0 w-full max-w-7xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-5">
-      {/* 1ST ROW: 2 COLUMNS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full">
-        {/* LEFT COLUMN: GREETING & AVATAR ROOM */}
         <section className="flex flex-col gap-2 sm:gap-4 p-2 sm:p-4">
           <div>
             {isMultiplayer ? (
@@ -802,22 +748,22 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   {roomData.roomName}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
-  <span className="bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-[4px] font-pressstart text-[9px]">
-    {roomData.members.length}/{roomData.maxMembers} MEMBERS
-  </span>
-  <span>|</span>
-  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
-  <span>|</span>
-  <span className="truncate">{roomData.course}</span>
-  {roomData.code && (
-    <>
-      <span>|</span>
-      <span className="text-theme-primary font-pressstart text-[9px] uppercase">
-        CODE: {roomData.code}
-      </span>
-    </>
-  )}
-</div>
+                  <span className="bg-theme-primary/20 text-theme-primary px-2 py-0.5 rounded-[4px] font-pressstart text-[9px]">
+                    {roomData.members.length}/{roomData.maxMembers} MEMBERS
+                  </span>
+                  <span>|</span>
+                  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
+                  <span>|</span>
+                  <span className="truncate">{roomData.course}</span>
+                  {roomData.code && (
+                    <>
+                      <span>|</span>
+                      <span className="text-theme-primary font-pressstart text-[9px] uppercase">
+                        CODE: {roomData.code}
+                      </span>
+                    </>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -834,7 +780,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             )}
           </div>
 
-          {/* ROOM DISPLAY CONTAINER */}
           <div className="relative w-full flex items-center justify-center rounded-[12px] min-h-[300px]">
             <div className="relative flex items-center justify-center max-w-[1100px] w-full mx-auto">
               <div
@@ -871,21 +816,21 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       }}
                     >
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
-  {member.isHost && (
-    <svg
-      className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      title="Host"
-    >
-      <path d="M0 0h24v24H0z" fill="none" />
-      <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
-    </svg>
-  )}
-  <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
-    {member.username}
-  </span>
-</div>
+                        {member.isHost && (
+                          <svg
+                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            title="Host"
+                          >
+                            <path d="M0 0h24v24H0z" fill="none" />
+                            <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
+                          </svg>
+                        )}
+                        <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
+                          {member.username}
+                        </span>
+                      </div>
 
                       {isProfileOpen && (
                         <div
@@ -931,16 +876,16 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
                             {!member.isCurrentUser && (
                               <button
-                              onClick={() => handleAddFriend(member)}
-                              disabled={isFriendRequestSent}
-                              className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
-                                isFriendRequestSent
-                                  ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
-                                  : 'bg-theme-primary text-theme-white border-theme-dark hover:bg-[#d0622c]'
-                              }`}
-                            >
-                              {isFriendRequestSent ? 'SENT' : '+ ADD'}
-                            </button>
+                                onClick={() => handleAddFriend(member)}
+                                disabled={isFriendRequestSent}
+                                className={`mt-0.5 font-pressstart text-[6px] px-2 py-1 border rounded transition-all cursor-pointer w-fit ${
+                                  isFriendRequestSent
+                                    ? 'bg-gray-300 text-gray-600 border-gray-400 cursor-not-allowed opacity-80'
+                                    : 'bg-theme-primary text-theme-white border-theme-dark hover:bg-[#d0622c]'
+                                }`}
+                              >
+                                {isFriendRequestSent ? 'SENT' : '+ ADD'}
+                              </button>
                             )}
                           </div>
 
@@ -969,8 +914,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               </button>
                             )}
                           </div>
-
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-x-8 border-x-transparent border-t-8 border-t-theme-dark" />
                         </div>
                       )}
 
@@ -1002,7 +945,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           </div>
         </section>
 
-        {/* RIGHT COLUMN: TIMER & RECENT ACTIVITY */}
         <div className="flex flex-col gap-5 w-full">
           <ActiveSessionWidget
             activeSession={timer.activeSession}
@@ -1094,9 +1036,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       </div>
 
-      {/* 2ND ROW: FOCUS MUSIC, LEADERBOARD, AND CALENDAR */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 w-full">
-        {/* FOCUS MUSIC SECTION */}
         <section className="md:col-span-3 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-5 shadow-md flex flex-col gap-3 justify-between">
           <audio
             ref={audioRef}
@@ -1239,7 +1179,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           </div>
         </section>
 
-        {/* MIDDLE COLUMN: ROOM MEMBERS OR LEADERBOARD */}
         {isMultiplayer ? (
           <section className="md:col-span-4 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col gap-3">
             <div className="flex items-center justify-between pb-2 border-b-[2px] border-theme-dark/20">
@@ -1392,7 +1331,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           </section>
         )}
 
-        {/* RIGHT COLUMN: ROOM CHAT OR CALENDAR */}
         {isMultiplayer ? (
           <section className="md:col-span-5 bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 shadow-md flex flex-col gap-2.5 relative">
             <div className="flex items-center justify-between pb-2 border-b border-theme-dark/20">
@@ -1513,7 +1451,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         )}
       </div>
 
-      {/* RECENT ACTIVITIES MODAL */}
       {showRecentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh] dark:bg-zinc-900">
@@ -1543,7 +1480,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
-      {/* FULL ROOM ACTIVITY LOG MODAL */}
       {showRoomActivityModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh] dark:bg-zinc-900">
@@ -1577,7 +1513,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
-      {/* FULLSCREEN LEADERBOARD MODAL */}
       {showLeaderboardModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 w-full max-w-2xl max-h-[85vh] flex flex-col gap-4 shadow-2xl dark:bg-zinc-900">
@@ -1669,7 +1604,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
-      {/* FULLSCREEN CALENDAR OVERLAY */}
       {showCalendarModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-6 transition-all duration-300">
           <div className="w-full max-w-2xl h-[75vh] bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-2xl flex flex-col p-3 sm:p-4 gap-2 dark:bg-zinc-900">
@@ -1734,7 +1668,33 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
-      {/* SESSION COMPLETE REWARD MODAL */}
+      {incomingRequest && isCurrentUserHost && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4">
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">
+              JOIN REQUEST
+            </h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              <span className="font-bold text-theme-primary">{incomingRequest.username}</span> wants to join your private study room.
+            </p>
+            <div className="flex gap-3 w-full mt-2">
+              <button
+                onClick={() => handleHostDecision(false)}
+                className="flex-1 font-pressstart text-[9px] text-theme-white bg-red-600 border-2 border-theme-dark py-2.5 hover:bg-red-700 cursor-pointer uppercase"
+              >
+                DECLINE
+              </button>
+              <button
+                onClick={() => handleHostDecision(true)}
+                className="flex-1 font-pressstart text-[9px] text-theme-white bg-green-600 border-2 border-theme-dark py-2.5 hover:bg-green-700 cursor-pointer uppercase"
+              >
+                ACCEPT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short dark:bg-zinc-900">
@@ -1767,6 +1727,19 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               CLAIM REWARD
             </button>
           </div>
+        </div>
+      )}
+
+      {timer.activeSession && (
+        <div className="fixed bottom-6 right-6 z-[99999]">
+          <button
+            onClick={() => {
+              handleClaimAndSaveToDB();
+            }}
+            className="bg-red-600 hover:bg-red-700 text-white font-pressstart text-[10px] px-4 py-3 rounded-lg border-3 border-theme-dark shadow-2xl cursor-pointer uppercase animate-pulse"
+          >
+            ⚡ INSTANT COMPLETE
+          </button>
         </div>
       )}
     </main>

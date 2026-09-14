@@ -34,6 +34,7 @@ export default function UserRooms() {
 
   // --- STATE MANAGEMENT ---
   const [roomsList, setRoomsList] = useState([]);
+  const [sessionHistory, setSessionHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('all-rooms');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('');
@@ -59,15 +60,17 @@ export default function UserRooms() {
   const [selectedStatsRoom, setSelectedStatsRoom] = useState(null);
   const [pendingJoinRoom, setPendingJoinRoom] = useState(null);
 
-  // Request Countdown State
+  // Request Countdown State & Host Approval State
   const [requestState, setRequestState] = useState('WAITING');
   const [requestTimer, setRequestTimer] = useState(REQUEST_TIMEOUT_SEC);
+  const [incomingJoinRequest, setIncomingJoinRequest] = useState(null);
+
   const timerRef = useRef(null);
   const courseDropdownRef = useRef(null);
   const filterDropdownRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Fetch real rooms from Supabase database via Flask backend
+  // Fetch real rooms from Supabase database and session history from local storage with deduplication
   useEffect(() => {
     const fetchRealRooms = async () => {
       try {
@@ -90,13 +93,45 @@ export default function UserRooms() {
 
     fetchRealRooms();
 
+    // Load session history and remove duplicates using a Map based on 'finishedAt' or unique signature
+    try {
+      const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+      const uniqueHistory = Array.from(
+        new Map(savedHistory.map(item => [item.finishedAt || `${item.workType}-${item.focusTime}-${item.techniqueName}`, item])).values()
+      );
+      setSessionHistory(uniqueHistory);
+    } catch (err) {
+      console.error("Failed to parse session history:", err);
+    }
+
     socketRef.current = io('http://localhost:5000');
 
-    socketRef.current.on('join_response', (response) => {
-      if (response.success) {
-        setRequestState('ACCEPTED');
-      } else {
-        setRequestState('REJECTED');
+    socketRef.current.on('join_request_decision', (data) => {
+      if (data.username === myUsername) {
+        if (data.approved) {
+          setRequestState('ACCEPTED');
+        } else {
+          setRequestState('REJECTED');
+        }
+      }
+    });
+
+    // Listen for incoming join requests if current user is the host
+    socketRef.current.on('incoming_join_request', (data) => {
+      // Check if the current user is hosting the room being requested
+      const hostedRoom = roomsList.find(r => r.name === data.room && r.host === myUsername);
+      if (hostedRoom) {
+        setIncomingJoinRequest(data);
+      }
+    });
+
+    socketRef.current.on('join_request_decision', (data) => {
+      if (data.username === myUsername) {
+        if (data.approved) {
+          setRequestState('ACCEPTED');
+        } else {
+          setRequestState('REJECTED');
+        }
       }
     });
 
@@ -105,7 +140,7 @@ export default function UserRooms() {
         socketRef.current.disconnect();
       }
     };
-  }, []);
+  }, [roomsList, myUsername]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -261,6 +296,17 @@ export default function UserRooms() {
     }
   };
 
+  const respondToHostRequest = (approved) => {
+    if (socketRef.current && incomingJoinRequest) {
+      socketRef.current.emit('host_room_response', {
+        room: incomingJoinRequest.room,
+        username: incomingJoinRequest.username,
+        approved: approved
+      });
+    }
+    setIncomingJoinRequest(null);
+  };
+
   // Filter helper matching search query AND course dropdown filter
   const filterRooms = (list) => {
     const query = searchQuery.toLowerCase();
@@ -278,15 +324,64 @@ export default function UserRooms() {
     });
   };
 
-  const filteredAllRooms = filterRooms(roomsList);
+  // Requirement 1: All Rooms tab displays ONLY public rooms
+  const filteredAllRooms = filterRooms(roomsList.filter((r) => r.privacy.toLowerCase() === 'public'));
+
+  // Requirement 2: My Rooms tab displays rooms created/hosted by the current user
   const filteredMyRooms = filterRooms(roomsList.filter((r) => r.host === myUsername));
-  const filteredHistory = filterRooms([]);
+
+  // Requirement 3: History tab displays summary of previous session history
+  const filteredHistory = sessionHistory.filter((item) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (item.workType && item.workType.toLowerCase().includes(query)) ||
+      (item.techniqueName && item.techniqueName.toLowerCase().includes(query))
+    );
+  });
 
   const filteredCourseOptions = COURSE_OPTIONS.filter((c) =>
     c.toLowerCase().includes(newRoomCourse.toLowerCase())
   );
 
   const renderRoomCard = (room, isHistoryTab = false) => {
+    if (isHistoryTab) {
+      // Render history summary card for past sessions
+      return (
+        <div
+          key={room.id || Math.random()}
+          className="bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-4 flex flex-col gap-3 shadow-sm justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted shrink-0 flex items-center justify-center font-pressstart text-[10px] text-theme-dark">
+              ⏳
+            </div>
+            <div className="flex-1 flex flex-col gap-1 overflow-hidden">
+              <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.workType || 'Focus Session'}</span>
+              <span className="font-pressstart text-[8px] text-theme-primary truncate">
+                🛠️ {room.techniqueName || 'Pomodoro'}
+              </span>
+              <span className="font-pressstart text-[8px] text-theme-dark truncate">
+                Duration: <span className="text-theme-primary">{room.focusTime || 25} mins</span>
+              </span>
+              <span className="font-pressstart text-[7px] text-theme-dark/60 truncate pt-1">
+                Completed: {room.finishedAt ? new Date(room.finishedAt).toLocaleDateString() : 'Recent'}
+              </span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setSelectedStatsRoom(room);
+              setShowStatsModal(true);
+            }}
+            className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+          >
+            STATISTICS
+          </button>
+        </div>
+      );
+    }
+
     const isPublic = room.privacy.toLowerCase() === 'public';
     const privacyStyles = isPublic
       ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
@@ -324,30 +419,18 @@ export default function UserRooms() {
           </div>
         </div>
 
-        {isHistoryTab ? (
-          <button
-            onClick={() => {
-              setSelectedStatsRoom(room);
-              setShowStatsModal(true);
-            }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
-          >
-            STATISTICS
-          </button>
-        ) : (
-          <button
-            onClick={() => {
-              const activeSessionRoom = {
-                ...room,
-                currentMembers: Math.min(room.currentMembers + 1, room.maxMembers),
-              };
-              enterRoomSession(activeSessionRoom);
-            }}
-            className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
-          >
-            JOIN ROOM
-          </button>
-        )}
+        <button
+          onClick={() => {
+            const activeSessionRoom = {
+              ...room,
+              currentMembers: Math.min(room.currentMembers + 1, room.maxMembers),
+            };
+            enterRoomSession(activeSessionRoom);
+          }}
+          className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+        >
+          JOIN ROOM
+        </button>
       </div>
     );
   };
@@ -520,7 +603,7 @@ export default function UserRooms() {
                 filteredAllRooms.map((r) => renderRoomCard(r, false))
               ) : (
                 <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
-                  No rooms found.
+                  No public rooms found.
                 </p>
               )}
             </div>
@@ -758,7 +841,7 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* REQUEST TO JOIN MODAL */}
+      {/* REQUEST TO JOIN MODAL (FOR GUEST) */}
       {showRequestModal && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
@@ -791,6 +874,80 @@ export default function UserRooms() {
                 CLOSE
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* HOST APPROVAL MODAL (FOR HOST) */}
+      {incomingJoinRequest && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4">
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">
+              JOIN REQUEST
+            </h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              <span className="font-bold text-theme-primary">{incomingJoinRequest.username}</span> wants to join your private study room.
+            </p>
+            <div className="flex gap-3 w-full mt-2">
+              <button
+                onClick={() => respondToHostRequest(false)}
+                className="flex-1 font-pressstart text-[9px] text-theme-white bg-red-600 border-2 border-theme-dark py-2.5 hover:bg-red-700 cursor-pointer uppercase"
+              >
+                DECLINE
+              </button>
+              <button
+                onClick={() => respondToHostRequest(true)}
+                className="flex-1 font-pressstart text-[9px] text-theme-white bg-green-600 border-2 border-theme-dark py-2.5 hover:bg-green-700 cursor-pointer uppercase"
+              >
+                ACCEPT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STATISTICS MODAL FOR HISTORY */}
+      {showStatsModal && selectedStatsRoom && (
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl max-h-[85vh] overflow-y-auto">
+            <h3 className="font-pressstart text-[12px] text-theme-primary uppercase text-center">SESSION STATISTICS</h3>
+            
+            <div className="flex flex-col gap-2 font-pressstart text-[9px] text-theme-dark border-b border-theme-dark/20 pb-3">
+              <p>Activity: <span className="text-theme-primary">{selectedStatsRoom.workType || 'Focus Session'}</span></p>
+              <p>Technique: <span className="text-theme-primary">{selectedStatsRoom.techniqueName || 'Pomodoro'}</span></p>
+              <p>Focus Time: <span className="text-theme-primary">{selectedStatsRoom.focusTime || 25} mins</span></p>
+            </div>
+
+            {/* Render checklist tasks */}
+            <div className="flex flex-col gap-2">
+              <span className="font-pressstart text-[9px] text-theme-dark uppercase">Checklist Tasks:</span>
+              {selectedStatsRoom.tasks && selectedStatsRoom.tasks.length > 0 ? (
+                <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
+                  {selectedStatsRoom.tasks.map((task, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-theme-muted/50 rounded-[6px] border border-theme-dark/20 font-pressstart text-[8px]">
+                      <span className={task.completed ? "text-green-600" : "text-amber-600"}>
+                        {task.completed ? "✔" : "⏳"}
+                      </span>
+                      <span className={task.completed ? "line-through opacity-60 text-theme-dark" : "text-theme-dark"}>
+                        {typeof task === 'string' ? task : task.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="font-pressstart text-[8px] text-theme-dark/60 italic">No checklist items recorded for this session.</p>
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                setShowStatsModal(false);
+                setSelectedStatsRoom(null);
+              }}
+              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full mt-2 cursor-pointer hover:bg-[#d66530]"
+            >
+              CLOSE
+            </button>
           </div>
         </div>
       )}

@@ -40,29 +40,18 @@ export default function CreateSession() {
           if (data.success) {
             setAiRationale(data.recommendation || "Keep your momentum going with balanced intervals!");
             
-            // Kung nagpapadala ang backend mo ng structured data, pwede mo itong i-update dito.
-            // Halimbawa kung ang AI ay nagrekomenda ng 52-17 o Ultradian batay sa work type at tasks:
-            if (data.focus && data.break) {
-              setRecommendedData({
-                techniqueName: data.techniqueName || 'AI Custom Strategy',
-                focus: data.focus,
-                break: data.break,
-                sessions: data.sessions || 3
-              });
-            } else {
-              // Smart fallback base sa selectedWorkType kung text lang ang nanggaling sa Gemini
-              if (selectedWorkType === 'creation' || selectedWorkType === 'writing') {
-                setRecommendedData({ techniqueName: 'Ultradian Rhythm', focus: 90, break: 20, sessions: 2 });
-              } else if (selectedWorkType === 'reading') {
-                setRecommendedData({ techniqueName: '52-17 Rule', focus: 52, break: 17, sessions: 3 });
-              } else {
-                setRecommendedData({ techniqueName: 'Pomodoro', focus: 25, break: 5, sessions: 4 });
-              }
-            }
+            // Gamitin nang direkta ang structured data na galing sa AI (kasama ang weight at history analysis)
+            setRecommendedData({
+              techniqueName: data.techniqueName || 'Pomodoro',
+              focus: data.focus || 25,
+              break: data.break || 5,
+              sessions: data.sessions || 4
+            });
           }
         } catch (err) {
           console.error("Failed to fetch AI study recommendation:", err);
           setAiRationale("Keep your momentum going with balanced intervals!");
+          setRecommendedData({ techniqueName: 'Pomodoro', focus: 25, break: 5, sessions: 4 });
         } finally {
           setIsLoadingAI(false);
         }
@@ -149,7 +138,7 @@ export default function CreateSession() {
       break: recommendedData.break,
       sessions: recommendedData.sessions,
     },
-    pomodoro: { title: 'Pomodoro', focus: 3, break: 1 },
+    pomodoro: { title: 'Pomodoro', focus: 25, break: 5 },
     '52-17': { title: '52-17 Method', focus: 52, break: 17 },
     '90m': { title: '90m Deep Work', focus: 90, break: 20 },
   };
