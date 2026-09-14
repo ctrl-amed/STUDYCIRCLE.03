@@ -182,8 +182,8 @@ export default function CreateSession() {
     setCurrentStep(3);
   };
 
-  // --- SAVE & CONFIRM ---
-  const handleConfirmSession = async () => {
+  // --- SAVE & CONFIRM (Fixed Double Save) ---
+  const handleConfirmSession = () => {
     const validTasks = draftTasks.filter((t) => t.trim() !== '');
     const activeTech = techniqueDetails[selectedTechnique] || techniqueDetails.recommended;
 
@@ -204,22 +204,8 @@ export default function CreateSession() {
     };
 
     localStorage.setItem('activeSession', JSON.stringify(newSession));
-
-    try {
-      await fetch('http://localhost:5000/api/save-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: playerData?.email,
-          activity: selectedWorkType,
-          technique: activeTech.title,
-          duration: focusTime * Number(finalSessions),
-        }),
-      });
-    } catch (err) {
-      console.error("Error saving session to backend:", err);
-    }
-
+    
+    // We removed the fetch('/api/save-session') here so it ONLY saves upon completion
     window.parent.postMessage('CLOSE_CREATE_SESSION_MODAL', '*');
   };
 

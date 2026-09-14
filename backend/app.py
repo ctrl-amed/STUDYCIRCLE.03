@@ -921,34 +921,73 @@ def on_join_room(data):
     if room not in room_members:
         room_members[room] = []
     
-    # Check database to see if this user is the host of the room
+    user_email = ""
+    db_avatar = avatar_config
+    total_focus_formatted = "0h 00m"  # FIX: Default focus time kung wala pang history
+    
+    try:
+        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
+        if u_res.data:
+            user_email = u_res.data[0].get('email', '')
+            db_avatar = u_res.data[0].get('avatar_config')
+            level = u_res.data[0].get('level', level)
+            
+            # FIX: Kalkulahin ang totoong total focus time galing sa 'study_sessions'
+            sessions_res = supabase.table('study_sessions').select('duration_minutes').eq('email', user_email).execute()
+            if sessions_res.data:
+                total_minutes = sum(int(s.get('duration_minutes', 0)) for s in sessions_res.data)
+                hours = total_minutes // 60
+                mins = total_minutes % 60
+                total_focus_formatted = f"{hours}h {mins:02d}m"
+                
+    except Exception as e:
+        print("Error fetching user info:", e)
+
     is_host = False
+    room_cfg = None  
     try:
         room_res = supabase.table('rooms').select('host').eq('name', room).execute()
-        if room_res.data and room_res.data[0].get('host') == username:
-            is_host = True
+        if room_res.data:
+            host_username = room_res.data[0].get('host')
+            if host_username == username:
+                is_host = True
+            
+            host_user_res = supabase.table('users').select('room_config').eq('username', host_username).execute()
+            if host_user_res.data:
+                room_cfg = host_user_res.data[0].get('room_config')
     except Exception as e:
         print("Error verifying host status:", e)
+
+    if isinstance(room_cfg, str):
+        try:
+            room_cfg = json.loads(room_cfg)
+        except:
+            pass
 
     existing_user = next((m for m in room_members[room] if m['username'] == username), None)
     if existing_user:
         existing_user['status'] = status
-        if avatar_config:
-            existing_user['avatar_config'] = avatar_config
+        if db_avatar:
+            existing_user['avatar_config'] = db_avatar
         existing_user['level'] = level
         existing_user['isHost'] = is_host
+        existing_user['email'] = user_email
+        existing_user['totalFocusTime'] = total_focus_formatted  # FIX: i-update ang focus time
     else:
         room_members[room].append({
             'id': username,
             'username': username,
+            'email': user_email,
             'status': status,
-            'avatar_config': avatar_config,
+            'avatar_config': db_avatar,
             'level': level,
-            'isHost': is_host
+            'isHost': is_host,
+            'totalFocusTime': total_focus_formatted  # FIX: i-set ang focus time
         })
     
     emit('room_update', {
         'members': room_members[room],
+        'room_config': room_cfg,  
         'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
     }, room=room)
 
@@ -1412,22 +1451,39 @@ def get_rooms():
 @app.route('/api/rooms', methods=['POST'])
 def create_room():
     data = request.get_json() or {}
+    host = data.get('host')
+    max_members = int(data.get('max_members', 4))
+    
     try:
+        # Issue 1 Fix: Only enforce 3-room limit if it's a group room (max_members > 1)
+        if max_members > 1:
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            existing = supabase.table('rooms').select('*').eq('host', host).execute()
+            today_rooms = [r for r in existing.data if r.get('created_at', '').startswith(today_str) and r.get('max_members', 4) > 1]
+            
+            if len(today_rooms) >= 3:
+                return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
+
+        # Issue 2 Fix: Get the host's custom room design so guests can see it
+        host_user_res = supabase.table('users').select('room_config').eq('username', host).execute()
+        room_config = host_user_res.data[0].get('room_config') if host_user_res.data else None
+
         room_payload = {
             "name": data.get('name'),
             "course": data.get('course', 'General Studies'),
-            "host": data.get('host'),
+            "host": host,
             "privacy": data.get('privacy', 'public'),
             "code": data.get('code'),
             "current_members": data.get('current_members', 1),
-            "max_members": data.get('max_members', 4),
+            "max_members": max_members,
             "technique": data.get('technique', 'Pomodoro'),
             "focus": data.get('focus', '1h 00m'),
             "break_time": data.get('breakTime', '0h 15m'),
             "sessions": data.get('sessions', 1),
             "tasks": data.get('tasks', []),
             "xp": data.get('xp', 0),
-            "coins": data.get('coins', 0)
+            "coins": data.get('coins', 0),
+            "room_config": room_config
         }
         res = supabase.table('rooms').insert(room_payload).execute()
         return jsonify({'success': True, 'room': res.data[0]}), 201
@@ -1450,20 +1506,44 @@ def on_join_room(data):
     if room not in room_members:
         room_members[room] = []
     
+    # Issue 3 Fix: Get real user email and specific avatar config directly from DB
+    user_email = ""
+    db_avatar = avatar_config
+    try:
+        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
+        if u_res.data:
+            user_email = u_res.data[0].get('email', '')
+            db_avatar = u_res.data[0].get('avatar_config')
+            level = u_res.data[0].get('level', level)
+    except Exception as e:
+        print("Error fetching user info:", e)
+
+    # Issue 7 Fix: Verify exactly who the host is
+    is_host = False
+    try:
+        room_res = supabase.table('rooms').select('host').eq('name', room).execute()
+        if room_res.data and room_res.data[0].get('host') == username:
+            is_host = True
+    except Exception as e:
+        print("Error verifying host status:", e)
+
     existing_user = next((m for m in room_members[room] if m['username'] == username), None)
     if existing_user:
         existing_user['status'] = status
-        if avatar_config:
-            existing_user['avatar_config'] = avatar_config
+        if db_avatar:
+            existing_user['avatar_config'] = db_avatar
         existing_user['level'] = level
+        existing_user['isHost'] = is_host
+        existing_user['email'] = user_email
     else:
         room_members[room].append({
             'id': username,
             'username': username,
+            'email': user_email,
             'status': status,
-            'avatar_config': avatar_config,
+            'avatar_config': db_avatar,
             'level': level,
-            'isHost': False
+            'isHost': is_host
         })
     
     emit('room_update', {

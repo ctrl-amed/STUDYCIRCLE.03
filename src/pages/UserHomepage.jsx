@@ -348,12 +348,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       });
 
       socketRef.current.on('room_update', (data) => {
-        if (data.members) {
-          setRoomData(prev => ({ ...prev, members: data.members }));
-        }
-        if (data.logs && data.logs.length > 0) {
-          setRoomData(prev => ({ ...prev, auditLogs: [...data.logs, ...prev.auditLogs] }));
-        }
+        setRoomData((prev) => {
+          const updated = { ...prev };
+          if (data.members) updated.members = data.members;
+          if (data.logs && data.logs.length > 0) updated.auditLogs = [...data.logs, ...prev.auditLogs];
+          
+          // FIX: Ensure room configuration from backend is parsed into a usable object
+          if (data.room_config) {
+            try {
+              updated.roomConfig = typeof data.room_config === 'string' 
+                ? JSON.parse(data.room_config) 
+                : data.room_config;
+            } catch (e) {
+              console.error("Failed to parse room config", e);
+            }
+          }
+          return updated;
+        });
       });
 
       socketRef.current.on('receive_room_message', (msg) => {
@@ -455,26 +466,20 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
     if (storedSession || stateIsMultiplayer || propIsMultiplayer) {
       setIsMultiplayer(true);
-      
       let parsed = null;
       if (storedSession) {
-        try { parsed = JSON.parse(storedSession); } catch (e) { console.error(e); }
+        try { parsed = JSON.parse(storedSession); } catch (e) {}
       } else if (location.state?.room) {
         parsed = location.state.room;
       }
 
       const roomName = parsed?.name || parsed?.roomName || "Study Room";
-      const hostUsername = parsed?.host || player.username;
-
-      const currentUser = {
-        id: player.email || player.username,
-        username: player.username,
-        isHost: hostUsername === player.username,
-        status: "ONLINE",
-        avatar: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${player.username}`,
-        level: player.level,
-        isCurrentUser: true,
-      };
+      
+      // FIX: Parse the host's room config properly if it's stored as a string
+      let finalRoomConfig = parsed?.room_config || parsed?.roomConfig || null;
+      if (typeof finalRoomConfig === 'string') {
+        try { finalRoomConfig = JSON.parse(finalRoomConfig); } catch (e) {}
+      }
 
       setRoomData((prev) => ({
         ...prev,
@@ -483,13 +488,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         privacy: parsed?.privacy || 'public',
         code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
-        members: [currentUser],
+        roomConfig: finalRoomConfig,
         auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
     } else {
       setIsMultiplayer(false);
     }
-  }, [location, propIsMultiplayer, player.username, player.level]);
+  }, [location, propIsMultiplayer, player.username]);
 
   useEffect(() => {
     const now = new Date();
@@ -799,6 +804,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const isProfileOpen = activeProfileId === memberKey;
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
+                  // FIX: Check if this member is the current user to hide "ADD" button
+                  const isMe = member.username === player.username;
+                  // FIX: Get the unique avatar configuration for this specific member
+                  const memberAvatarConfig = getLeaderboardAvatarConfig(member) || member.avatar_config || member.config;
+
                   return (
                     <div
                       key={memberKey}
@@ -815,6 +825,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
+                      {/* FIX: Nametag with Host Crown Icon and (YOU) indicator */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
                         {member.isHost && (
                           <svg
@@ -828,7 +839,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                           </svg>
                         )}
                         <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
-                          {member.username}
+                          {member.username} {isMe && "(YOU)"}
                         </span>
                       </div>
 
@@ -839,11 +850,21 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         >
                           <div className="relative shrink-0 flex items-center justify-center">
                             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              <img
-                                src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
-                                alt="Player Avatar"
-                                className="w-full h-full object-cover"
-                              />
+                              {/* FIX: Use unique avatar config if available */}
+                              {memberAvatarConfig ? (
+                                <div 
+                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                  style={{ transform: 'scale(0.38) translateY(12px)' }}
+                                >
+                                  <CustomAvatar config={memberAvatarConfig} state="idle" />
+                                </div>
+                              ) : (
+                                <img
+                                  src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
+                                  alt="Player Avatar"
+                                  className="w-full h-full object-cover"
+                                />
+                              )}
                             </div>
                             <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
                               <span className="font-pressstart text-[8px] text-theme-dark font-bold">
@@ -870,11 +891,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                                 <path d="M12 2A10 10 0 0 0 2 12a10 10 0 0 0 10 10a10 10 0 0 0 10-10A10 10 0 0 0 12 2m4.2 14.2L11 13V7h1.5v5.2l4.5 2.7z" />
                               </svg>
                               <span className="font-pressstart text-[8px] text-theme-dark">
-                                {member.totalFocusTime || '12h 00m'}
+                                {member.totalFocusTime || '0h 00m'}
                               </span>
                             </div>
 
-                            {!member.isCurrentUser && (
+                            {/* FIX: Hide ADD button if it's your own account */}
+                            {!isMe && (
                               <button
                                 onClick={() => handleAddFriend(member)}
                                 disabled={isFriendRequestSent}
@@ -901,7 +923,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               ✕
                             </button>
 
-                            {isCurrentUserHost && !member.isCurrentUser && (
+                            {/* FIX: Don't show KICK button on yourself */}
+                            {isCurrentUserHost && !isMe && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -917,8 +940,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         </div>
                       )}
 
+                      {/* FIX: Use individual player's avatar config */}
                       <CustomAvatar
-                        config={member.config}
+                        config={memberAvatarConfig}
                         state={member.status === 'IN SESSION' ? 'focus' : 'idle'}
                       />
                     </div>
