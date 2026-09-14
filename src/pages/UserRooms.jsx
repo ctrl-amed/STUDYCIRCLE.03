@@ -207,7 +207,11 @@ export default function UserRooms() {
   }, [showRequestModal, requestState]);
 
   const handleConfirmCreate = async () => {
-    if (!newRoomName.trim() || newRoomName.length > MAX_ROOM_NAME_LENGTH || !newRoomMaxMembers) return;
+    // FIX: Siguraduhing may laman ang name at max members bago magtuloy
+    if (!newRoomName.trim() || !newRoomMaxMembers) {
+      alert("Please fill in the room name and select maximum members.");
+      return;
+    }
 
     if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
       setShowCreateModal(false);
@@ -227,9 +231,9 @@ export default function UserRooms() {
       focus: '1h 00m',
       breakTime: '0h 15m',
       sessions: 1,
-      tasks: [{ text: 'Initial goal setup', completed: false }],
-      xp: 100,
-      coins: 25,
+      tasks: [],
+      xp: 0,
+      coins: 0,
     };
 
     try {
@@ -239,6 +243,7 @@ export default function UserRooms() {
         body: JSON.stringify(payload)
       });
       const data = await response.json();
+      
       if (data.success && data.room) {
         const createdRoom = {
           ...data.room,
@@ -257,12 +262,15 @@ export default function UserRooms() {
         setShowCreateModal(false);
 
         enterRoomSession(createdRoom);
+      } else {
+        alert(data.error || "Failed to create room.");
       }
     } catch (err) {
       console.error("Error creating real room in database:", err);
+      alert("Network error. Make sure your Python backend is running.");
     }
   };
-
+  
   const handleConfirmPrivateJoin = () => {
     const code = privateCodeInput.trim().toUpperCase();
     if (!code) {

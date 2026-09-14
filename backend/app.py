@@ -1455,7 +1455,7 @@ def create_room():
     max_members = int(data.get('max_members', 4))
     
     try:
-        # Issue 1 Fix: Only enforce 3-room limit if it's a group room (max_members > 1)
+        # Enforce 3-room limit only if it's a group room (max_members > 1)
         if max_members > 1:
             today_str = datetime.now().strftime('%Y-%m-%d')
             existing = supabase.table('rooms').select('*').eq('host', host).execute()
@@ -1464,10 +1464,8 @@ def create_room():
             if len(today_rooms) >= 3:
                 return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
 
-        # Issue 2 Fix: Get the host's custom room design so guests can see it
-        host_user_res = supabase.table('users').select('room_config').eq('username', host).execute()
-        room_config = host_user_res.data[0].get('room_config') if host_user_res.data else None
-
+        # WALA NA ANG room_config DITO PARA HINDI NA MAG-ERROR ANG SUPABASE.
+        # Ang custom design ng room ay kukunin na lang dynamic galing sa 'users' profile table ng host kapag may nag-join.
         room_payload = {
             "name": data.get('name'),
             "course": data.get('course', 'General Studies'),
@@ -1482,12 +1480,14 @@ def create_room():
             "sessions": data.get('sessions', 1),
             "tasks": data.get('tasks', []),
             "xp": data.get('xp', 0),
-            "coins": data.get('coins', 0),
-            "room_config": room_config
+            "coins": data.get('coins', 0)
         }
+        
         res = supabase.table('rooms').insert(room_payload).execute()
         return jsonify({'success': True, 'room': res.data[0]}), 201
+        
     except Exception as e:
+        print("ROOM CREATION ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # Halimbawa ng in-memory room members tracker para sa real-time sync
