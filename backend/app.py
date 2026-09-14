@@ -667,6 +667,7 @@ def complete_focus_session():
     technique = data.get('technique', 'Pomodoro').strip()
     tasks_completed = max(0, int(data.get('tasksCompleted', 0)))
     total_tasks = max(tasks_completed, int(data.get('totalTasks', tasks_completed)))
+    tasks_list = data.get('tasksList', [])
     activity_name = data.get('activity', 'Focus Session')
     
     is_multiplayer = data.get('isMultiplayer', False)
@@ -674,7 +675,7 @@ def complete_focus_session():
     room_size = int(data.get('roomSize', 1))
 
     if not raw_email:
-        return jsonify({"success": False, "error": "Email is required."}), 400
+        return jsonify({"success": False, "error": "Email is required. Please check login state."}), 400
 
     try:
         if room_size > 6:
@@ -686,21 +687,18 @@ def complete_focus_session():
 
         user = user_res.data[0]
         user_id = user['id']
-        current_xp = float(user.get('cumulative_xp') or user.get('current_xp') or 0.0)
+        current_xp = float(user.get('current_xp') or 0.0)
         current_coins = int(user.get('coins') or 0)
-        current_level = int(user.get('current_level') or user.get('level') or 1)
+        current_level = int(user.get('level') or 1)
 
         # v2.1 Master EXP Formula
         R_base = 0.4
         tech_upper = technique.upper()
         if '52' in tech_upper:
-            tech_key = '52-17'
             mu_tech = 1.1
         elif '90' in tech_upper or 'ULTRADIAN' in tech_upper:
-            tech_key = 'ULTRADIAN'
             mu_tech = 1.2
         else:
-            tech_key = 'POMODORO'
             mu_tech = 1.0
 
         mu_checklist = 1.0 + min(tasks_completed * 0.05, 0.25)
@@ -726,13 +724,14 @@ def complete_focus_session():
         else:
             CapMult = 1.00
 
-        bonus_exp = 4.0 if (tech_key == 'ULTRADIAN' and duration_minutes >= 90) else 0.0
+        bonus_exp = 4.0 if ('ULTRADIAN' in tech_upper and duration_minutes >= 90) else 0.0
 
         base_calc = duration_minutes * R_base * mu_tech * mu_checklist
         calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
         rounded_exp_gained = round(calculated_exp, 4)
 
-        base_coins_gained = int(duration_minutes * 0.2)
+        # Ensure at least 1 coin is gained even for short test durations (e.g. 3 mins)
+        base_coins_gained = max(1, int(round(duration_minutes * 0.2)))
 
         new_xp = current_xp + rounded_exp_gained
         new_coins = current_coins + base_coins_gained
@@ -756,24 +755,23 @@ def complete_focus_session():
                 new_level = item["level"]
                 new_max_xp = item["nextXP"]
 
-        # 1. Update users table
+        # 1. Update users table using exact existing schema columns
         supabase.table('users').update({
-            "cumulative_exp": new_xp,
             "current_xp": int(round(new_xp)),
             "coins": new_coins,
-            "current_level": new_level,
             "level": new_level,
             "max_xp": new_max_xp
         }).eq('id', user_id).execute()
 
-        # 2. Insert study_sessions table na may kasamang tasks metrics
+        # 2. Insert study_sessions table with the tasks text list
         supabase.table('study_sessions').insert({
             "email": user['email'],
             "activity_name": activity_name,
             "technique": technique,
             "duration_minutes": duration_minutes,
             "total_tasks": total_tasks,
-            "completed_tasks": tasks_completed
+            "completed_tasks": tasks_completed,
+            "tasks_list": tasks_list
         }).execute()
 
         print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{base_coins_gained} Coins, Tasks: {tasks_completed}/{total_tasks}")
@@ -908,12 +906,51 @@ def generate_ai_tool():
                 pass
 
 # --- REAL-TIME MULTIPLAYER SOCKET EVENTS ---
+room_members = {}
+
 @socketio.on('join_room')
-def handle_join_room(data):
+def on_join_room(data):
     room = data.get('room')
     username = data.get('username')
+    avatar_config = data.get('avatar_config')
+    status = data.get('status', 'ONLINE')
+    level = data.get('level', 1)
+    
     join_room(room)
-    emit('user_joined', {'username': username, 'message': f'{username} joined the room.'}, room=room)
+    
+    if room not in room_members:
+        room_members[room] = []
+    
+    # Check database to see if this user is the host of the room
+    is_host = False
+    try:
+        room_res = supabase.table('rooms').select('host').eq('name', room).execute()
+        if room_res.data and room_res.data[0].get('host') == username:
+            is_host = True
+    except Exception as e:
+        print("Error verifying host status:", e)
+
+    existing_user = next((m for m in room_members[room] if m['username'] == username), None)
+    if existing_user:
+        existing_user['status'] = status
+        if avatar_config:
+            existing_user['avatar_config'] = avatar_config
+        existing_user['level'] = level
+        existing_user['isHost'] = is_host
+    else:
+        room_members[room].append({
+            'id': username,
+            'username': username,
+            'status': status,
+            'avatar_config': avatar_config,
+            'level': level,
+            'isHost': is_host
+        })
+    
+    emit('room_update', {
+        'members': room_members[room],
+        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+    }, room=room)
 
 @socketio.on('leave_room')
 def handle_leave_room(data):
@@ -945,32 +982,53 @@ def ai_recommendation():
         return jsonify({'success': False, 'error': 'Email is required.'}), 400
 
     try:
-        # Kunin ang study history ng user mula sa Supabase
-        sessions_res = supabase.table('study_sessions').select('*').eq('email', email).execute()
+        # Kunin ang nakaraang study history ng user mula sa Supabase para malaman ang completion patterns
+        sessions_res = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).limit(5).execute()
         user_history = sessions_res.data
 
-        history_summary = f"User study history records: {user_history}" if user_history else "New user with no prior recorded sessions."
-        tasks_summary = f"Current tasks planned: {tasks}" if tasks else "No specific tasks listed yet."
+        history_summary = f"Recent history records: {user_history}" if user_history else "New user with no prior recorded sessions."
+        tasks_summary = f"Task list ({len(tasks)} items): {tasks}" if tasks else "No specific tasks listed yet."
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-3.6-flash')
 
         prompt = f"""
-        You are Kitsu AI, an expert study coach inside StudyCircle. 
-        Analyze the following user profile and session context:
+        You are Kitsu AI, an expert adaptive study coach inside StudyCircle. 
+        Analyze the following user context deeply:
         - Work Type / Focus: {work_type}
         - {tasks_summary}
         - {history_summary}
 
-        Based on their habits, focus duration patterns, consistency, current work type, and checklist load, recommend the best study technique for them. 
-        Choose strictly from: Pomodoro (25m focus / 5m break), 52-17 Rule (52m focus / 17m break), or Ultradian 90-Minute Rhythm (90m focus / 20m break). 
-        Provide a short, friendly, and motivating explanation (max 3 sentences) on why this technique fits them right now.
+        Instructions for Recommendation:
+        1. Evaluate the *weight/complexity* of the tasks (e.g., writing a heavy chapter vs. writing a quick essay).
+        2. Evaluate the *volume* of the task list (many items vs. few items).
+        3. Look at past *history*: If past sessions show incomplete tasks or short focus spans, adjust to more sustainable intervals. If they finish successfully, you can suggest deep work.
+        4. Choose strictly one technique configuration matching these rules:
+           - Pomodoro -> Name: "Pomodoro", Focus: 25, Break: 5, Sessions: 4
+           - 52-17 Rule -> Name: "52-17 Method", Focus: 52, Break: 17, Sessions: 3
+           - Deep Work -> Name: "90m Deep Work", Focus: 90, Break: 20, Sessions: 2
+
+        Return the output strictly as a valid JSON object in this exact format, with no markdown code blocks or extra text:
+        {{
+          "techniqueName": "Pomodoro",
+          "focus": 25,
+          "break": 5,
+          "sessions": 4,
+          "recommendation": "A short, friendly, and motivating explanation (max 3 sentences) acknowledging their specific tasks, weight, and history."
+        }}
         """
 
         response = model.generate_content(prompt)
-        recommendation_text = response.text
+        result_text = response.text.strip()
+        
+        if result_text.startswith("```json"):
+            result_text = result_text[7:]
+        if result_text.endswith("```"):
+            result_text = result_text[:-3]
 
-        return jsonify({'success': True, 'recommendation': recommendation_text}), 200
+        parsed_data = json.loads(result_text.strip())
+        return jsonify({'success': True, **parsed_data}), 200
+
     except Exception as e:
         print("AI Recommendation Error:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1444,6 +1502,33 @@ def on_send_room_message(data):
     room = data.get('room')
     # I-broadcast sa lahat ng nasa room kasama ang nag-send
     emit('receive_room_message', data, room=room)
+
+# --- TRACK PENDING JOIN REQUESTS ---
+# Stores { room_name: { guest_username: socket_id } } or maps rooms to hosts
+room_hosts = {}
+
+@socketio.on('request_join_room')
+def handle_request_join_room(data):
+    room_name = data.get('room')
+    guest_username = data.get('username')
+    
+    # Broadcast specifically to the room so only members/host of that room receive it
+    emit('incoming_join_request', {
+        'username': guest_username,
+        'room': room_name
+    }, room=room_name)
+
+@socketio.on('host_room_response')
+def handle_host_response(data):
+    room_name = data.get('room')
+    guest_username = data.get('username')
+    approved = data.get('approved', False)
+    
+    # Broadcast the decision back to the specific room/participants
+    emit('join_request_decision', {
+        'approved': approved,
+        'username': guest_username
+    }, room=room_name)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
