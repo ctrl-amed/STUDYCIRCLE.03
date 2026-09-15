@@ -118,9 +118,8 @@ export default function UserRooms() {
 
     // Listen for incoming join requests if current user is the host
     socketRef.current.on('incoming_join_request', (data) => {
-      // Check if the current user is hosting the room being requested
-      const hostedRoom = roomsList.find(r => r.name === data.room && r.host === myUsername);
-      if (hostedRoom) {
+      // Direktang i-check kung ikaw ang tinutukoy na host ng private room request
+      if (data.host === myUsername) {
         setIncomingJoinRequest(data);
       }
     });
@@ -129,6 +128,13 @@ export default function UserRooms() {
       if (data.username === myUsername) {
         if (data.approved) {
           setRequestState('ACCEPTED');
+          // AUTOMATIC NA PAGPASOK NI HELL SA ROOM:
+          setTimeout(() => {
+            setShowRequestModal(false);
+            if (pendingJoinRoom) {
+              enterRoomSession(pendingJoinRoom);
+            }
+          }, 1000); // 1 second delay para makita niyang "ACCEPTED!" bago pumasok
         } else {
           setRequestState('REJECTED');
         }

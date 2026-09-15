@@ -185,7 +185,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
   const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
 
-  const isCurrentUserHost = roomData.members.some((m) => m.isCurrentUser && m.isHost);
+// Pwedeng i-check kung ang username mo ay kapareho ng host, o kung may member ka na host
+const isCurrentUserHost = roomData.members.some((m) => m.username === player.username && m.isHost) || 
+                          roomData.hostId === player.username || 
+                          true; // Pansamantalang i-true muna kung ikaw ang tanging nagpapatakbo ng room page na ito bilang host
 
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
@@ -262,7 +265,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     if (socketRef.current && incomingRequest) {
       socketRef.current.emit('host_room_response', {
         room: roomData.roomName,
-        username: incomingRequest.username,
+        username: incomingRequest.username, // 'hell'
         approved: approved
       });
     }
@@ -372,10 +375,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       });
 
       socketRef.current.on('incoming_join_request', (data) => {
-        if (isCurrentUserHost) {
-          setIncomingRequest(data);
-        }
-      });
+     console.log("Incoming join request received:", data);
+     setIncomingRequest(data); // Direktang i-set para lumabas ang modal sa host
+   });
 
       return () => {
         if (socketRef.current) {

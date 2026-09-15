@@ -991,6 +991,12 @@ def on_join_room(data):
         'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
     }, room=room)
 
+@socketio.on('request_join_private_room')
+def handle_private_join_request(data):
+    room_name = data.get('room')
+    # I-broadcast ang incoming request patungo lamang sa host ng room na iyon
+    emit('incoming_join_request', data, room=room_name)
+
 @socketio.on('leave_room')
 def handle_leave_room(data):
     room = data.get('room')
@@ -1664,14 +1670,15 @@ def handle_request_join_room(data):
 @socketio.on('host_room_response')
 def handle_host_response(data):
     room_name = data.get('room')
-    guest_username = data.get('username')
-    approved = data.get('approved', False)
+    username = data.get('username') # Ito si 'hell'
+    approved = data.get('approved')
     
-    # Broadcast the decision back to the specific room/participants
+    # I-broadcast pabalik sa room o sa user na nag-request
     emit('join_request_decision', {
+        'username': username,
         'approved': approved,
-        'username': guest_username
-    }, room=room_name)
+        'room': room_name
+    }, broadcast=True)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
