@@ -499,30 +499,40 @@ def get_friends_data():
 
     try:
         # Kunin ang mga accepted friends at incoming requests
-        # (Depende sa kung ikaw ang sender o receiver)
         response = supabase.table('friendships').select('*').or_(f"sender_email.eq.{email},receiver_email.eq.{email}").execute()
+        
+        # Safe check kung null o walang laman ang response data
+        if not response.data:
+            return jsonify({"success": True, "friends": [], "requests": []}), 200
         
         friends = []
         requests = []
         
         for item in response.data:
-            if item['status'] == 'accepted':
-                friend_email = item['receiver_email'] if item['sender_email'] == email else item['sender_email']
+            status = item.get('status')
+            sender = item.get('sender_email')
+            receiver = item.get('receiver_email')
+            
+            if status == 'accepted':
+                friend_email = receiver if sender == email else sender
                 # Kunin ang details ng kaibigan mula sa users table
                 u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', friend_email).execute()
                 if u_res.data:
                     friends.append(u_res.data[0])
-            elif item['status'] == 'pending' and item['receiver_email'] == email:
+                    
+            elif status == 'pending' and receiver == email:
                 # Incoming request para sa iyo
-                u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', item['sender_email']).execute()
+                u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', sender).execute()
                 if u_res.data:
                     requests.append({
-                        "id": item['id'],
+                        "id": item.get('id'),
                         "sender": u_res.data[0]
                     })
                     
         return jsonify({"success": True, "friends": friends, "requests": requests}), 200
+        
     except Exception as e:
+        print(f"Error in get_friends_data: {str(e)}") # Magpapakita sa Flask terminal para madaling i-debug
         return jsonify({"success": False, "message": str(e)}), 500
 
 # --- 4. ACCEPT OR REJECT FRIEND REQUEST ---

@@ -7,9 +7,9 @@ export default function CreateSession() {
   // --- AI RECOMMENDATION STATE ---
   const [recommendedData, setRecommendedData] = useState({
     techniqueName: 'Pomodoro',
-    sessions: 4,
-    focus: 25,
-    break: 5,
+    sessions: 0,
+    focus: 0,
+    break: 0,
   });
   const [aiRationale, setAiRationale] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
@@ -422,7 +422,7 @@ export default function CreateSession() {
                     }`}
                   >
                     <div className="font-pressstart text-[20px] sm:text-[28px] leading-snug tracking-wide level-up-gradient bg-clip-text text-transparent">
-                      AI STUDY TECHNIQUE
+                      RECOMMENDED STUDY TECHNIQUE
                     </div>
 
                     {isLoadingAI ? (
