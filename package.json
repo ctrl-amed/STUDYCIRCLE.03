@@ -13,6 +13,7 @@
     "@react-oauth/google": "^0.13.5",
     "@tailwindcss/vite": "^4.3.3",
     "emoji-picker-react": "^4.19.1",
+    "jspdf": "^4.2.1",
     "jwt-decode": "^4.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

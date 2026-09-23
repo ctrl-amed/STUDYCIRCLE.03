@@ -11,6 +11,7 @@ import ProtectedRoute from './ProtectedRoute.jsx';
 // Layouts
 import UserLayout from './layouts/UserLayout.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
+import ITAdminLayout from './layouts/ITAdminLayout.jsx'; // <-- Added IT Admin Layout
 
 // User Pages
 import UserHomepage from './pages/UserHomepage.jsx';
@@ -27,6 +28,13 @@ import ChangePassword from './pages/ChangePassword.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import AdminRooms from './pages/AdminRooms.jsx';
 import AdminUsers from './pages/AdminUsers.jsx';
+
+// IT Admin Pages <-- Added IT Admin Placeholder Pages
+import ITDashboard from './pages/ITDashboard.jsx';
+import ITUsers from './pages/ITUsers.jsx';
+import ITRooms from './pages/ITRooms.jsx';
+import ITReports from './pages/ITReports.jsx';
+import ITLogs from './pages/ITLogs.jsx';
 
 import { PlayerProvider } from './context/PlayerContext.jsx';
 import { LoadingProvider } from './context/LoadingContext.jsx';
@@ -92,6 +100,16 @@ createRoot(document.getElementById('root')).render(
                 <Route path="/admin/rooms" element={<AdminRooms />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
               </Route>
+
+              {/* IT Admin Routes */}
+              <Route element={<ITAdminLayout />}>
+                <Route path="/itadmin/dashboard" element={<ITDashboard />} />
+                <Route path="/itadmin/users" element={<ITUsers />} />
+                <Route path="/itadmin/rooms" element={<ITRooms />} />
+                <Route path="/itadmin/reports" element={<ITReports />} />
+                <Route path="/itadmin/logs" element={<ITLogs />} />
+              </Route>
+
             </Routes>
           </BrowserRouter>
         </LoadingProvider>

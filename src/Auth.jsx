@@ -311,6 +311,16 @@ export default function Auth() {
       return;
     }
 
+    // --- MOCK IT ADMIN BYPASS ---
+    if (emailVal.toLowerCase() === 'itadmin@studycircle.app' && passwordVal === 'Admin123!') {
+      localStorage.setItem('active_user_email', emailVal);
+      startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
+        navigate('/itadmin/dashboard');
+      }, false);
+      return;
+    }
+    // ----------------------------
+
     try {
       const response = await fetch('http://localhost:5000/api/login', {
         method: 'POST',
@@ -1092,7 +1102,7 @@ export default function Auth() {
 
         {/* TOASTS CONTAINER */}
         <div id="toast-container" className="fixed top-28 right-6 z-50 pointer-events-none flex flex-col gap-3">
-          {toasts.map((toast) => (
+          {toasts.play && toasts.map((toast) => (
             <div
               key={toast.id}
               className="bg-theme-surface border-4 border-theme-dark p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
