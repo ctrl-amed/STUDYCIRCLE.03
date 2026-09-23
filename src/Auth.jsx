@@ -7,6 +7,7 @@ import { usePlayer } from './context/PlayerContext';
 
 // Password Rules & Standard Guidance Text
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_+\-\[\]\\\/]).{8,}$/;
+const studentIdRegex = /^[a-zA-Z]\d{8}$/;
 const defaultGuideText =
   'Create a strong password using 8 or more characters, including uppercase and lowercase letters, a number, and a special character.';
 
@@ -25,9 +26,14 @@ export default function Auth() {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Suspended Account States
+  const [showSuspendedModal, setShowSuspendedModal] = useState(false);
+  const [suspendedUserData, setSuspendedUserData] = useState(null);
+
   // Sign Up Form States
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
+  const [signupStudentId, setSignupStudentId] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
 
@@ -36,6 +42,7 @@ export default function Auth() {
 
   const [signupUsernameErr, setSignupUsernameErr] = useState('');
   const [signupEmailErr, setSignupEmailErr] = useState('');
+  const [signupStudentIdErr, setSignupStudentIdErr] = useState('');
   const [signupPasswordErr, setSignupPasswordErr] = useState('');
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
@@ -96,6 +103,7 @@ export default function Auth() {
     setResetError('');
     setSignupUsernameErr('');
     setSignupEmailErr('');
+    setSignupStudentIdErr('');
     setSignupPasswordErr('');
     setSignupConfirmPasswordErr(defaultGuideText);
     setIsConfirmPasswordCustomError(false);
@@ -119,6 +127,20 @@ export default function Auth() {
       return false;
     }
     setSignupEmailErr('');
+    return true;
+  };
+
+  const validateStudentId = (val = signupStudentId) => {
+    const trimmed = val.trim();
+    if (trimmed === '') {
+      setSignupStudentIdErr("Student ID field can't be empty.");
+      return false;
+    }
+    if (!studentIdRegex.test(trimmed)) {
+      setSignupStudentIdErr('Student ID must start with 1 letter followed by exactly 8 numbers (e.g., A12345678).');
+      return false;
+    }
+    setSignupStudentIdErr('');
     return true;
   };
 
@@ -168,7 +190,6 @@ export default function Auth() {
     if (!decoded || !decoded.email) return;
 
     try {
-      // Tawagin ang backend para i-check kung existing na ang email na ito
       const response = await fetch('http://localhost:5000/api/google-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -181,7 +202,6 @@ export default function Auth() {
         return;
       }
 
-      // Kung may user data na ibinalik, ibig sabihin may account na -> Login agad diretso sa dashboard!
       if (data.user) {
         localStorage.setItem('active_user_email', data.user.email);
         localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
@@ -203,7 +223,6 @@ export default function Auth() {
         return;
       }
 
-      // Kung kailangan pa ng username (wala pa sa DB), buksan ang modal
       if (data.needs_username) {
         setGoogleUserPending(decoded);
         const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
@@ -311,7 +330,17 @@ export default function Auth() {
       return;
     }
 
-    // --- MOCK IT ADMIN BYPASS ---
+    // --- MOCK SUSPENDED ACCOUNT CHECK ---
+    if (emailVal.toLowerCase() === 'suspended@studycircle.app') {
+      setSuspendedUserData({
+        email: emailVal,
+        reason: 'Terms of Service Violation',
+        liftUntil: 'October 25, 2026 at 11:59 PM',
+      });
+      setShowSuspendedModal(true);
+      return;
+    }
+
     if (emailVal.toLowerCase() === 'itadmin@studycircle.app' && passwordVal === 'Admin123!') {
       localStorage.setItem('active_user_email', emailVal);
       startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
@@ -319,7 +348,6 @@ export default function Auth() {
       }, false);
       return;
     }
-    // ----------------------------
 
     try {
       const response = await fetch('http://localhost:5000/api/login', {
@@ -330,7 +358,28 @@ export default function Auth() {
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle backend response indicating account suspension
+        if (data.suspended) {
+          setSuspendedUserData({
+            email: emailVal,
+            reason: data.reason || 'Community Guidelines Violation',
+            liftUntil: data.liftUntil || 'October 25, 2026 at 11:59 PM',
+          });
+          setShowSuspendedModal(true);
+          return;
+        }
         setLoginError(`✘ ${data.error || 'Invalid email or password.'}`);
+        return;
+      }
+
+      // Check if success payload itself explicitly specifies suspended status
+      if (data.suspended) {
+        setSuspendedUserData({
+          email: emailVal,
+          reason: data.reason || 'Community Guidelines Violation',
+          liftUntil: data.liftUntil || 'October 25, 2026 at 11:59 PM',
+        });
+        setShowSuspendedModal(true);
         return;
       }
 
@@ -372,19 +421,19 @@ export default function Auth() {
   const handleSignupSubmit = (e) => {
     e.preventDefault();
 
-    // I-reset muna ang mga lumang error
     setSignupUsernameErr('');
     setSignupEmailErr('');
+    setSignupStudentIdErr('');
     setSignupPasswordErr('');
 
     const isUserValid = validateUsername();
     const isEmailValid = validateEmail();
+    const isStudentIdValid = validateStudentId();
     const isPassValid = validatePassword();
     const isConfirmValid = validateConfirmPassword();
 
-    if (!isUserValid || !isEmailValid || !isPassValid || !isConfirmValid) return;
+    if (!isUserValid || !isEmailValid || !isStudentIdValid || !isPassValid || !isConfirmValid) return;
 
-    // Huwag munang mag-save sa database dito. Buksan muna ang consent modal para sa terms agreement.
     setSignupConsentPending(true);
     setSignupAgeTermsChecked(false);
     setSignupTermsErr('');
@@ -405,19 +454,21 @@ export default function Auth() {
         body: JSON.stringify({
           username: signupUsername.trim(),
           email: signupEmail.trim(),
+          student_id: signupStudentId.trim(),
           password: signupPassword,
         }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        // Isara ang modal para makita ng user ang inline error sa form kung may duplicate man
         setSignupConsentPending(false);
         
         if (data.field === 'email') {
           setSignupEmailErr(data.error);
         } else if (data.field === 'username') {
           setSignupUsernameErr(data.error);
+        } else if (data.field === 'student_id') {
+          setSignupStudentIdErr(data.error);
         } else {
           setSignupTermsErr(data.error || 'Signup failed.');
         }
@@ -439,6 +490,7 @@ export default function Auth() {
 
       setSignupUsername('');
       setSignupEmail('');
+      setSignupStudentId('');
       setSignupPassword('');
       setSignupConfirmPassword('');
       setSignupConsentPending(false);
@@ -728,6 +780,24 @@ export default function Auth() {
                 </div>
 
                 <div className="flex flex-col gap-1">
+                  <label className="font-pressstart text-[10px] text-theme-dark">STUDENT ID</label>
+                  <input
+                    type="text"
+                    value={signupStudentId}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9);
+                      setSignupStudentId(val);
+                      validateStudentId(val);
+                    }}
+                    placeholder="A12345678"
+                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
+                      signupStudentIdErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+                    }`}
+                  />
+                  {signupStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupStudentIdErr}</p>}
+                </div>
+
+                <div className="flex flex-col gap-1">
                   <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
                   <div className="relative w-full">
                     <input
@@ -891,6 +961,67 @@ export default function Auth() {
             )}
           </div>
         </div>
+
+        {/* SUSPENDED ACCOUNT MODAL */}
+        {showSuspendedModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-6 h-6 sm:w-7 sm:h-7 text-theme-danger shrink-0">
+                  <path d="M0 0h24v24H0z" fill="none" />
+                  <g fill="currentColor">
+                    <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
+                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
+                  </g>
+                </svg>
+                <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-danger uppercase">
+                  ACCOUNT SUSPENDED
+                </h3>
+              </div>
+
+              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
+                Your StudyCircle account has been suspended due to a violation of community guidelines.
+              </p>
+
+              {suspendedUserData && (
+                <div className="bg-theme-muted p-3 border-2 border-theme-dark rounded-xl flex flex-col gap-1">
+                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark">ACCOUNT: {suspendedUserData.email}</span>
+                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-danger">Reason: {suspendedUserData.reason}</span>
+                </div>
+              )}
+
+              {/* FOCAL CALLOUT BOX FOR SUSPENSION LIFT DATE */}
+              {suspendedUserData && suspendedUserData.liftUntil && (
+                <div className="bg-theme-primary/10 border-2 border-theme-primary p-3 rounded-xl flex flex-col gap-2">
+                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark">
+                    You can log in again on:
+                  </span>
+                  <span className="font-pixel text-[18px] sm:text-[24px] text-theme-primary leading-5">
+                    {suspendedUserData.liftUntil}
+                  </span>
+                </div>
+              )}
+
+              <p className="font-pixel text-[14px] sm:text-[16px] leading-4 text-theme-dark">
+                If you believe this is a mistake, please contact support at <span className="text-theme-primary">support@studycircle.app</span>.
+              </p>
+
+              <div className="flex justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSuspendedModal(false);
+                    setLoginPassword('');
+                    setSuspendedUserData(null);
+                  }}
+                  className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-5 py-2.5 cursor-pointer retro-shadow hover:opacity-90 w-full text-center"
+                >
+                  UNDERSTOOD
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* MANUAL SIGNUP CONFIRMATION MODAL */}
         {signupConsentPending && (
