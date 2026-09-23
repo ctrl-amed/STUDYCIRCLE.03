@@ -1,3 +1,4 @@
+// src/pages/UserRooms.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
@@ -55,6 +56,7 @@ export default function UserRooms() {
   const [isCourseDropdownOpen, setIsCourseDropdownOpen] = useState(false);
   const [newRoomPrivacy, setNewRoomPrivacy] = useState('public');
   const [newRoomMaxMembers, setNewRoomMaxMembers] = useState('');
+  const [newRoomTaskType, setNewRoomTaskType] = useState('individual'); // 'individual' or 'shared'
 
   // Active Pending or Selected Room
   const [selectedStatsRoom, setSelectedStatsRoom] = useState(null);
@@ -82,7 +84,8 @@ export default function UserRooms() {
             breakTime: r.break_time || '0h 15m',
             currentMembers: r.current_members || 1,
             maxMembers: r.max_members || 4,
-            tasks: r.tasks || []
+            tasks: r.tasks || [],
+            taskType: r.taskType || (r.privacy === 'private' ? 'individual' : 'individual')
           }));
           setRoomsList(formattedRooms);
         }
@@ -118,7 +121,6 @@ export default function UserRooms() {
 
     // Listen for incoming join requests if current user is the host
     socketRef.current.on('incoming_join_request', (data) => {
-      // Direktang i-check kung ikaw ang tinutukoy na host ng private room request
       if (data.host === myUsername) {
         setIncomingJoinRequest(data);
       }
@@ -128,13 +130,12 @@ export default function UserRooms() {
       if (data.username === myUsername) {
         if (data.approved) {
           setRequestState('ACCEPTED');
-          // AUTOMATIC NA PAGPASOK NI HELL SA ROOM:
           setTimeout(() => {
             setShowRequestModal(false);
             if (pendingJoinRoom) {
               enterRoomSession(pendingJoinRoom);
             }
-          }, 1000); // 1 second delay para makita niyang "ACCEPTED!" bago pumasok
+          }, 1000);
         } else {
           setRequestState('REJECTED');
         }
@@ -213,7 +214,6 @@ export default function UserRooms() {
   }, [showRequestModal, requestState]);
 
   const handleConfirmCreate = async () => {
-    // FIX: Siguraduhing may laman ang name at max members bago magtuloy
     if (!newRoomName.trim() || !newRoomMaxMembers) {
       alert("Please fill in the room name and select maximum members.");
       return;
@@ -224,6 +224,9 @@ export default function UserRooms() {
       setShowLimitModal(true);
       return;
     }
+
+    // Public rooms default automatically to individual tasks, private rooms use selected newRoomTaskType
+    const effectiveTaskType = newRoomPrivacy === 'public' ? 'individual' : newRoomTaskType;
 
     const payload = {
       name: newRoomName.trim(),
@@ -238,6 +241,7 @@ export default function UserRooms() {
       breakTime: '0h 15m',
       sessions: 1,
       tasks: [],
+      taskType: effectiveTaskType,
       xp: 0,
       coins: 0,
     };
@@ -256,7 +260,8 @@ export default function UserRooms() {
           breakTime: data.room.break_time || '0h 15m',
           currentMembers: data.room.current_members || 1,
           maxMembers: data.room.max_members || 4,
-          tasks: data.room.tasks || []
+          tasks: data.room.tasks || [],
+          taskType: data.room.taskType || effectiveTaskType
         };
 
         setRoomsList((prev) => [createdRoom, ...prev]);
@@ -265,6 +270,7 @@ export default function UserRooms() {
         setNewRoomCourse('');
         setNewRoomPrivacy('public');
         setNewRoomMaxMembers('');
+        setNewRoomTaskType('individual');
         setShowCreateModal(false);
 
         enterRoomSession(createdRoom);
@@ -321,7 +327,6 @@ export default function UserRooms() {
     setIncomingJoinRequest(null);
   };
 
-  // Filter helper matching search query AND course dropdown filter
   const filterRooms = (list) => {
     const query = searchQuery.toLowerCase();
     return list.filter((r) => {
@@ -338,13 +343,8 @@ export default function UserRooms() {
     });
   };
 
-  // Requirement 1: All Rooms tab displays ONLY public rooms
   const filteredAllRooms = filterRooms(roomsList.filter((r) => r.privacy.toLowerCase() === 'public'));
-
-  // Requirement 2: My Rooms tab displays rooms created/hosted by the current user
   const filteredMyRooms = filterRooms(roomsList.filter((r) => r.host === myUsername));
-
-  // Requirement 3: History tab displays summary of previous session history
   const filteredHistory = sessionHistory.filter((item) => {
     const query = searchQuery.toLowerCase();
     return (
@@ -359,7 +359,6 @@ export default function UserRooms() {
 
   const renderRoomCard = (room, isHistoryTab = false) => {
     if (isHistoryTab) {
-      // Render history summary card for past sessions
       return (
         <div
           key={room.id || Math.random()}
@@ -401,6 +400,8 @@ export default function UserRooms() {
       ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
       : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
 
+    const roomTaskType = room.taskType || (room.privacy === 'private' ? 'individual' : 'individual');
+
     return (
       <div
         key={room.id}
@@ -419,9 +420,12 @@ export default function UserRooms() {
               Hosted by: <span className="text-theme-primary">{room.host}</span>
             </span>
             <div className="flex flex-col gap-1.5 pt-1">
-              <div className="flex items-center">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className={`inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] px-2 py-0.5 rounded uppercase ${privacyStyles}`}>
                   <span>{room.privacy}</span>
+                </span>
+                <span className="inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] border-theme-dark/40 bg-theme-muted px-2 py-0.5 rounded uppercase text-theme-dark">
+                  <span>Tasks: {roomTaskType}</span>
                 </span>
               </div>
               <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
@@ -516,7 +520,6 @@ export default function UserRooms() {
             </button>
           </div>
 
-          {/* SEARCH BAR & COURSE FILTER GROUP */}
           <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="relative flex-1 md:w-64 flex items-center">
               <svg
@@ -537,7 +540,6 @@ export default function UserRooms() {
                 className="w-full bg-theme-surface border-[2px] border-theme-dark rounded-[8px] pl-9 pr-8 py-2 font-pressstart text-[9px] text-theme-dark placeholder-[#3D2013]/50 focus:outline-none"
               />
 
-              {/* SEARCH CLEAR (X) BUTTON */}
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
@@ -549,7 +551,6 @@ export default function UserRooms() {
               )}
             </div>
 
-            {/* COURSE FILTER BUTTON WITH DROPDOWN */}
             <div className="relative shrink-0" ref={filterDropdownRef}>
               <button
                 onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
@@ -571,7 +572,6 @@ export default function UserRooms() {
                 </svg>
               </button>
 
-              {/* COURSE FILTER DROPDOWN */}
               {isFilterDropdownOpen && (
                 <div className="absolute right-0 top-full mt-2 w-56 z-50 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] shadow-2xl max-h-60 overflow-y-auto p-1">
                   <div
@@ -676,7 +676,7 @@ export default function UserRooms() {
       {/* CREATE ROOM MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-5">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-md shadow-2xl flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-center relative pb-1">
               <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide">
                 CREATE A ROOM
@@ -702,7 +702,7 @@ export default function UserRooms() {
                 />
               </div>
 
-              {/* 2. COURSE (SEARCHABLE DROPDOWN & TYPABLE) */}
+              {/* 2. COURSE */}
               <div className="flex flex-col gap-1.5 relative" ref={courseDropdownRef}>
                 <label className="font-pressstart text-[9px] text-theme-dark">COURSE</label>
                 <div className="relative w-full">
@@ -728,7 +728,6 @@ export default function UserRooms() {
                   </button>
                 </div>
 
-                {/* DROPDOWN MENU */}
                 {isCourseDropdownOpen && (
                   <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] shadow-xl max-h-40 overflow-y-auto">
                     {filteredCourseOptions.length > 0 ? (
@@ -759,7 +758,10 @@ export default function UserRooms() {
                 <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => setNewRoomPrivacy('public')}
+                    onClick={() => {
+                      setNewRoomPrivacy('public');
+                      setNewRoomTaskType('individual'); // Public rooms default automatically to individual tasks
+                    }}
                     className={`flex-1 flex items-center justify-center gap-2 font-pressstart text-[9px] py-2.5 rounded-[8px] cursor-pointer transition-all ${
                       newRoomPrivacy === 'public'
                         ? 'bg-[#EAF3FF] border-[1.5px] border-[#315B8C] text-[#315B8C] opacity-100'
@@ -783,7 +785,33 @@ export default function UserRooms() {
                 </div>
               </div>
 
-              {/* 4. MAXIMUM MEMBERS */}
+              {/* 4. CONDITIONAL TASKS SELECTOR DROPDOWN (ONLY FOR PRIVATE ROOMS) */}
+              {newRoomPrivacy === 'private' && (
+                <div className="flex flex-col gap-1.5">
+                  <label className="font-pressstart text-[9px] text-theme-dark">TASKS BEHAVIOR</label>
+                  <div className="relative flex items-center">
+                    <select
+                      value={newRoomTaskType}
+                      onChange={(e) => setNewRoomTaskType(e.target.value)}
+                      className="w-full bg-theme-muted border-[2px] border-theme-dark rounded-[8px] px-3 py-2.5 font-pressstart text-[9px] text-theme-dark focus:outline-none cursor-pointer appearance-none"
+                    >
+                      <option value="individual">Individual Tasks</option>
+                      <option value="shared">Shared Tasks</option>
+                    </select>
+                    <svg
+                      className="absolute right-3 w-4 h-4 text-theme-dark pointer-events-none"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m6 9l6 6l6-6" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. MAXIMUM MEMBERS */}
               <div className="flex flex-col gap-1.5">
                 <label className="font-pressstart text-[9px] text-theme-dark">MAXIMUM MEMBERS</label>
                 <div className="relative flex items-center">
@@ -932,7 +960,6 @@ export default function UserRooms() {
               <p>Focus Time: <span className="text-theme-primary">{selectedStatsRoom.focusTime || 25} mins</span></p>
             </div>
 
-            {/* Render checklist tasks */}
             <div className="flex flex-col gap-2">
               <span className="font-pressstart text-[9px] text-theme-dark uppercase">Checklist Tasks:</span>
               {selectedStatsRoom.tasks && selectedStatsRoom.tasks.length > 0 ? (

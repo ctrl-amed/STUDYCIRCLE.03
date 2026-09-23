@@ -1,3 +1,4 @@
+// src/pages/UserHomepage.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePlayer } from '../context/PlayerContext';
@@ -68,6 +69,36 @@ const mockRoomData = {
   chatMessages: []
 };
 
+const REPORT_REASONS = [
+  { id: 'explicit', title: 'Explicit Room Name', desc: 'The room name contains sexually explicit or inappropriate content.' },
+  { id: 'cyberbullying', title: 'Cyberbullying Space', desc: 'The room is being used to bully, harass, or target others.' },
+  { id: 'offtopic', title: 'Off-topic', desc: 'The room contains unrelated activity.' },
+  { id: 'promotions', title: 'Promotions', desc: 'The room promotes or facilitates illegal activities.' },
+  { id: 'other', title: 'Other', desc: 'Please specify.' },
+];
+
+const REPORT_USER_REASONS = [
+  { id: 'inappropriate', title: 'Inappropriate Content', desc: 'Hate speech, harassment, sexual content, etc.' },
+  { id: 'spam', title: 'Spam', desc: 'Repeated messages, promotions, scams, etc.' },
+  { id: 'misinformation', title: 'Misinformation', desc: 'False information, misleading claims, etc.' },
+  { id: 'other', title: 'Other', desc: 'Please specify.' },
+];
+
+const REPORT_MESSAGE_REASONS = [
+  { id: 'inappropriate', title: 'Inappropriate Content', desc: 'Hate speech, harassment, sexual content, etc.' },
+  { id: 'spam', title: 'Spam', desc: 'Repeated messages, promotions, scams, etc.' },
+  { id: 'misinformation', title: 'Misinformation', desc: 'False information, misleading claims, etc.' },
+  { id: 'other', title: 'Other', desc: 'Please specify.' },
+];
+
+const PRODUCTIVITY_LEVELS = [
+  { id: 1, title: '1 - Not Productive' },
+  { id: 2, title: '2 - Slightly Productive' },
+  { id: 3, title: '3 - Neutral' },
+  { id: 4, title: '4 - Productive' },
+  { id: 5, title: '5 - Very Productive' },
+];
+
 const activityIcons = {
   Reading: (
     <svg className="w-5 h-5 text-theme-dark" viewBox="0 0 2048 2048" fill="currentColor">
@@ -114,6 +145,33 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showRoomActivityModal, setShowRoomActivityModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
+
+  // Feedback Modal States
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [taskStatus, setTaskStatus] = useState('Completed');
+  const [productivityLevel, setProductivityLevel] = useState(3);
+  const [accomplishedText, setAccomplishedText] = useState('');
+  const [showFeedbackSuccessModal, setShowFeedbackSuccessModal] = useState(false);
+
+  // Report Modal States
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportReason, setReportReason] = useState('Explicit Room Name');
+  const [reportNotes, setReportNotes] = useState('');
+  const [showReportSuccessModal, setShowReportSuccessModal] = useState(false);
+
+  // Report User Modal States
+  const [showReportUserModal, setShowReportUserModal] = useState(false);
+  const [reportedUser, setReportedUser] = useState(null);
+  const [reportUserReason, setReportUserReason] = useState('Inappropriate Content');
+  const [reportUserNotes, setReportUserNotes] = useState('');
+  const [showReportUserSuccessModal, setShowReportUserSuccessModal] = useState(false);
+
+  // Report Message Modal States
+  const [showReportMessageModal, setShowReportMessageModal] = useState(false);
+  const [reportedMessage, setReportedMessage] = useState(null);
+  const [reportMessageReason, setReportMessageReason] = useState('Inappropriate Content');
+  const [reportMessageNotes, setReportMessageNotes] = useState('');
+  const [showReportMessageSuccessModal, setShowReportMessageSuccessModal] = useState(false);
 
   const [activeProfileId, setActiveProfileId] = useState(null);
   const [sentFriendRequests, setSentFriendRequests] = useState([]);
@@ -185,10 +243,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
   const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
 
-// Pwedeng i-check kung ang username mo ay kapareho ng host, o kung may member ka na host
-const isCurrentUserHost = roomData.members.some((m) => m.username === player.username && m.isHost) || 
+  const isCurrentUserHost = roomData.members.some((m) => m.username === player.username && m.isHost) || 
                           roomData.hostId === player.username || 
-                          true; // Pansamantalang i-true muna kung ikaw ang tanging nagpapatakbo ng room page na ito bilang host
+                          true;
 
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
@@ -212,7 +269,10 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
           activity: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
           isMultiplayer: isMultiplayer,
           isHost: isCurrentUserHost,
-          roomSize: roomData.members.length || 1
+          roomSize: roomData.members.length || 1,
+          taskStatus: taskStatus,
+          productivityLevel: productivityLevel,
+          accomplishedText: accomplishedText
         })
       });
 
@@ -231,20 +291,26 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
           focusTime: durationMins,
           sessionCount: 1,
           tasks: currentTasks,
-          finishedAt: new Date().toISOString()
+          finishedAt: new Date().toISOString(),
+          taskStatus,
+          productivityLevel,
+          accomplishedText
         };
         const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
         localStorage.setItem('completed_sessions_history', JSON.stringify([historyItem, ...existingHistory]));
 
         localStorage.removeItem('activeSession');
-        window.location.reload();
+
+        setShowFeedbackModal(false);
+        setTaskStatus('Completed');
+        setProductivityLevel(3);
+        setAccomplishedText('');
+        setShowFeedbackSuccessModal(true);
       } else {
         alert("Failed to save session: " + data.error);
       }
     } catch (err) {
       alert("Network error while saving session.");
-    } finally {
-      timer.closeRewardModal();
     }
   };
 
@@ -265,7 +331,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
     if (socketRef.current && incomingRequest) {
       socketRef.current.emit('host_room_response', {
         room: roomData.roomName,
-        username: incomingRequest.username, // 'hell'
+        username: incomingRequest.username,
         approved: approved
       });
     }
@@ -356,7 +422,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
           if (data.members) updated.members = data.members;
           if (data.logs && data.logs.length > 0) updated.auditLogs = [...data.logs, ...prev.auditLogs];
           
-          // FIX: Ensure room configuration from backend is parsed into a usable object
           if (data.room_config) {
             try {
               updated.roomConfig = typeof data.room_config === 'string' 
@@ -375,9 +440,8 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
       });
 
       socketRef.current.on('incoming_join_request', (data) => {
-     console.log("Incoming join request received:", data);
-     setIncomingRequest(data); // Direktang i-set para lumabas ang modal sa host
-   });
+        setIncomingRequest(data);
+      });
 
       return () => {
         if (socketRef.current) {
@@ -477,7 +541,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
 
       const roomName = parsed?.name || parsed?.roomName || "Study Room";
       
-      // FIX: Parse the host's room config properly if it's stored as a string
       let finalRoomConfig = parsed?.room_config || parsed?.roomConfig || null;
       if (typeof finalRoomConfig === 'string') {
         try { finalRoomConfig = JSON.parse(finalRoomConfig); } catch (e) {}
@@ -712,11 +775,11 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                       !isLast ? 'border-b border-theme-dark/20 pb-1.5' : ''
                     }`}
                   >
-                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary font-bold truncate">
+                    <span className="font-pressstart text-[9px] sm:text-[10px] text-theme-primary truncate">
                       {act.name}
                     </span>
                     <div className="flex items-center justify-between w-full font-pressstart text-[7px] sm:text-[8px] text-theme-dark/80">
-                      <span className="font-bold text-theme-dark">{act.duration}</span>
+                      <span className="text-theme-dark">{act.duration}</span>
                       <span className="bg-theme-dark/10 px-1.5 py-0.5 rounded text-theme-dark shrink-0">
                         {act.technique}
                       </span>
@@ -759,9 +822,21 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                     {roomData.members.length}/{roomData.maxMembers} MEMBERS
                   </span>
                   <span>|</span>
-                  <span className="text-theme-safe font-bold uppercase">{roomData.privacy || 'PUBLIC'}</span>
+                  <span className="text-theme-safe uppercase">{roomData.privacy || 'PUBLIC'}</span>
                   <span>|</span>
-                  <span className="truncate">{roomData.course}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate">{roomData.course}</span>
+                    <span>|</span>
+                    <button
+                      onClick={() => setShowReportModal(true)}
+                      className="p-1 text-theme-primary hover:text-theme-danger hover:scale-110 transition-all cursor-pointer"
+                      title="Report Room"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </button>
+                  </div>
                   {roomData.code && (
                     <>
                       <span>|</span>
@@ -806,9 +881,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                   const isProfileOpen = activeProfileId === memberKey;
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
-                  // FIX: Check if this member is the current user to hide "ADD" button
                   const isMe = member.username === player.username;
-                  // FIX: Get the unique avatar configuration for this specific member
                   const memberAvatarConfig = getLeaderboardAvatarConfig(member) || member.avatar_config || member.config;
 
                   return (
@@ -827,7 +900,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
-                      {/* FIX: Nametag with Host Crown Icon and (YOU) indicator */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
                         {member.isHost && (
                           <svg
@@ -852,7 +924,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                         >
                           <div className="relative shrink-0 flex items-center justify-center">
                             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              {/* FIX: Use unique avatar config if available */}
                               {memberAvatarConfig ? (
                                 <div 
                                   className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
@@ -869,7 +940,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                               )}
                             </div>
                             <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
-                              <span className="font-pressstart text-[8px] text-theme-dark font-bold">
+                              <span className="font-pressstart text-[8px] text-theme-dark">
                                 {member.level || 1}
                               </span>
                             </div>
@@ -897,7 +968,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                               </span>
                             </div>
 
-                            {/* FIX: Hide ADD button if it's your own account */}
                             {!isMe && (
                               <button
                                 onClick={() => handleAddFriend(member)}
@@ -914,18 +984,35 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                           </div>
 
                           <div className="flex flex-col items-end gap-2 shrink-0 self-start">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveProfileId(null);
-                              }}
-                              className="font-pressstart text-[8px] text-theme-dark hover:text-theme-primary cursor-pointer p-0.5 leading-none"
-                              title="Close profile"
-                            >
-                              ✕
-                            </button>
+                            <div className="flex items-center gap-1">
+                              {!isMe && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReportedUser(member);
+                                    setActiveProfileId(null);
+                                    setShowReportUserModal(true);
+                                  }}
+                                  className="p-1 text-theme-dark/60 hover:text-theme-danger hover:scale-110 transition-all cursor-pointer"
+                                  title="Report User"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2z" />
+                                  </svg>
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveProfileId(null);
+                                }}
+                                className="font-pressstart text-[8px] text-theme-dark hover:text-theme-primary cursor-pointer p-0.5 leading-none"
+                                title="Close profile"
+                              >
+                                ✕
+                              </button>
+                            </div>
 
-                            {/* FIX: Don't show KICK button on yourself */}
                             {isCurrentUserHost && !isMe && (
                               <button
                                 onClick={(e) => {
@@ -942,7 +1029,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                         </div>
                       )}
 
-                      {/* FIX: Use individual player's avatar config */}
                       <CustomAvatar
                         config={memberAvatarConfig}
                         state={member.status === 'IN SESSION' ? 'focus' : 'idle'}
@@ -1041,7 +1127,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                   roomData.auditLogs.map((log) => (
                     <div key={log.id} className="flex items-center justify-between p-2 rounded-[6px] bg-theme-muted/50 border border-theme-dark/10">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-pressstart text-[9px] text-theme-primary font-bold">{log.user}</span>
+                        <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                         <span className="font-pixel text-[14px] text-theme-dark truncate">{log.action}</span>
                       </div>
                       <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
@@ -1322,7 +1408,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span
                         className={`font-pressstart text-[10px] w-5 text-center ${
-                          item.rank <= 3 ? 'text-theme-primary font-bold' : 'text-theme-dark/60'
+                          item.rank <= 3 ? 'text-theme-primary' : 'text-theme-dark/60'
                         }`}
                       >
                         #{item.rank}
@@ -1364,23 +1450,47 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
             </div>
 
             <div ref={chatContainerRef} className="flex-1 min-h-[180px] max-h-[220px] overflow-y-auto flex flex-col gap-2 p-2 bg-theme-muted/30 border border-theme-dark/20 rounded-[8px]">
-              {roomChat.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex flex-col max-w-[85%] ${
-                    msg.sender === player.username ? 'self-end items-end' : 'self-start items-start'
-                  }`}
-                >
-                  <span className="font-pressstart text-[7px] text-theme-dark/60 mb-0.5">{msg.sender}</span>
-                  <div className={`px-2.5 py-1.5 font-pixel text-[14px] rounded-[6px] border ${
-                    msg.sender === player.username 
-                      ? 'bg-theme-primary text-theme-white border-theme-dark' 
-                      : 'bg-theme-surface text-theme-dark border-theme-dark/30'
-                  }`}>
-                    {msg.text}
+              {roomChat.map((msg, idx) => {
+                const isMe = msg.sender === player.username;
+                return (
+                  <div
+                    key={idx}
+                    className={`flex flex-col max-w-[85%] ${
+                      isMe ? 'self-end items-end' : 'self-start items-start'
+                    }`}
+                  >
+                    <span className="font-pressstart text-[7px] text-theme-dark/60 mb-0.5">{msg.sender}</span>
+                    <div className={`flex items-center gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`px-2.5 py-1.5 font-pixel text-[14px] rounded-[6px] border ${
+                        isMe 
+                          ? 'bg-theme-primary text-theme-white border-theme-dark' 
+                          : 'bg-theme-surface text-theme-dark border-theme-dark/30'
+                      }`}>
+                        {msg.text}
+                      </div>
+                      {!isMe && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReportedMessage(msg);
+                            setShowReportMessageModal(true);
+                          }}
+                          className="p-1 hover:scale-110 transition-transform cursor-pointer"
+                          title="Report Message"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-4 h-4 text-theme-dark/60 hover:text-theme-danger cursor-pointer transition-colors">
+                            <path d="M0 0h24v24H0z" fill="none" />
+                            <g fill="currentColor">
+                              <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
+                              <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
+                            </g>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {showEmojiPicker && (
@@ -1477,6 +1587,700 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
         )}
       </div>
 
+      {/* FEEDBACK MODAL ('HOW WAS YOUR SESSION?') */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
+            {/* Header Row */}
+            <div className="flex items-center justify-between pb-3 border-b-2 border-theme-dark/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[8px] bg-theme-muted flex items-center justify-center overflow-hidden shrink-0">
+                  <img src="/public/media/kitsu_logo.png" alt="Logo" className="w-full h-full object-cover" onError={(e)=>{e.target.style.display='none';}} />
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-pressstart text-[12px] sm:text-[14px] text-theme-dark uppercase">
+                    HOW WAS YOUR SESSION?
+                  </h3>
+                  <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70">
+                    Your feedback helps us make StudyCircle better!
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFeedbackModal(false)}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Container 1 (Task Status) */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col">
+                <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">1. TASK STATUS</span>
+                <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70">Did you complete your task?</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {['Completed', 'Partially Completed', 'Not Completed'].map((status) => {
+                  const isSelected = taskStatus === status;
+                  return (
+                    <div
+                      key={status}
+                      onClick={() => setTaskStatus(status)}
+                      className={`flex items-center gap-2.5 p-3 rounded-[8px] border-[1.5px] cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-theme-primary/10 border-theme-primary text-theme-primary'
+                          : 'bg-theme-surface border-theme-dark hover:bg-theme-muted text-theme-dark'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="taskStatus"
+                        checked={isSelected}
+                        onChange={() => setTaskStatus(status)}
+                        className="accent-theme-primary cursor-pointer shrink-0"
+                      />
+                      <span className="font-pixel text-[13px] sm:text-[16px] leading-tight">{status}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Container 2 (Productivity Level) */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col">
+                <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">2. HOW PRODUCTIVE WAS YOUR SESSION?</span>
+                <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70">Rate your productivity level.</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                {PRODUCTIVITY_LEVELS.map((lvl) => {
+                  const isSelected = productivityLevel === lvl.id;
+                  return (
+                    <div
+                      key={lvl.id}
+                      onClick={() => setProductivityLevel(lvl.id)}
+                      className={`flex flex-col items-center justify-center p-2.5 rounded-[8px] border-[1.5px] cursor-pointer transition-all text-center ${
+                        isSelected
+                          ? 'bg-theme-primary/10 border-theme-primary text-theme-primary'
+                          : 'bg-theme-surface border-theme-dark hover:bg-theme-muted text-theme-dark'
+                      }`}
+                    >
+                      <span className="font-pressstart text-[12px] sm:text-[14px] mb-1">{lvl.id}</span>
+                      <span className="font-pixel text-[10px] sm:text-[12px] leading-tight">{lvl.title.split(' - ')[1]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Container 3 (Accomplishments) */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col">
+                <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">3. WHAT DID YOU ACCOMPLISH?</span>
+                <span className="font-pixel text-[12px] sm:text-[16px] text-theme-dark/70">You can briefly describe what you did, learned, or achieved.</span>
+              </div>
+              <div className="relative">
+                <textarea
+                  value={accomplishedText}
+                  maxLength={200}
+                  onChange={(e) => setAccomplishedText(e.target.value)}
+                  placeholder="e.g. finished 2 chapters, completed practice problems, etc..."
+                  className="w-full h-20 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] p-2.5 font-pixel text-[12px] sm:text-[16px] text-theme-dark placeholder-theme-dark/40 focus:outline-none resize-none pb-5"
+                />
+                <span className="absolute bottom-2 right-3 font-pixel text-[11px] text-theme-dark/60">
+                  {accomplishedText.length}/200
+                </span>
+              </div>
+            </div>
+
+            {/* Footer Button */}
+            <div className="flex items-center justify-center pt-2 border-t border-theme-dark/20">
+              <button
+                onClick={handleClaimAndSaveToDB}
+                className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-6 py-3 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90 uppercase"
+              >
+                SUBMIT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEEDBACK SUCCESS MODAL */}
+      {showFeedbackSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="w-12 h-12 rounded-full bg-theme-safe text-white flex items-center justify-center">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
+              </svg>
+            </div>
+            <h3 className="font-pressstart text-[12px] text-theme-dark uppercase">
+              FEEDBACK SUBMITTED
+            </h3>
+            <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+              Thank you for your feedback! Your rewards have been successfully claimed and saved.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setShowFeedbackSuccessModal(false);
+                window.location.reload();
+              }}
+              className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2 uppercase"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT ROOM MODAL */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
+            <div className="flex items-center justify-between pb-3 border-b-2 border-theme-dark/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-theme-danger text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  </svg>
+                </div>
+                <h3 className="font-pressstart text-[13px] sm:text-[15px] text-theme-dark uppercase">
+                  REPORT ROOM
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">
+              Help us keep StudyCircle safe and respectful. Please provide a reason for reporting this room.
+            </p>
+
+            <div className="flex items-center gap-3 p-3 bg-theme-muted/50 border-[1.5px] border-theme-dark/30 rounded-[8px]">
+              <div className="w-10 h-10 rounded-full border border-theme-dark bg-theme-muted flex items-center justify-center font-pressstart text-[12px] text-theme-dark shrink-0">
+                {roomData.roomName ? roomData.roomName.charAt(0) : 'R'}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark truncate">{roomData.roomName}</span>
+                <span className="font-pixel text-[10px] sm:text-[15px] text-theme-dark truncate">
+                  Host: {roomData.hostId || (roomData.members.find(m => m.isHost)?.username) || 'Host'} | {currentDateStr || 'Today'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">REASON FOR REPORT</label>
+              <div className="flex flex-col gap-2">
+                {REPORT_REASONS.map((reason, index) => {
+                  const reportIcons = [
+                    <svg key="1" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
+                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
+                      </g>
+                    </svg>,
+                    <svg key="2" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m10 13l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m-6.876 5.701L5.6 19.921c-.833.665-1.249.998-1.599.999a1 1 0 0 1-.783-.377C3 20.27 3 19.737 3 18.671V7.201c0-1.12 0-1.681.218-2.11c.192-.376.497-.681.874-.873C4.52 4 5.08 4 6.2 4h11.6c1.12 0 1.68 0 2.107.218c.377.192.683.497.875.874c.218.427.218.987.218 2.105v7.607c0 1.117 0 1.676-.218 2.104a2 2 0 0 1-.874.874c-.427.218-.987.218-2.105.218h-8.68c-.417 0-.624 0-.823.04a2 2 0 0 0-.508.179c-.18.091-.34.22-.657.474z" />
+                    </svg>,
+                    <svg key="3" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v11a2 2 0 0 1 -2 2H5a2 2 0 0 1 -2 -2Z" />
+                        <path d="M7 18v3l3 -3" />
+                        <path d="M7.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 1 0 -7 0" />
+                        <path d="m13.5 12.5 2 2" />
+                      </g>
+                    </svg>,
+                    <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="currentColor" d="M12 2.07a9.93 9.93 0 1 0 7.03 16.95a.4.4 0 0 0 .06-.07A9.84 9.84 0 0 0 21.935 12A9.944 9.944 0 0 0 12 2.07m0 18.86A8.945 8.945 0 0 1 3.065 12a8.84 8.84 0 0 1 2.28-5.95l12.61 12.61A8.93 8.93 0 0 1 12 20.93m6.67-2.98L6.045 5.34a8.934 8.934 0 0 1 12.62 12.61Z" />
+                    </svg>,
+                    <svg key="5" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
+                      <path d="M0 0h16v16H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
+                      </g>
+                    </svg>
+                  ];
+
+                  const isSelected = reportReason === reason.title;
+
+                  return (
+                    <div
+                      key={reason.id}
+                      onClick={() => setReportReason(reason.title)}
+                      className={`flex items-center gap-3.5 p-3 rounded-[8px] border-[1.5px] cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-theme-primary/10 border-theme-primary text-theme-primary'
+                          : 'bg-theme-surface border-theme-dark hover:bg-theme-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reportReason"
+                        checked={isSelected}
+                        onChange={() => setReportReason(reason.title)}
+                        className="accent-theme-primary cursor-pointer shrink-0 self-center"
+                      />
+                      
+                      <div className="w-9 h-9 rounded-full bg-theme-muted text-theme-primary flex items-center justify-center shrink-0 self-center">
+                        {reportIcons[index % reportIcons.length]}
+                      </div>
+
+                      <div className="flex flex-col justify-center min-w-0">
+                        <span className={`font-pixel text-[15px] sm:text-[20px] ${isSelected ? 'text-theme-primary' : 'text-theme-dark'}`}>
+                          {reason.title}
+                        </span>
+                        <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/70 leading-4">
+                          {reason.desc}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">ADDITIONAL NOTES (OPTIONAL)</label>
+                <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/60">{reportNotes.length}/500</span>
+              </div>
+              <textarea
+                value={reportNotes}
+                maxLength={500}
+                onChange={(e) => setReportNotes(e.target.value)}
+                placeholder="Add any extra information that might help..."
+                className="w-full h-20 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] p-2.5 font-pixel text-[10px] sm:text-[18px] text-theme-dark placeholder-theme-dark/40 focus:outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2 border-t border-theme-dark/20">
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="font-pressstart text-[9px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark px-4 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  setShowReportModal(false);
+                  setReportNotes('');
+                  setShowReportSuccessModal(true);
+                }}
+                className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                SUBMIT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT USER MODAL */}
+      {showReportUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
+            <div className="flex items-center justify-between pb-3 border-b-2 border-theme-dark/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-theme-danger text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  </svg>
+                </div>
+                <h3 className="font-pressstart text-[13px] sm:text-[15px] text-theme-dark uppercase">
+                  REPORT USER
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowReportUserModal(false)}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">
+              Help us keep StudyCircle safe and respectful. Please provide a reason for reporting this user.
+            </p>
+
+            <div className="flex items-center gap-3 p-3 bg-theme-muted/50 border-[1.5px] border-theme-dark/30 rounded-[8px]">
+              <div className="w-10 h-10 rounded-full border border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center shrink-0">
+                <img
+                  src={reportedUser?.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${reportedUser?.username || 'user'}`}
+                  alt="User Avatar"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark truncate">{reportedUser?.username || 'User'}</span>
+                <span className="font-pixel text-[10px] sm:text-[15px] text-theme-dark truncate">
+                  LVL {reportedUser?.level || 1} | {currentDateStr || 'Today'}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">REASON FOR REPORT</label>
+              <div className="flex flex-col gap-2">
+                {REPORT_USER_REASONS.map((reason, index) => {
+                  const reportUserIcons = [
+                    <svg key="1" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
+                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
+                      </g>
+                    </svg>,
+                    <svg key="2" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m10 13l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m-6.876 5.701L5.6 19.921c-.833.665-1.249.998-1.599.999a1 1 0 0 1-.783-.377C3 20.27 3 19.737 3 18.671V7.201c0-1.12 0-1.681.218-2.11c.192-.376.497-.681.874-.873C4.52 4 5.08 4 6.2 4h11.6c1.12 0 1.68 0 2.107.218c.377.192.683.497.875.874c.218.427.218.987.218 2.105v7.607c0 1.117 0 1.676-.218 2.104a2 2 0 0 1-.874.874c-.427.218-.987.218-2.105.218h-8.68c-.417 0-.624 0-.823.04a2 2 0 0 0-.508.179c-.18.091-.34.22-.657.474z" />
+                    </svg>,
+                    <svg key="3" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v11a2 2 0 0 1 -2 2H5a2 2 0 0 1 -2 -2Z" />
+                        <path d="M7 18v3l3 -3" />
+                        <path d="M7.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 1 0 -7 0" />
+                        <path d="m13.5 12.5 2 2" />
+                      </g>
+                    </svg>,
+                    <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
+                      <path d="M0 0h16v16H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
+                      </g>
+                    </svg>
+                  ];
+
+                  const isSelected = reportUserReason === reason.title;
+
+                  return (
+                    <div
+                      key={reason.id}
+                      onClick={() => setReportUserReason(reason.title)}
+                      className={`flex items-center gap-3.5 p-3 rounded-[8px] border-[1.5px] cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-theme-primary/10 border-theme-primary text-theme-primary'
+                          : 'bg-theme-surface border-theme-dark hover:bg-theme-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reportUserReason"
+                        checked={isSelected}
+                        onChange={() => setReportUserReason(reason.title)}
+                        className="accent-theme-primary cursor-pointer shrink-0 self-center"
+                      />
+                      
+                      <div className="w-9 h-9 rounded-full bg-theme-muted text-theme-primary flex items-center justify-center shrink-0 self-center">
+                        {reportUserIcons[index % reportUserIcons.length]}
+                      </div>
+
+                      <div className="flex flex-col justify-center min-w-0">
+                        <span className={`font-pixel text-[15px] sm:text-[20px] ${isSelected ? 'text-theme-primary' : 'text-theme-dark'}`}>
+                          {reason.title}
+                        </span>
+                        <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/70 leading-4">
+                          {reason.desc}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">ADDITIONAL NOTES (OPTIONAL)</label>
+                <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/60">{reportUserNotes.length}/500</span>
+              </div>
+              <textarea
+                value={reportUserNotes}
+                maxLength={500}
+                onChange={(e) => setReportUserNotes(e.target.value)}
+                placeholder="Add any extra information that might help..."
+                className="w-full h-20 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] p-2.5 font-pixel text-[10px] sm:text-[18px] text-theme-dark placeholder-theme-dark/40 focus:outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2 border-t border-theme-dark/20">
+              <button
+                onClick={() => setShowReportUserModal(false)}
+                className="font-pressstart text-[9px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark px-4 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  setShowReportUserModal(false);
+                  setReportUserNotes('');
+                  setShowReportUserSuccessModal(true);
+                }}
+                className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                SUBMIT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT MESSAGE MODAL */}
+      {showReportMessageModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
+            <div className="flex items-center justify-between pb-3 border-b-2 border-theme-dark/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-full bg-theme-danger text-white flex items-center justify-center shrink-0 shadow-sm">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  </svg>
+                </div>
+                <h3 className="font-pressstart text-[13px] sm:text-[15px] text-theme-dark uppercase">
+                  REPORT MESSAGE
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowReportMessageModal(false)}
+                className="text-theme-dark hover:text-theme-primary p-1 cursor-pointer transition-colors"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <p className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">
+              Help us keep StudyCircle safe and respectful. Please provide a reason for reporting this message.
+            </p>
+
+            <div className="flex items-center gap-3 p-3 bg-theme-muted/50 border-[1.5px] border-theme-dark/30 rounded-[8px]">
+              <div className="w-10 h-10 rounded-full border border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center shrink-0">
+                <img
+                  src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${reportedMessage?.sender || 'user'}`}
+                  alt="Sender Avatar"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark truncate">
+                  {reportedMessage?.sender || 'User'} | {reportedMessage?.time || currentDateStr || 'Today'}
+                </span>
+                <span className="font-pixel text-[10px] sm:text-[15px] text-theme-dark/80 truncate mt-0.5">
+                  "{reportedMessage?.text}"
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">REASON FOR REPORT</label>
+              <div className="flex flex-col gap-2">
+                {REPORT_MESSAGE_REASONS.map((reason, index) => {
+                  const reportMessageIcons = [
+                    <svg key="1" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
+                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
+                      </g>
+                    </svg>,
+                    <svg key="2" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="m10 13l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m-6.876 5.701L5.6 19.921c-.833.665-1.249.998-1.599.999a1 1 0 0 1-.783-.377C3 20.27 3 19.737 3 18.671V7.201c0-1.12 0-1.681.218-2.11c.192-.376.497-.681.874-.873C4.52 4 5.08 4 6.2 4h11.6c1.12 0 1.68 0 2.107.218c.377.192.683.497.875.874c.218.427.218.987.218 2.105v7.607c0 1.117 0 1.676-.218 2.104a2 2 0 0 1-.874.874c-.427.218-.987.218-2.105.218h-8.68c-.417 0-.624 0-.823.04a2 2 0 0 0-.508.179c-.18.091-.34.22-.657.474z" />
+                    </svg>,
+                    <svg key="3" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2">
+                        <path d="M3 5a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v11a2 2 0 0 1 -2 2H5a2 2 0 0 1 -2 -2Z" />
+                        <path d="M7 18v3l3 -3" />
+                        <path d="M7.5 10a3.5 3.5 0 1 0 7 0 3.5 3.5 0 1 0 -7 0" />
+                        <path d="m13.5 12.5 2 2" />
+                      </g>
+                    </svg>,
+                    <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
+                      <path d="M0 0h16v16H0z" fill="none" />
+                      <g fill="currentColor">
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
+                      </g>
+                    </svg>
+                  ];
+
+                  const isSelected = reportMessageReason === reason.title;
+
+                  return (
+                    <div
+                      key={reason.id}
+                      onClick={() => setReportMessageReason(reason.title)}
+                      className={`flex items-center gap-3.5 p-3 rounded-[8px] border-[1.5px] cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-theme-primary/10 border-theme-primary text-theme-primary'
+                          : 'bg-theme-surface border-theme-dark hover:bg-theme-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="reportMessageReason"
+                        checked={isSelected}
+                        onChange={() => setReportMessageReason(reason.title)}
+                        className="accent-theme-primary cursor-pointer shrink-0 self-center"
+                      />
+                      
+                      <div className="w-9 h-9 rounded-full bg-theme-muted text-theme-primary flex items-center justify-center shrink-0 self-center">
+                        {reportMessageIcons[index % reportMessageIcons.length]}
+                      </div>
+
+                      <div className="flex flex-col justify-center min-w-0">
+                        <span className={`font-pixel text-[15px] sm:text-[20px] ${isSelected ? 'text-theme-primary' : 'text-theme-dark'}`}>
+                          {reason.title}
+                        </span>
+                        <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/70 leading-4">
+                          {reason.desc}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="font-pressstart text-[9px] sm:text-[12px] text-theme-dark uppercase">ADDITIONAL NOTES (OPTIONAL)</label>
+                <span className="font-pixel text-[10px] sm:text-[18px] text-theme-dark/60">{reportMessageNotes.length}/500</span>
+              </div>
+              <textarea
+                value={reportMessageNotes}
+                maxLength={500}
+                onChange={(e) => setReportMessageNotes(e.target.value)}
+                placeholder="Add any extra information that might help..."
+                className="w-full h-20 bg-theme-surface border-[2px] border-theme-dark rounded-[8px] p-2.5 font-pixel text-[10px] sm:text-[18px] text-theme-dark placeholder-theme-dark/40 focus:outline-none resize-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-center gap-3 pt-2 border-t border-theme-dark/20">
+              <button
+                onClick={() => setShowReportMessageModal(false)}
+                className="font-pressstart text-[9px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark px-4 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={() => {
+                  setShowReportMessageModal(false);
+                  setReportMessageNotes('');
+                  setShowReportMessageSuccessModal(true);
+                }}
+                className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
+              >
+                SUBMIT
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT MESSAGE SUCCESS CONFIRMATION MODAL */}
+      {showReportMessageSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col items-center text-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-theme-safe text-white flex items-center justify-center">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
+              </svg>
+            </div>
+            <h3 className="font-pressstart text-[12px] text-theme-dark uppercase">
+              REPORT SUBMITTED
+            </h3>
+            <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+              Thank you for helping keep StudyCircle safe and respectful. Our moderation team will review this message shortly.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowReportMessageSuccessModal(false)}
+              className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* REPORT USER SUCCESS CONFIRMATION MODAL */}
+      {showReportUserSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col items-center text-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-theme-safe text-white flex items-center justify-center">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
+              </svg>
+            </div>
+            <h3 className="font-pressstart text-[12px] text-theme-dark uppercase">
+              REPORT SUBMITTED
+            </h3>
+            <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+              Thank you for helping keep StudyCircle safe and respectful. Our moderation team will review this user shortly.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowReportUserSuccessModal(false)}
+              className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SUCCESS CONFIRMATION MODAL */}
+      {showReportSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col items-center text-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-theme-safe text-white flex items-center justify-center">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19L21 7l-1.41-1.41z" />
+              </svg>
+            </div>
+            <h3 className="font-pressstart text-[12px] text-theme-dark uppercase">
+              REPORT SUBMITTED
+            </h3>
+            <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+              Thank you for helping keep StudyCircle safe and respectful. Our moderation team will review this room shortly.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowReportSuccessModal(false)}
+              className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2"
+            >
+              GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
       {showRecentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[85vh] dark:bg-zinc-900">
@@ -1528,7 +2332,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
               {roomData.auditLogs.map((log) => (
                 <div key={log.id} className="flex items-center justify-between p-2.5 rounded-[6px] bg-theme-muted/50 border border-theme-dark/10">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-pressstart text-[9px] text-theme-primary font-bold">{log.user}</span>
+                    <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                     <span className="font-pixel text-[15px] text-theme-dark truncate">{log.action}</span>
                   </div>
                   <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
@@ -1594,7 +2398,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span
                         className={`font-pressstart text-[10px] w-5 text-center ${
-                          item.rank <= 3 ? 'text-theme-primary font-bold' : 'text-theme-dark/60'
+                          item.rank <= 3 ? 'text-theme-primary' : 'text-theme-dark/60'
                         }`}
                       >
                         #{item.rank}
@@ -1701,7 +2505,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
               JOIN REQUEST
             </h3>
             <p className="font-pixel text-[18px] text-theme-dark leading-snug">
-              <span className="font-bold text-theme-primary">{incomingRequest.username}</span> wants to join your private study room.
+              <span className="text-theme-primary">{incomingRequest.username}</span> wants to join your private study room.
             </p>
             <div className="flex gap-3 w-full mt-2">
               <button
@@ -1721,7 +2525,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
         </div>
       )}
 
-      {/* AFK / NUDGE VERIFICATION MODAL */}
       {timer.showNudgeModal && (
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
@@ -1737,7 +2540,7 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
 
             <div className="bg-theme-muted border-2 border-theme-dark px-4 py-2 rounded-[8px] w-full flex items-center justify-center gap-2 dark:bg-zinc-800">
               <span className="font-pressstart text-[10px] text-theme-dark/70">Pausing in:</span>
-              <span className="font-pressstart text-[14px] text-theme-danger font-bold">{timer.nudgeCountdown}s</span>
+              <span className="font-pressstart text-[14px] text-theme-danger">{timer.nudgeCountdown}s</span>
             </div>
 
             <button
@@ -1750,7 +2553,6 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
         </div>
       )}
 
-      {/* RETRO TOAST NOTIFICATION */}
       {timer.toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[99999] bg-theme-surface border-2 border-theme-dark px-4 py-3 rounded-[8px] shadow-2xl flex items-center gap-3 animate-bounce-short dark:bg-zinc-900">
           <span className="text-xl">⚠️</span>
@@ -1786,7 +2588,10 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
             </div>
 
             <button
-              onClick={handleClaimAndSaveToDB}
+              onClick={() => {
+                timer.closeRewardModal();
+                setShowFeedbackModal(true);
+              }}
               className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 retro-shadow hover:bg-[#d0622c] cursor-pointer"
             >
               CLAIM REWARD
@@ -1799,7 +2604,8 @@ const isCurrentUserHost = roomData.members.some((m) => m.username === player.use
         <div className="fixed bottom-6 right-6 z-[99999]">
           <button
             onClick={() => {
-              handleClaimAndSaveToDB();
+              timer.closeRewardModal();
+              setShowFeedbackModal(true);
             }}
             className="bg-red-600 hover:bg-red-700 text-white font-pressstart text-[10px] px-4 py-3 rounded-lg border-3 border-theme-dark shadow-2xl cursor-pointer uppercase animate-pulse"
           >
