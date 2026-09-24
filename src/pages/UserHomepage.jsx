@@ -194,6 +194,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const chatContainerRef = useRef(null);
 
+  // Kick Modal State
+  const [showKickModal, setShowKickModal] = useState(false);
+
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -202,6 +205,119 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const audioRef = useRef(null);
   const currentTrack = LOFI_TRACKS[currentTrackIndex];
+
+  // Voice Chat States & Ref para maiwasan ang lag/stale closure
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
+  const localStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationFrameRef = useRef(null);
+
+  // Kunin ang audio stream at i-setup ang Audio Analyser para sa Speaking Detection
+  useEffect(() => {
+    if (isMultiplayer) {
+      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        .then((stream) => {
+          localStreamRef.current = stream;
+
+          try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioContextRef.current = new AudioContext();
+            analyserRef.current = audioContextRef.current.createAnalyser();
+            const source = audioContextRef.current.createMediaStreamSource(stream);
+            source.connect(analyserRef.current);
+            analyserRef.current.fftSize = 512;
+
+            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+
+            const detectVolume = () => {
+              const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+              
+              if (analyserRef.current && !isMuted && audioTrack && audioTrack.enabled) {
+                analyserRef.current.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                  sum += dataArray[i];
+                }
+                const average = sum / dataArray.length;
+
+                // Itinaas sa 55 para maiwasan ang pagka-trigger sa ambient/static noise
+                const speakingNow = average > 55; 
+                
+                if (speakingNow !== isSpeakingRef.current) {
+                  isSpeakingRef.current = speakingNow;
+                  setIsSpeaking(speakingNow);
+
+                  if (socketRef.current) {
+                    socketRef.current.emit('update_speaking_status', {
+                      room: roomData.roomName,
+                      username: player.username,
+                      isSpeaking: speakingNow
+                    });
+                  }
+                }
+              } else {
+                if (isSpeakingRef.current) {
+                  isSpeakingRef.current = false;
+                  setIsSpeaking(false);
+                  if (socketRef.current) {
+                    socketRef.current.emit('update_speaking_status', {
+                      room: roomData.roomName,
+                      username: player.username,
+                      isSpeaking: false
+                    });
+                  }
+                }
+              }
+              animationFrameRef.current = requestAnimationFrame(detectVolume);
+            };
+
+            detectVolume();
+          } catch (e) {
+            console.error("Audio Context initialization failed:", e);
+          }
+        })
+        .catch((err) => {
+          console.error("Hindi ma-access ang mikropono:", err);
+        });
+
+      return () => {
+        if (localStreamRef.current) {
+          localStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close();
+        }
+      };
+    }
+  }, [isMultiplayer, isMuted, roomData.roomName, player.username]);
+
+  // Function para sa pag-mute o pag-unmute ng sariling mic
+  const toggleMuteVoice = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+        if (!audioTrack.enabled) {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+          if (socketRef.current) {
+            socketRef.current.emit('update_speaking_status', {
+              room: roomData.roomName,
+              username: player.username,
+              isSpeaking: false
+            });
+          }
+        }
+      }
+    }
+  };
 
   const getUserEmail = () => {
     if (player.email) return player.email;
@@ -243,9 +359,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
   const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
 
-  const isCurrentUserHost = roomData.members.some((m) => m.username === player.username && m.isHost) || 
-                          roomData.hostId === player.username || 
-                          true;
+  // Tumpak na Host Checking
+  const currentHostMember = roomData.members.find(m => m.isHost);
+  const isCurrentUserHost = (currentHostMember && currentHostMember.username === player.username) || 
+                          (roomData.hostId === player.username);
 
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
@@ -255,18 +372,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return;
     }
 
+    const currentActiveSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
+    const finalActivity = currentActiveSession.workType || currentActiveSession.activity || timer.activeSession?.workType || savedSession.workType || 'Focus Session';
+    const finalTechnique = currentActiveSession.techniqueName || timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro';
+    const finalDuration = currentActiveSession.focusTime || durationMins;
+
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: userEmail,
-          durationMinutes: durationMins,
-          technique: timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro',
+          durationMinutes: finalDuration,
+          technique: finalTechnique,
           tasksCompleted: completedTasks,
           totalTasks: totalTasks,
           tasksList: currentTasks,
-          activity: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
+          activity: finalActivity,
           isMultiplayer: isMultiplayer,
           isHost: isCurrentUserHost,
           roomSize: roomData.members.length || 1,
@@ -278,17 +400,20 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
       const data = await response.json();
       if (data.success) {
-        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const storedUser = JSON.parse(localStorage.getItem(`user_${userEmail}`) || '{}');
         storedUser.coins = data.coins;
-        storedUser.currentXP = data.currentXP;
+        storedUser.current_xp = data.currentXP;
         storedUser.level = data.level;
-        storedUser.maxXP = data.maxXP;
-        localStorage.setItem('user', JSON.stringify(storedUser));
+        storedUser.max_xp = data.maxXP;
+        storedUser.streak = data.streak;
+        localStorage.setItem(`user_${userEmail}`, JSON.stringify(storedUser));
+
+        window.dispatchEvent(new Event('player-data-updated'));
 
         const historyItem = {
-          workType: timer.activeSession?.workType || savedSession.workType || 'Focus Session',
-          techniqueName: timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro',
-          focusTime: durationMins,
+          workType: finalActivity,
+          techniqueName: finalTechnique,
+          focusTime: finalDuration,
           sessionCount: 1,
           tasks: currentTasks,
           finishedAt: new Date().toISOString(),
@@ -402,6 +527,39 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const socketRef = useRef(null);
 
+  const [todayFocusFormatted, setTodayFocusFormatted] = useState('0h 0m');
+  const [dbStreak, setDbStreak] = useState(playerData?.streakDays ?? 0);
+
+  useEffect(() => {
+    const fetchTodayStatsAndStreak = async () => {
+      const emailToUse = getUserEmail();
+      if (!emailToUse) return;
+
+      try {
+        const userRes = supabase.table('users').select('streak').eq('email', emailToUse).execute();
+        if (userRes.data && userRes.data.length > 0) {
+          setDbStreak(userRes.data[0].streak || 0);
+        }
+
+        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
+        const data = await response.json();
+
+        if (data.success && data.sessions) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const todaySessions = data.sessions.filter(s => s.created_at && s.created_at.split('T')[0] === todayStr);
+          const totalTodayMins = todaySessions.reduce((acc, curr) => acc + (curr.duration_minutes || 0), 0);
+
+          const hrs = Math.floor(totalTodayMins / 60);
+          const mins = totalTodayMins % 60;
+          setTodayFocusFormatted(`${hrs}h ${mins}m`);
+        }
+      } catch (err) {
+        console.error("Failed to fetch homepage live stats:", err);
+      }
+    };
+    fetchTodayStatsAndStreak();
+  }, [player.email, playerData]);
+
   useEffect(() => {
     if (isMultiplayer) {
       socketRef.current = io('http://localhost:5000');
@@ -419,8 +577,25 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       socketRef.current.on('room_update', (data) => {
         setRoomData((prev) => {
           const updated = { ...prev };
-          if (data.members) updated.members = data.members;
-          if (data.logs && data.logs.length > 0) updated.auditLogs = [...data.logs, ...prev.auditLogs];
+          if (data.members) {
+            // I-preserve ang isSpeaking status ng bawat miyembro tuwing may room_update
+            updated.members = data.members.map(newM => {
+              const existing = prev.members.find(oldM => oldM.username === newM.username);
+              return {
+                ...newM,
+                isSpeaking: existing ? existing.isSpeaking : false
+              };
+            });
+          }
+          
+          if (data.logs && data.logs.length > 0) {
+            const existingLogKeys = new Set(prev.auditLogs.map(l => `${l.user}-${l.action}`));
+            const uniqueNewLogs = data.logs.filter(l => !existingLogKeys.has(`${l.user}-${l.action}`));
+            
+            if (uniqueNewLogs.length > 0) {
+              updated.auditLogs = [...uniqueNewLogs, ...prev.auditLogs];
+            }
+          }
           
           if (data.room_config) {
             try {
@@ -435,12 +610,30 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         });
       });
 
+      // Makinig kung ikaw ay na-kick ng host
+      socketRef.current.on('kicked_from_room', (data) => {
+        // Kung ang username na natanggap mula sa server ay ikaw, saka lang lalabas ang modal
+        if (!data || data.username === player.username) {
+          localStorage.removeItem('activeRoomSession');
+          setShowKickModal(true);
+        }
+      });
+
       socketRef.current.on('receive_room_message', (msg) => {
         setRoomChat((prev) => [...prev, msg]);
       });
 
       socketRef.current.on('incoming_join_request', (data) => {
         setIncomingRequest(data);
+      });
+
+      socketRef.current.on('member_speaking_update', (data) => {
+        setRoomData((prev) => ({
+          ...prev,
+          members: prev.members.map((m) => 
+            m.username === data.username ? { ...m, isSpeaking: data.isSpeaking } : m
+          )
+        }));
       });
 
       return () => {
@@ -610,6 +803,14 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   };
 
   const handleKickMember = (memberId, memberUsername) => {
+    // I-broadcast sa Socket.io server na na-kick ang user na ito
+    if (socketRef.current && isMultiplayer) {
+      socketRef.current.emit('kick_room_member', {
+        room: roomData.roomName,
+        username: memberUsername
+      });
+    }
+
     setRoomData((prev) => ({
       ...prev,
       members: prev.members.filter((m) => m.id !== memberId),
@@ -900,18 +1101,32 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
-                      <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/40 px-2 sm:px-3 py-1 sm:py-1.5 whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1 z-30">
+                      {/* NAMETAG & MIC STATUS SA ITAAS NG AVATAR */}
+                      <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/70 px-2 sm:px-3 py-1 rounded-[6px] whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1.5 z-30 border border-theme-dark/40">
                         {member.isHost && (
-                          <svg
-                            className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-[#FFD700] shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            title="Host"
-                          >
-                            <path d="M0 0h24v24H0z" fill="none" />
+                          <svg className="w-2.5 h-2.5 text-[#FFD700] shrink-0" viewBox="0 0 24 24" fill="currentColor" title="Host">
                             <path d="M6 20q-.425 0-.712-.288T5 19t.288-.712T6 18h12q.425 0 .713.288T19 19t-.288.713T18 20zm.7-3.5q-.725 0-1.287-.475t-.688-1.2l-1-6.35q-.05 0-.112.013T3.5 8.5q-.625 0-1.062-.437T2 7t.438-1.062T3.5 5.5t1.063.438T5 7q0 .175-.038.325t-.087.275L8 9l3.125-4.275q-.275-.2-.45-.525t-.175-.7q0-.625.438-1.063T12 2t1.063.438T13.5 3.5q0 .375-.175.7t-.45.525L16 9l3.125-1.4q-.05-.125-.088-.275T19 7q0-.625.438-1.063T20.5 5.5t1.063.438T22 7t-.437 1.063T20.5 8.5q-.05 0-.112-.012t-.113-.013l-1 6.35q-.125.725-.687 1.2T17.3 16.5z" />
                           </svg>
                         )}
+                        
+                        <span className="flex items-center text-[10px]">
+                          {isMe ? (
+                            isMuted ? (
+                              <span className="text-red-400" title="Mic Off">🔇</span>
+                            ) : isSpeaking ? (
+                              <span className="animate-bounce text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,1)] font-bold scale-125 transition-transform" title="Speaking...">🎙️</span>
+                            ) : (
+                              <span className="text-green-500 opacity-70" title="Mic On">🎙️</span>
+                            )
+                          ) : (
+                            member.isSpeaking ? (
+                              <span className="animate-bounce text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,1)] font-bold scale-125 transition-transform" title="Speaking...">🎙️</span>
+                            ) : (
+                              <span className="text-green-500 opacity-70" title="Active Mic">🎙️</span>
+                            )
+                          )}
+                        </span>
+
                         <span className="font-pressstart text-[6px] sm:text-[7px] text-theme-white">
                           {member.username} {isMe && "(YOU)"}
                         </span>
@@ -1013,6 +1228,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               </button>
                             </div>
 
+                            {/* HOST-ONLY KICK BUTTON */}
                             {isCurrentUserHost && !isMe && (
                               <button
                                 onClick={(e) => {
@@ -1302,6 +1518,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[250px] pr-1">
               {roomData.members.map((member, idx) => {
                 const memberAvatarConfig = getLeaderboardAvatarConfig(member);
+                const isMe = member.username === player.username;
+
                 return (
                   <div
                     key={member.id || idx}
@@ -1334,8 +1552,19 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                           {member.isHost && (
                             <span className="bg-theme-primary text-theme-white font-pressstart text-[6px] px-1 py-0.2 rounded">HOST</span>
                           )}
-                          {member.isCurrentUser && (
-                            <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
+                          {isMe && (
+                            <>
+                              <span className="font-pressstart text-[7px] text-theme-primary">(YOU)</span>
+                              <button
+                                type="button"
+                                onClick={toggleMuteVoice}
+                                className={`ml-1 px-1.5 py-0.5 rounded font-pressstart text-[6px] cursor-pointer border border-theme-dark ${
+                                  isMuted ? 'bg-theme-danger text-white' : 'bg-theme-safe text-theme-dark'
+                                }`}
+                              >
+                                {isMuted ? 'MIC OFF' : 'MIC ON'}
+                              </button>
+                            </>
                           )}
                         </div>
                         <span className="font-pressstart text-[7px] text-theme-dark/60">LVL {member.level || 1}</span>
@@ -1591,7 +1820,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       {showFeedbackModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
-            {/* Header Row */}
             <div className="flex items-center justify-between pb-3 border-b-2 border-theme-dark/20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-[8px] bg-theme-muted flex items-center justify-center overflow-hidden shrink-0">
@@ -1617,7 +1845,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
             </div>
 
-            {/* Container 1 (Task Status) */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-col">
                 <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">1. TASK STATUS</span>
@@ -1650,7 +1877,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </div>
             </div>
 
-            {/* Container 2 (Productivity Level) */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-col">
                 <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">2. HOW PRODUCTIVE WAS YOUR SESSION?</span>
@@ -1677,7 +1903,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </div>
             </div>
 
-            {/* Container 3 (Accomplishments) */}
             <div className="flex flex-col gap-1.5">
               <div className="flex flex-col">
                 <span className="font-pressstart text-[9px] sm:text-[11px] text-theme-dark uppercase">3. WHAT DID YOU ACCOMPLISH?</span>
@@ -1697,7 +1922,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </div>
             </div>
 
-            {/* Footer Button */}
             <div className="flex items-center justify-center pt-2 border-t border-theme-dark/20">
               <button
                 onClick={handleClaimAndSaveToDB}
@@ -2123,7 +2347,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
                       <path d="M0 0h16v16H0z" fill="none" />
                       <g fill="currentColor">
-                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118q.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
                         <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
                       </g>
                     </svg>
@@ -2562,6 +2786,34 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
+      {/* KICKED OUT MODAL */}
+      {showKickModal && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">🚪</div>
+            
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">
+              KICKED OUT
+            </h3>
+
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              You have been kicked out of the room by the host.
+            </p>
+
+            <button
+              onClick={() => {
+                setShowKickModal(false);
+                setIsMultiplayer(false);
+                navigate('/dashboard');
+              }}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short dark:bg-zinc-900">
@@ -2604,8 +2856,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         <div className="fixed bottom-6 right-6 z-[99999]">
           <button
             onClick={() => {
-              timer.closeRewardModal();
-              setShowFeedbackModal(true);
+              timer.triggerInstantComplete();
             }}
             className="bg-red-600 hover:bg-red-700 text-white font-pressstart text-[10px] px-4 py-3 rounded-lg border-3 border-theme-dark shadow-2xl cursor-pointer uppercase animate-pulse"
           >

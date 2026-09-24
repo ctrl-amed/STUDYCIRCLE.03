@@ -10,27 +10,34 @@ export const LEVEL_MATRIX = [
   { level: 50, title: "Golden Sequoia", cumulativeXP: 689494 },
 ];
 
-// Pormula mula sa Level Progression Spec: 100 * (Level ^ 1.5)[cite: 2]
 export function getNextLevelRequirement(currentLevel) {
   return Math.floor(100 * Math.pow(currentLevel, 1.5));
 }
 
 export function calculateLevelFromXP(totalXP) {
   let matchedLevel = 1;
-  for (const item of LEVEL_MATRIX) {
-    if (totalXP >= item.cumulativeXP) {
-      matchedLevel = item.level;
+  let cumulative = 0;
+  for (let l = 1; l <= 50; l++) {
+    const cost = Math.floor(100 * Math.pow(l, 1.5));
+    if (totalXP >= cumulative) {
+      matchedLevel = l;
     }
+    cumulative += cost;
   }
   return matchedLevel;
 }
 
 export function getPlayerTitle(level) {
   let currentTitle = "Sprout Initiate";
-  for (const item of LEVEL_MATRIX) {
-    if (level >= item.level) {
-      currentTitle = item.title;
-    }
+  const milestones = [
+    { lvl: 50, title: "Golden Sequoia" }, { lvl: 40, title: "Sequoia Guardian" },
+    { lvl: 30, title: "Arch-Scholar" }, { lvl: 25, title: "Master of Flow" },
+    { lvl: 20, title: "Cozy Sage" }, { lvl: 15, title: "Focused Scholar" },
+    { lvl: 10, title: "Budding Blossom" }, { lvl: 5, title: "Tiny Seedling" },
+    { lvl: 1, title: "Sprout Initiate" },
+  ];
+  for (const m of milestones) {
+    if (level >= m.lvl) { currentTitle = m.title; break; }
   }
   return currentTitle;
 }

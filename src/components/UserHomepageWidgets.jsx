@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useOutletContext } from 'react-router-dom';
+import { usePlayer } from '../context/PlayerContext';
 
 const activityIcons = {
   Reading: (
@@ -15,7 +16,7 @@ const activityIcons = {
   ),
   Review: (
     <svg className="w-5 h-5 text-theme-dark" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M7 14h1.625q.2 0 .388-.075t.337-.225l4.7-4.7q.225-.225.338-.513t.112-.562t-.125-.537t-.325-.488l-.9-.95q-.225-.225-.5-.337t-.575-.113q-.275 0-.562.113T11 5.95l-4.7 4.7q-.15.15-.225.338T6 11.375V13q0 .425.288.713T7 14m6-6.075L12.075 7zM7.5 12.5v-.95l2.525-2.525l.5.45l.45.5L8.45 12.5zm3.025-3.025l.45.5l-.95-.95zm.65 4.525H17q.425 0 .713-.288T18 13t-.288-.712T17 12h-3.825zM6 18l-2.3 2.3q-.475.475-1.088.213T2 19.575V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v12q0 .825-.587 1.413T20 18zm-.85-2H20V4H4v13.125zM4 16V4z" />
+      <path d="M7 14h1.625q.2 0 .388-.075t.337-.225l4.7-4.7q.225-.225.338-.513t.112-.562t-.125-.537t-.325-.488l-.9-.95q-.225-.225-.5-.337t-.575-.113q-.275 0-.562.113T11 5.95l-4.7 4.7q-.15.15-.225.338T6 11.375V13q0 .425.288.713T7 14m6-6.075L12.075 7zM7.5 12.5v-.95l2.525-2.525l.5.45l.45.5L8.45 12.5zm3.025-3.025l.45.5l-.95-.95zm.65 4.525H17q.425 0 .713-.288T18 13t-.288-.712T17 12H13.175zM6 18l-2.3 2.3q-.475.475-1.088.213T2 19.575V4q0-.825.588-1.412T4 2h16q.825 0 1.413.588T22 4v12q0 .825-.587 1.413T20 18zm-.85-2H20V4H4v13.125zM4 16V4z" />
     </svg>
   ),
 };
@@ -42,7 +43,42 @@ export function ActiveSessionWidget({
   focusTimeFormatted = '0h 0m',
 }) {
   const context = useOutletContext();
+  const { playerData } = usePlayer() || {};
   const dragPosRef = useRef({ isDragging: false, startX: 0, startY: 0, initialLeft: 0, initialTop: 0 });
+
+  const displayStreak = playerData?.streakDays ?? streakDays;
+  
+  // Kunin ang kasalukuyang user email para maiwasan ang paghahalo ng data ng ibang accounts sa parehong browser
+  const activeEmail = playerData?.email || localStorage.getItem('active_user_email') || 'default';
+  const HISTORY_KEY = `completed_sessions_history_${activeEmail}`;
+
+  // Direktang kalkulahin ang Today Focus Time mula sa user-specific history nang hindi umaasa sa 0
+  const displayFocusTime = (() => {
+    if (focusTimeFormatted && focusTimeFormatted !== '0h 0m') {
+      return focusTimeFormatted;
+    }
+    try {
+      const savedHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      let totalMins = 0;
+      savedHistory.forEach((item) => {
+        const finishDateStr = item.finishedAt ? item.finishedAt.split('T')[0] : todayStr;
+        if (finishDateStr === todayStr) {
+          const focusMins = parseInt(item.focusTime || 25, 10);
+          const rounds = parseInt(item.sessionCount || 1, 10);
+          totalMins += focusMins * rounds;
+        }
+      });
+
+      if (totalMins === 0) return '0h 0m';
+      const hrs = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    } catch (e) {
+      return '0h 0m';
+    }
+  })();
 
   useEffect(() => {
     const card = cardRef?.current;
@@ -50,10 +86,8 @@ export function ActiveSessionWidget({
 
     const handleDragStart = (e) => {
       if (e.target.closest('button, input, label, a, svg')) return;
-
       const clientX = e.clientX || (e.touches && e.touches[0].clientX);
       const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-
       const rect = card.getBoundingClientRect();
       dragPosRef.current = {
         isDragging: true,
@@ -81,19 +115,14 @@ export function ActiveSessionWidget({
       if (!dragPosRef.current.isDragging) return;
       const clientX = e.clientX || (e.touches && e.touches[0].clientX);
       const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-
       const deltaX = clientX - dragPosRef.current.startX;
       const deltaY = clientY - dragPosRef.current.startY;
-
       let newX = dragPosRef.current.initialLeft + deltaX;
       let newY = dragPosRef.current.initialTop + deltaY;
-
       const maxX = window.innerWidth - card.offsetWidth;
       const maxY = window.innerHeight - card.offsetHeight;
-
       newX = Math.max(10, Math.min(newX, maxX - 10));
       newY = Math.max(10, Math.min(newY, maxY - 10));
-
       card.style.left = `${newX}px`;
       card.style.top = `${newY}px`;
     };
@@ -111,7 +140,6 @@ export function ActiveSessionWidget({
         card.style.cursor = '';
         card.style.userSelect = '';
       }
-
       document.removeEventListener('mousemove', handleDragMove);
       document.removeEventListener('mouseup', handleDragEnd);
       document.removeEventListener('touchmove', handleTouchMove);
@@ -165,12 +193,12 @@ export function ActiveSessionWidget({
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
               <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Current Streak</span>
-              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{streakDays} days</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{displayStreak} days</span>
             </div>
 
             <div className="flex flex-col items-center sm:items-start text-center sm:text-left">
               <span className="font-pixel text-[20px] sm:text-[24px] text-theme-dark/50 uppercase tracking-wider">Today</span>
-              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{focusTimeFormatted}</span>
+              <span className="font-pressstart text-[11px] sm:text-[13px] text-theme-primary">{displayFocusTime}</span>
             </div>
           </div>
         </div>
@@ -348,6 +376,10 @@ export function RecentActivityWidget({
   recentActivities = [],
   onViewAll,
 }) {
+  const { playerData } = usePlayer() || {};
+  const activeEmail = playerData?.email || localStorage.getItem('active_user_email') || 'default';
+  const HISTORY_KEY = `completed_sessions_history_${activeEmail}`;
+
   if (activeSession) {
     const completedCount = tasksList.filter((t) => t.completed).length;
 
@@ -389,7 +421,8 @@ export function RecentActivityWidget({
   let mergedActivities = [...recentActivities];
 
   try {
-    const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
+    // Gumamit ng user-specific history key para hiwalay ang bawat account
+    const savedHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
     const todayStr = new Date().toISOString().split('T')[0];
 
     const userSavedItems = savedHistory.map((item) => {

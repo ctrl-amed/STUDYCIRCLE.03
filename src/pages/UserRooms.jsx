@@ -179,7 +179,17 @@ export default function UserRooms() {
   };
 
   const getHostedRoomsCount = () => {
-    return roomsList.filter((r) => r.host === myUsername).length;
+    const todayStr = new Date().toISOString().split('T')[0]; // Halimbawa: "2026-09-24"
+    
+    return roomsList.filter((r) => {
+      if (r.host !== myUsername) return false;
+      
+      // Kunin ang petsa ng paggawa ng room (kung may created_at o date field sa database)
+      const roomDate = r.created_at ? r.created_at.split('T')[0] : '';
+      
+      // Bilangin lamang kung ang room ay ginawa ngayong araw
+      return roomDate === todayStr;
+    }).length;
   };
 
   const enterRoomSession = (room) => {

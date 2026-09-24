@@ -21,6 +21,10 @@ export default function CreateSession() {
   const [selectedTechnique, setSelectedTechnique] = useState('recommended');
   const [customSessionCount, setCustomSessionCount] = useState('1');
 
+  const [validationResult, setValidationResult] = useState(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+
   // Fetch AI Study Recommendation based on user study history and current session inputs when entering Step 3
   useEffect(() => {
     if (currentStep === 3) {
@@ -173,13 +177,49 @@ export default function CreateSession() {
     setCurrentStep(2);
   };
 
-  const handleStep2Continue = () => {
+  const handleStep2Continue = async () => {
     const validTasks = draftTasks.filter((t) => t.trim() !== '');
     if (validTasks.length === 0) {
       alert('Please add at least one task for this session.');
       return;
     }
-    setCurrentStep(3);
+
+    setIsValidating(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/validate-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: selectedWorkType,
+          tasks: validTasks
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("Validation Response:", data); // Dito natin makikita kung anong binalik ng backend
+
+      if (data.success) {
+        setValidationResult(data);
+        if (data.status === 'Aligned') {
+          setCurrentStep(3);
+        } else {
+          setShowValidationModal(true);
+        }
+      } else {
+        console.warn("Validation returned success: false, proceeding to step 3");
+        setCurrentStep(3);
+      }
+    } catch (err) {
+      console.error("Task validation fetch failed:", err);
+      // Fallback para hindi ma-lock ang user kapag may error sa backend
+      setCurrentStep(3);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   // --- SAVE & CONFIRM (Fixed Double Save) ---
@@ -192,10 +232,15 @@ export default function CreateSession() {
     const finalSessions =
       selectedTechnique === 'recommended' ? recommendedData.sessions : customSessionCount || '1';
 
+    // Gawing uppercase o malinis ang workType para sa database at UI display (hal. "WRITING")
+    const formattedWorkType = selectedWorkType ? selectedWorkType.toUpperCase() : 'FOCUS SESSION';
+
     const newSession = {
-      workType: selectedWorkType || 'General Work',
+      workType: formattedWorkType,
+      activity: formattedWorkType, // Siniguro nating kasama ito para sa backend
       techniqueKey: selectedTechnique,
       techniqueName: activeTech.title,
+      durationMinutes: focusTime, // Kailangan ito para mabasa ng backend ang tamang duration (hal. 90m)
       focusTime,
       breakTime,
       sessionCount: finalSessions,
@@ -204,8 +249,6 @@ export default function CreateSession() {
     };
 
     localStorage.setItem('activeSession', JSON.stringify(newSession));
-    
-    // We removed the fetch('/api/save-session') here so it ONLY saves upon completion
     window.parent.postMessage('CLOSE_CREATE_SESSION_MODAL', '*');
   };
 
@@ -426,13 +469,17 @@ export default function CreateSession() {
                     </div>
 
                     {isLoadingAI ? (
-                      <span className="font-pixel text-sm text-theme-dark/70 animate-pulse">Analyzing your study habits...</span>
-                    ) : (
-                      <p className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/90 px-2 italic">
-                        "{aiRationale || recommendedData.techniqueName}"
-                      </p>
-                    )}
-
+  <span className="font-pixel text-sm text-theme-dark/70 animate-pulse flex items-center justify-center gap-1">
+    Analyzing your study habits
+    <span className="animate-bounce">.</span>
+    <span className="animate-bounce [animation-delay:0.2s]">.</span>
+    <span className="animate-bounce [animation-delay:0.4s]">.</span>
+  </span>
+) : (
+  <p className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/90 px-2 italic">
+    "{aiRationale || recommendedData.techniqueName}"
+  </p>
+)}
                     <div className="w-full h-[1px] bg-theme-dark/20" />
                     <div className="w-full grid grid-cols-3 items-center justify-center divide-x divide-theme-dark/20">
                       <div className="flex items-center justify-center gap-3 px-1">
@@ -654,6 +701,46 @@ export default function CreateSession() {
 
         </div>
       </main>
+      {/* TASK VALIDATION WARNING MODAL*/}
+      {showValidationModal && validationResult && (
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl text-center dark:bg-zinc-900">
+            <h3 className="font-pressstart text-[11px] text-theme-primary uppercase">
+              {validationResult.status === 'Not Aligned' ? '⚠️ TASK MISMATCH' : '🔍 NEEDS REVIEW'}
+            </h3>
+            <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">
+              Your tasks might not fully match the selected category (<span className="text-theme-primary uppercase">{selectedWorkType}</span>). Match Score: <span className="text-theme-primary">{(validationResult.averageScore * 100).toFixed(0)}%</span>
+            </p>
+            <div className="flex flex-col gap-2 text-left bg-theme-muted p-3 rounded-[8px] border border-theme-dark/20 dark:bg-zinc-800">
+              {validationResult.taskBreakdown.map((item, idx) => (
+                <div key={idx} className="flex justify-between font-pressstart text-[8px] text-theme-dark">
+                  <span className="truncate max-w-[200px]">"{item.task}"</span>
+                  <span className={item.status === 'Aligned' ? 'text-green-600' : 'text-amber-600'}>
+                    {item.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-3 w-full pt-2">
+              <button
+                onClick={() => setShowValidationModal(false)}
+                className="font-pressstart text-[8px] text-theme-dark bg-theme-surface border-[2px] border-theme-dark py-2.5 cursor-pointer hover:bg-theme-muted"
+              >
+                EDIT TASK
+              </button>
+              <button
+                onClick={() => {
+                  setShowValidationModal(false);
+                  setCurrentStep(3); // Continue anyway option
+                }}
+                className="font-pressstart text-[8px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 cursor-pointer hover:opacity-90"
+              >
+                CONTINUE ANYWAY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

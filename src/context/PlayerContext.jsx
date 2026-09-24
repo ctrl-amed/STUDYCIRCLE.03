@@ -130,6 +130,26 @@ export function PlayerProvider({ children }) {
     }
   };
 
+useEffect(() => {
+  const handlePlayerDataUpdated = () => {
+    const activeEmail = localStorage.getItem('active_user_email') || '';
+    const storedUser = activeEmail ? JSON.parse(localStorage.getItem(`user_${activeEmail}`) || '{}') : {};
+    if (storedUser.email) {
+      setPlayerData(prev => ({
+        ...prev,
+        coins: storedUser.coins ?? prev.coins,
+        currentXP: storedUser.current_xp ?? storedUser.currentXP ?? prev.currentXP,
+        level: storedUser.level ?? prev.level,
+        maxXP: storedUser.max_xp ?? storedUser.maxXP ?? prev.maxXP,
+        streakDays: storedUser.streak ?? storedUser.streakDays ?? prev.streakDays,
+        inventory: storedUser.inventory ?? prev.inventory
+      }));
+    }
+  };
+  window.addEventListener('player-data-updated', handlePlayerDataUpdated);
+  return () => window.removeEventListener('player-data-updated', handlePlayerDataUpdated);
+}, []);
+
   const updateAverageSession = (newAvg) => {
     localStorage.setItem(AVERAGE_SESSION_KEY, newAvg);
     setPlayerData((prev) => ({ ...prev, averageSession: newAvg }));

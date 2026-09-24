@@ -102,6 +102,8 @@ export function useTimer() {
 
           setActiveSession({
             ...session,
+            workType: session.workType || session.activity || 'Focus Session',
+            techniqueName: session.techniqueName || 'Pomodoro',
             focusTime: focusMins,
             breakTime: breakMins,
           });
@@ -187,8 +189,8 @@ export function useTimer() {
       );
       const finishedEntry = {
         id: Date.now(),
-        workType: sessionObj.workType || 'General Work',
-        techniqueName: sessionObj.techniqueName || 'Custom',
+        workType: sessionObj.workType || sessionObj.activity || 'Focus Session',
+        techniqueName: sessionObj.techniqueName || 'Pomodoro',
         focusTime: sessionObj.focusTime,
         breakTime: sessionObj.breakTime,
         sessionCount: sessionObj.sessionCount,
@@ -377,7 +379,6 @@ export function useTimer() {
             incrementTotalSessions(totalSessions);
           }
 
-          // Dito lang natin bubuksan ang tanging nag-iisang tamang reward modal ng UserHomepage
           setShowRewardModal(true);
 
           if (pipWindowRef.current && !pipWindowRef.current.closed) {
@@ -429,6 +430,21 @@ export function useTimer() {
     setShowRewardModal(false);
     setActiveSession(null);
     localStorage.removeItem('activeSession');
+  };
+
+  // Bagong function para sa Instant Complete
+  const triggerInstantComplete = () => {
+    if (activeSession) {
+      setIsTimerRunning(false);
+      saveFinishedSessionToHistory(activeSession, tasksList);
+      if (incrementTotalSessions) {
+        incrementTotalSessions(totalSessions);
+      }
+      setShowRewardModal(true);
+      if (pipWindowRef.current && !pipWindowRef.current.closed) {
+        pipWindowRef.current.close();
+      }
+    }
   };
 
   // Sync state updates to open PiP window
@@ -604,6 +620,7 @@ export function useTimer() {
     cancelSession,
     toggleDocumentPiP,
     toggleFullscreen,
+    triggerInstantComplete, // Idinagdag dito para magamit sa UserHomepage
   };
 }
 
