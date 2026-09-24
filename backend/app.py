@@ -16,6 +16,7 @@ import google.generativeai as genai
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from pypdf import PdfReader
 import uuid
+from datetime import datetime
 
 load_dotenv()
 
@@ -680,6 +681,11 @@ def complete_focus_session():
     tasks_list = data.get('tasksList', [])
     activity_name = data.get('activity', 'Focus Session')
     
+    # --- Feedback Fields galing sa Feedback Modal ---
+    task_status = data.get('taskStatus', 'Completed').strip()
+    productivity_level = int(data.get('productivityLevel', 3))
+    accomplished_text = data.get('accomplishedText', '').strip()
+
     is_multiplayer = data.get('isMultiplayer', False)
     is_host = data.get('isHost', False)
     room_size = int(data.get('roomSize', 1))
@@ -700,6 +706,7 @@ def complete_focus_session():
         current_xp = float(user.get('current_xp') or 0.0)
         current_coins = int(user.get('coins') or 0)
         current_level = int(user.get('level') or 1)
+        current_streak = int(user.get('streak') or 0)
 
         # v2.1 Master EXP Formula
         R_base = 0.4
@@ -740,40 +747,57 @@ def complete_focus_session():
         calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
         rounded_exp_gained = round(calculated_exp, 4)
 
-        # Ensure at least 1 coin is gained even for short test durations (e.g. 3 mins)
+        # Ensure at least 1 coin is gained even for short test durations
         base_coins_gained = max(1, int(round(duration_minutes * 0.2)))
 
         new_xp = current_xp + rounded_exp_gained
         new_coins = current_coins + base_coins_gained
 
-        LEVEL_MATRIX = [
-            {"level": 1, "cumulativeXP": 0, "nextXP": 1701},
-            {"level": 5, "cumulativeXP": 1701, "nextXP": 11102},
-            {"level": 10, "cumulativeXP": 11102, "nextXP": 31993},
-            {"level": 15, "cumulativeXP": 31993, "nextXP": 67128},
-            {"level": 20, "cumulativeXP": 67128, "nextXP": 118800},
-            {"level": 25, "cumulativeXP": 118800, "nextXP": 189018},
-            {"level": 30, "cumulativeXP": 189018, "nextXP": 392183},
-            {"level": 40, "cumulativeXP": 392183, "nextXP": 689494},
-            {"level": 50, "cumulativeXP": 689494, "nextXP": 689494}
-        ]
+        # --- TULOY-TULOY NA PAGKAKALKULA NG LEVEL (Sequential Leveling) ---
+        new_level = 1
+        cum_exp = 0
+        for l in range(1, 51):
+            cost = int(100 * (l ** 1.5))
+            if new_xp >= cum_exp:
+                new_level = l
+            cum_exp += cost
 
-        new_level = current_level
-        new_max_xp = 1701
-        for item in LEVEL_MATRIX:
-            if new_xp >= item["cumulativeXP"]:
-                new_level = item["level"]
-                new_max_xp = item["nextXP"]
+        next_level = new_level + 1
+        new_max_xp = 0
+        temp_cum = 0
+        for l in range(1, next_level):
+            temp_cum += int(100 * (l ** 1.5))
+        new_max_xp = temp_cum
 
-        # 1. Update users table using exact existing schema columns
+        # --- STREAK CHECK: Isang beses lang kada araw ---
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        sessions_today_res = supabase.table('study_sessions').select('created_at').ilike('email', raw_email).execute()
+        
+        already_studied_today = False
+        if sessions_today_res.data:
+            for s in sessions_today_res.data:
+                created_at = s.get('created_at', '')
+                if created_at and created_at.startswith(today_str):
+                    already_studied_today = True
+                    break
+
+        if already_studied_today:
+            # Kung nakapag-aral na kanina ngayong araw, panatilihin ang kasalukuyang streak
+            new_streak = current_streak if current_streak > 0 else 1
+        else:
+            # Kung ito ang unang sesyon ngayong araw, dagdagan ng 1 ang streak
+            new_streak = current_streak + 1
+
+        # 1. Update users table (isinama na rin ang streak)
         supabase.table('users').update({
             "current_xp": int(round(new_xp)),
             "coins": new_coins,
             "level": new_level,
-            "max_xp": new_max_xp
+            "max_xp": new_max_xp,
+            "streak": new_streak
         }).eq('id', user_id).execute()
 
-        # 2. Insert study_sessions table with the tasks text list
+        # 2. Insert study_sessions table kasama ang feedback fields
         supabase.table('study_sessions').insert({
             "email": user['email'],
             "activity_name": activity_name,
@@ -781,10 +805,15 @@ def complete_focus_session():
             "duration_minutes": duration_minutes,
             "total_tasks": total_tasks,
             "completed_tasks": tasks_completed,
-            "tasks_list": tasks_list
+            "tasks_list": tasks_list,
+            "task_status": task_status,
+            "productivity_level": productivity_level,
+            "accomplished_text": accomplished_text,
+            "exp_gained": rounded_exp_gained, 
+            "coins_gained": base_coins_gained
         }).execute()
 
-        print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{base_coins_gained} Coins, Tasks: {tasks_completed}/{total_tasks}")
+        print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{base_coins_gained} Coins, Level: {new_level}, Streak: {new_streak}")
 
         return jsonify({
             "success": True,
@@ -794,6 +823,7 @@ def complete_focus_session():
             "coins": new_coins,
             "level": new_level,
             "maxXP": new_max_xp,
+            "streak": new_streak,
             "didLevelUp": new_level > current_level
         }), 200
 
@@ -1041,6 +1071,143 @@ FRAMEWORK_SCORES = {
     "52-17 Method": {"df": 6, "fm": 6, "cs": 5},
     "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
 }
+
+# --- TASK VALIDATION DICTIONARY & ENDPOINT ---
+TASK_DICTIONARIES = {
+    "reading": [
+        "read", "reading", "reread", "re-read", "go through", "go over", "look through", "scan", "skim",
+        "browse", "examine", "inspect", "study", "read through", "read over", "read up on", "work through",
+        "peruse", "consult", "refer to", "look up", "read chapter", "read article", "read book", "read notes",
+        "read handout", "read module", "read lesson", "read paper", "read research paper", "read journal",
+        "read documentation", "go through documentation", "read instructions", "read textbook", "read slides",
+        "read lecture", "read source", "read reference", "read material", "read resources", "read literature",
+        "read case study", "read essay", "read report", "read paragraph", "read passage", "read pages",
+        "finish reading", "complete reading", "understand the chapter", "understand the article",
+        "study the material", "examine the material", "review the text", "annotate while reading", "highlight",
+        "mark important parts", "identify key points", "find main ideas", "extract information", "take notes while reading"
+    ],
+    "writing": [
+        "write", "writing", "draft", "drafting", "compose", "composing", "create text", "produce text",
+        "prepare a draft", "make a draft", "write up", "write down", "rewrite", "re-write", "revise", "revision",
+        "edit", "editing", "proofread", "proofreading", "polish", "improve wording", "rephrase", "paraphrase",
+        "outline", "create an outline", "write an outline", "develop an outline", "journal", "journal writing",
+        "freewrite", "free writing", "essay", "write essay", "report", "write report", "research paper",
+        "write research paper", "paper", "write paper", "paragraph", "write paragraph", "reflection",
+        "write reflection", "documentation", "write documentation", "letter", "write letter", "response",
+        "write response", "discussion post", "write discussion post", "article", "write article",
+        "reflection paper", "document", "email", "write email", "blog", "write blog", "script", "write script",
+        "story", "write story", "poem", "write poem", "caption", "write caption", "introduction",
+        "write introduction", "conclusion", "write conclusion", "thesis statement", "write thesis statement",
+        "proposal", "write proposal", "case study", "write case study", "lab report", "write lab report",
+        "answer questions in writing", "complete written activity"
+    ],
+    "review": [
+        "review", "reviewing", "revise", "revision", "go over", "go through", "look back", "revisit", "recheck",
+        "check again", "check", "recap", "recap notes", "recap lesson", "refresh", "refresh memory",
+        "refresh knowledge", "brush up", "brush up on", "reinforce", "reinforce learning", "consolidate",
+        "consolidate knowledge", "relearn", "revisit lesson", "revisit chapter", "revisit notes", "review notes",
+        "review chapter", "review lesson", "review module", "review material", "review lecture", "review slides",
+        "review textbook", "review article", "review assignment", "review answers", "review mistakes",
+        "check notes", "check previous work", "check previous lesson", "look at notes again", "study again",
+        "study previous material", "study past lessons", "refresh concepts", "summarize", "make a summary",
+        "review summary", "review key points", "review important points", "review highlights", "review before exam",
+        "exam review", "test review", "quiz review", "final review", "pre-exam review", "review for exam",
+        "review for quiz", "review for test", "review flashcards", "check understanding", "revisit difficult topics",
+        "review weak areas", "correct mistakes", "go over mistakes", "analyze mistakes", "review feedback"
+    ],
+    "practice": [
+        "practice", "practise", "practicing", "practising", "exercise", "exercises", "drill", "drills", "train",
+        "training", "rehearse", "rehearsal", "work on", "work through", "try", "attempt", "solve", "solving",
+        "answer", "answering", "complete problems", "do problems", "solve problems", "practice problems",
+        "practice questions", "answer questions", "answer exercises", "do exercises", "workbook",
+        "workbook exercises", "worksheet", "complete worksheet", "problem set", "complete problem set",
+        "sample problems", "sample questions", "mock test", "mock exam", "practice test", "practice exam",
+        "quiz practice", "test practice", "exam practice", "take a quiz", "take a test", "take an exam",
+        "simulate exam", "exam simulation", "hands-on practice", "hands on", "apply", "apply concepts",
+        "apply knowledge", "application", "implement", "code practice", "coding exercise", "programming exercise",
+        "debug practice", "debug code", "solve equations", "solve math problems", "calculate", "calculations",
+        "compute", "perform calculations", "work out", "practice speaking", "practice pronunciation",
+        "practice writing", "practice grammar", "practice vocabulary", "practice presentation",
+        "rehearse presentation", "practice skills", "skill practice", "repeat exercises", "repeat problems",
+        "practice technique", "practice method", "practice procedure", "practice steps", "practice application"
+    ],
+    "memorize": [
+        "memorize", "memorise", "memorizing", "memorising", "learn by heart", "commit to memory", "remember",
+        "remembering", "retain", "retention", "recall", "recalling", "memorization", "memorisation",
+        "rote learning", "rote memorization", "learn", "master", "mastering", "internalize", "internalise",
+        "ingrain", "fix in memory", "store in memory", "flashcards", "flash card", "make flashcards",
+        "review flashcards", "active recall", "recall practice", "selftest", "self testing", "retrieval practice",
+        "retrieval", "spaced repetition", "spaced review", "repeat", "repetition", "repeat until remembered",
+        "repeat information", "repeat terms", "repeat definitions", "learn terms", "learn definitions",
+        "memorize terms", "memorize definitions", "memorize formulas", "memorize equations", "memorize facts",
+        "memorize dates", "memorize names", "memorize vocabulary", "memorize concepts", "memorize keywords",
+        "memorize rules", "memorize steps", "memorize procedures", "memorize sequence", "memorize lists",
+        "memorize code", "memorize syntax", "memorize commands", "learn vocabulary", "vocabulary memorization",
+        "learn formulas", "learn facts", "learn dates", "learn names", "recall facts", "recall terms",
+        "recall definitions", "recall formulas", "recall concepts", "recall information", "test my memory",
+        "memory drill", "memorization drill", "mnemonics", "mnemonic", "use mnemonic", "acronym",
+        "make an acronym", "association", "associate concepts", "remember key points"
+    ],
+    "creation": [
+        "create", "creating", "creation", "make", "making", "build", "building", "develop", "developing",
+        "design", "designing", "produce", "producing", "construct", "constructing", "develop a project",
+        "make a project", "create a project", "project", "prototype", "prototyping", "design a prototype",
+        "create prototype", "develop prototype", "plan", "planning", "brainstorm", "brainstorming",
+        "conceptualize", "conceptualise", "ideate", "ideation", "generate ideas", "come up with ideas",
+        "create ideas", "design layout", "create layout", "design interface", "create interface",
+        "design UI", "create UI", "design UX", "create UX", "wireframe", "wireframing", "mockup", "mock-up",
+        "create mockup", "design mockup", "draw", "drawing", "illustrate", "illustration", "create illustration",
+        "make diagram", "create diagram", "create chart", "create infographic", "create presentation",
+        "make presentation", "design presentation", "create poster", "make poster", "design poster",
+        "create graphic", "design graphic", "create logo", "design logo", "create website", "build website",
+        "develop website", "create application", "build application", "develop application", "create app",
+        "build app", "develop app", "create system", "build system", "develop system", "implement feature",
+        "develop feature", "build feature", "create database", "design database", "build database",
+        "create model", "build model", "develop model", "create content", "produce content", "create video",
+        "edit video", "create animation", "create artwork", "make artwork", "creative project", "creative work",
+        "make something", "create something", "develop concept", "design solution", "create solution", "build solution"
+    ]
+}
+
+@app.route('/api/validate-task', methods=['POST'])
+def validate_task():
+    data = request.get_json() or {}
+    category = data.get('category', '').lower()
+    tasks = data.get('tasks', [])
+
+    if not category or not tasks:
+        return jsonify({'success': False, 'error': 'Category and tasks are required.'}), 400
+
+    keywords = TASK_DICTIONARIES.get(category, [])
+    results = []
+    overall_score = 0
+
+    for task in tasks:
+        t_lower = task.lower()
+        matched_count = sum(1 for kw in keywords if kw in t_lower)
+        
+        # Simple scoring formula based on matched signals
+        score = min(1.0, (matched_count * 0.4) + (0.3 if len(t_lower) > 3 else 0.1))
+        
+        if score >= 0.70:
+            status = "Aligned"
+        elif score >= 0.40:
+            status = "Needs Review"
+        else:
+            status = "Not Aligned"
+            
+        results.append({'task': task, 'score': score, 'status': status})
+        overall_score += score
+
+    avg_score = overall_score / len(tasks) if tasks else 0
+    final_status = "Aligned" if avg_score >= 0.70 else ("Needs Review" if avg_score >= 0.40 else "Not Aligned")
+
+    return jsonify({
+        'success': True,
+        'averageScore': avg_score,
+        'status': final_status,
+        'taskBreakdown': results
+    }), 200
 
 @app.route('/api/ai-recommendation', methods=['POST'])
 def ai_recommendation():
@@ -1689,6 +1856,35 @@ def handle_host_response(data):
         'approved': approved,
         'room': room_name
     }, broadcast=True)
+
+@socketio.on('webrtc_offer')
+def handle_webrtc_offer(data):
+    # I-forward ang offer sa partikular na target peer
+    socketio.emit('webrtc_offer', data, room=data.get('target'))
+
+@socketio.on('webrtc_answer')
+def handle_webrtc_answer(data):
+    socketio.emit('webrtc_answer', data, room=data.get('target'))
+
+@socketio.on('webrtc_ice_candidate')
+def handle_ice_candidate(data):
+    socketio.emit('webrtc_ice_candidate', data, room=data.get('target'))
+
+@socketio.on('update_speaking_status')
+def handle_speaking_status(data):
+    room = data.get('room')
+    username = data.get('username')
+    is_speaking = data.get('isSpeaking')
+    # I-broadcast sa iba pang nasa loob ng room maliban sa nag-trigger
+    emit('member_speaking_update', {'username': username, 'isSpeaking': is_speaking}, room=room, include_self=False)    
+
+@socketio.on('kick_room_member')
+def handle_kick_room_member(data):
+    room = data.get('room')
+    target_username = data.get('username')
+    
+    # I-broadcast sa buong room (o sa partikular na user) na sila ay na-kick
+    emit('kicked_from_room', {'username': target_username}, room=room)
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
