@@ -330,9 +330,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return '';
   };
 
-  const savedSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
-  const durationMins = timer.activeSession?.focusTime || savedSession.focusTime || 25;
-  const rawTech = (timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro').toUpperCase();
+  // 1. Kunin ang session data mula sa activeSession o mula sa completedSessionData cache
+  const savedSession = 
+    timer.activeSession || 
+    JSON.parse(localStorage.getItem('completedSessionData') || localStorage.getItem('activeSession') || '{}')
+  const durationMins = savedSession.focusTime || savedSession.durationMinutes || savedSession.duration || 25;
+  const rawTech = (savedSession.techniqueName || savedSession.technique || 'Pomodoro').toUpperCase();
   const techKey = rawTech.includes('52') ? '52-17' : rawTech.includes('90') ? 'ULTRADIAN' : 'POMODORO';
 
   const getSessionTasks = () => {
@@ -372,10 +375,30 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return;
     }
 
-    const currentActiveSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
-    const finalActivity = currentActiveSession.workType || currentActiveSession.activity || timer.activeSession?.workType || savedSession.workType || 'Focus Session';
-    const finalTechnique = currentActiveSession.techniqueName || timer.activeSession?.techniqueName || savedSession.techniqueName || 'Pomodoro';
-    const finalDuration = currentActiveSession.focusTime || durationMins;
+    // Basahin mula sa aktibong timer o sa completedSessionData cache
+    const currentActiveSession = 
+      timer.activeSession || 
+      JSON.parse(localStorage.getItem('completedSessionData') || localStorage.getItem('activeSession') || '{}');
+    
+    // Tiyaking napipili ang totoong piniling workType, technique, at duration
+    const finalActivity = 
+      currentActiveSession.workType || 
+      currentActiveSession.activity || 
+      'Focus Session';
+
+    const finalTechnique = 
+      currentActiveSession.techniqueName || 
+      currentActiveSession.technique || 
+      'Pomodoro';
+
+    const finalDuration = 
+      Number(currentActiveSession.focusTime || 
+      currentActiveSession.durationMinutes || 
+      currentActiveSession.duration || 
+      durationMins);
+
+    const tasksToSend = getSessionTasks();
+    const completedTasksCount = tasksToSend.filter(t => t.completed || t.status === 'completed').length;
 
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
@@ -385,9 +408,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           email: userEmail,
           durationMinutes: finalDuration,
           technique: finalTechnique,
-          tasksCompleted: completedTasks,
-          totalTasks: totalTasks,
-          tasksList: currentTasks,
+          tasksCompleted: completedTasksCount,
+          totalTasks: tasksToSend.length,
+          tasksList: tasksToSend,
           activity: finalActivity,
           isMultiplayer: isMultiplayer,
           isHost: isCurrentUserHost,
@@ -410,21 +433,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
         window.dispatchEvent(new Event('player-data-updated'));
 
-        const historyItem = {
-          workType: finalActivity,
-          techniqueName: finalTechnique,
-          focusTime: finalDuration,
-          sessionCount: 1,
-          tasks: currentTasks,
-          finishedAt: new Date().toISOString(),
-          taskStatus,
-          productivityLevel,
-          accomplishedText
-        };
-        const existingHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
-        localStorage.setItem('completed_sessions_history', JSON.stringify([historyItem, ...existingHistory]));
-
+        // Linisin ang completedSessionData cache pagkatapos ma-save nang maayos
         localStorage.removeItem('activeSession');
+        localStorage.removeItem('completedSessionData');
 
         setShowFeedbackModal(false);
         setTaskStatus('Completed');
@@ -435,7 +446,14 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         alert("Failed to save session: " + data.error);
       }
     } catch (err) {
+      console.error(err);
       alert("Network error while saving session.");
+    }
+  };
+
+  const handleHostStartSession = () => {
+    if (socketRef.current && isMultiplayer) {
+      socketRef.current.emit('start_shared_room', { room: roomData.roomName });
     }
   };
 
@@ -610,6 +628,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         });
       });
 
+      // Listener para sa pag-start ng shared room session (para mag-update ang state sa members)
+      socketRef.current.on('shared_room_started', () => {
+        setRoomData((prev) => ({ ...prev, isStarted: true }));
+      });
+
       // Makinig kung ikaw ay na-kick ng host
       socketRef.current.on('kicked_from_room', (data) => {
         // Kung ang username na natanggap mula sa server ay ikaw, saka lang lalabas ang modal
@@ -746,6 +769,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         privacy: parsed?.privacy || 'public',
         code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
+        taskType: parsed?.task_type || parsed?.taskType || 'individual', // <--- IDINAGDAG
+        isStarted: parsed?.is_started || parsed?.isStarted || false,     // <--- IDINAGDAG
         roomConfig: finalRoomConfig,
         auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
@@ -1290,6 +1315,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             isWidgetFullscreen={timer.isWidgetFullscreen}
             streakDays={player.streakDays}
             focusTimeFormatted={timer.dailyFocusFormatted}
+            isMultiplayer={isMultiplayer}               
+            isCurrentUserHost={isCurrentUserHost}       
+            roomData={roomData}                       
+            onHostStartSession={handleHostStartSession}
           />
 
           {isMultiplayer ? (

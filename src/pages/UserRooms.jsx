@@ -81,6 +81,7 @@ export default function UserRooms() {
         if (data.success && data.rooms) {
           const formattedRooms = data.rooms.map(r => ({
             ...r,
+            privacy: (r.privacy || 'public').toLowerCase(),
             breakTime: r.break_time || '0h 15m',
             currentMembers: r.current_members || 1,
             maxMembers: r.max_members || 4,
@@ -235,8 +236,10 @@ export default function UserRooms() {
       return;
     }
 
-    // Public rooms default automatically to individual tasks, private rooms use selected newRoomTaskType
     const effectiveTaskType = newRoomPrivacy === 'public' ? 'individual' : newRoomTaskType;
+
+    // Kunin ang kasalukuyang active session galing sa localStorage (kung saan pinili ni host ang technique at focus time)
+    const activeSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
 
     const payload = {
       name: newRoomName.trim(),
@@ -246,14 +249,12 @@ export default function UserRooms() {
       code: newRoomPrivacy === 'private' ? generateRoomCode() : null,
       current_members: 1,
       max_members: parseInt(newRoomMaxMembers, 10),
-      technique: 'Pomodoro',
-      focus: '1h 00m',
-      breakTime: '0h 15m',
-      sessions: 1,
-      tasks: [],
-      taskType: effectiveTaskType,
-      xp: 0,
-      coins: 0,
+      task_type: effectiveTaskType,
+      technique: activeSession.techniqueName || 'Pomodoro',
+      focus_time: activeSession.focusTime || 25,
+      break_time: activeSession.breakTime || 5,
+      is_started: false,
+      tasks: activeSession.tasks || [],
     };
 
     try {
@@ -267,11 +268,13 @@ export default function UserRooms() {
       if (data.success && data.room) {
         const createdRoom = {
           ...data.room,
-          breakTime: data.room.break_time || '0h 15m',
           currentMembers: data.room.current_members || 1,
           maxMembers: data.room.max_members || 4,
-          tasks: data.room.tasks || [],
-          taskType: data.room.taskType || effectiveTaskType
+          taskType: data.room.task_type || effectiveTaskType,
+          technique: data.room.technique || 'Pomodoro',
+          focusTime: data.room.focus_time || 25,
+          breakTime: data.room.break_time || 5,
+          isStarted: data.room.is_started || false,
         };
 
         setRoomsList((prev) => [createdRoom, ...prev]);
@@ -288,7 +291,7 @@ export default function UserRooms() {
         alert(data.error || "Failed to create room.");
       }
     } catch (err) {
-      console.error("Error creating real room in database:", err);
+      console.error("Error creating room:", err);
       alert("Network error. Make sure your Python backend is running.");
     }
   };

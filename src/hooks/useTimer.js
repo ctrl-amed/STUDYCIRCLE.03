@@ -97,13 +97,13 @@ export function useTimer() {
       if (savedSession) {
         try {
           const session = JSON.parse(savedSession);
-          const focusMins = parseNum(session.focusTime, 25);
+          const focusMins = parseNum(session.focusTime || session.duration || session.durationMinutes, 25);
           const breakMins = parseNum(session.breakTime, 5);
 
           setActiveSession({
             ...session,
             workType: session.workType || session.activity || 'Focus Session',
-            techniqueName: session.techniqueName || 'Pomodoro',
+            techniqueName: session.techniqueName || session.technique || 'Pomodoro',
             focusTime: focusMins,
             breakTime: breakMins,
           });
@@ -427,15 +427,25 @@ export function useTimer() {
   };
 
   const closeRewardModal = () => {
+    // I-save muna ang session details para magamit pa sa Feedback Modal
+    if (activeSession) {
+      localStorage.setItem('completedSessionData', JSON.stringify({
+        ...activeSession,
+        tasks: tasksList
+      }));
+    }
     setShowRewardModal(false);
     setActiveSession(null);
     localStorage.removeItem('activeSession');
   };
 
-  // Bagong function para sa Instant Complete
   const triggerInstantComplete = () => {
     if (activeSession) {
       setIsTimerRunning(false);
+      localStorage.setItem('completedSessionData', JSON.stringify({
+        ...activeSession,
+        tasks: tasksList
+      }));
       saveFinishedSessionToHistory(activeSession, tasksList);
       if (incrementTotalSessions) {
         incrementTotalSessions(totalSessions);
@@ -446,7 +456,7 @@ export function useTimer() {
       }
     }
   };
-
+  
   // Sync state updates to open PiP window
   useEffect(() => {
     if (pipWindowRef.current && !pipWindowRef.current.closed) {

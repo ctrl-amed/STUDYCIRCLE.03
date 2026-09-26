@@ -237,10 +237,12 @@ export default function CreateSession() {
 
     const newSession = {
       workType: formattedWorkType,
-      activity: formattedWorkType, // Siniguro nating kasama ito para sa backend
+      activity: formattedWorkType,
       techniqueKey: selectedTechnique,
       techniqueName: activeTech.title,
-      durationMinutes: focusTime, // Kailangan ito para mabasa ng backend ang tamang duration (hal. 90m)
+      technique: activeTech.title, // <--- IDINAGDAG: para mabasa ng backend/database
+      durationMinutes: focusTime,  // <--- IDINAGDAG
+      duration: focusTime,         // <--- IDINAGDAG
       focusTime,
       breakTime,
       sessionCount: finalSessions,

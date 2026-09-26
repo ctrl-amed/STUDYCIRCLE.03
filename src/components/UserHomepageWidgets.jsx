@@ -41,6 +41,10 @@ export function ActiveSessionWidget({
   toastMessage,
   streakDays = 0,
   focusTimeFormatted = '0h 0m',
+  isMultiplayer = false,
+  isCurrentUserHost = false,
+  roomData = {},
+  onHostStartSession = () => {}
 }) {
   const context = useOutletContext();
   const { playerData } = usePlayer() || {};
@@ -48,11 +52,9 @@ export function ActiveSessionWidget({
 
   const displayStreak = playerData?.streakDays ?? streakDays;
   
-  // Kunin ang kasalukuyang user email para maiwasan ang paghahalo ng data ng ibang accounts sa parehong browser
   const activeEmail = playerData?.email || localStorage.getItem('active_user_email') || 'default';
   const HISTORY_KEY = `completed_sessions_history_${activeEmail}`;
 
-  // Direktang kalkulahin ang Today Focus Time mula sa user-specific history nang hindi umaasa sa 0
   const displayFocusTime = (() => {
     if (focusTimeFormatted && focusTimeFormatted !== '0h 0m') {
       return focusTimeFormatted;
@@ -79,6 +81,10 @@ export function ActiveSessionWidget({
       return '0h 0m';
     }
   })();
+
+  // Kondisyon para sa Private Shared Rooms
+  const isSharedRoom = roomData?.privacy === 'private' && roomData?.taskType === 'shared';
+  const isWaitingForHost = isMultiplayer && isSharedRoom && !isCurrentUserHost && !roomData?.isStarted;
 
   useEffect(() => {
     const card = cardRef?.current;
@@ -171,6 +177,21 @@ export function ActiveSessionWidget({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  // WAITING STATE PARA SA MGA MEMBERS
+  if (isWaitingForHost) {
+    return (
+      <section className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 shadow-md flex flex-col items-center justify-center text-center gap-4">
+        <div className="text-4xl animate-pulse">⏳</div>
+        <h3 className="font-pressstart text-[14px] sm:text-[16px] text-theme-primary uppercase">
+          WAITING FOR HOST TO START...
+        </h3>
+        <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
+          The host is preparing the shared study session. The timer will start automatically once they click start.
+        </p>
+      </section>
+    );
+  }
+
   if (!activeSession) {
     return (
       <section className="card-highlight border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 shadow-md flex flex-col justify-between gap-4">
@@ -184,10 +205,16 @@ export function ActiveSessionWidget({
         <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
           <button
             type="button"
-            onClick={() => context?.openCreateSessionModal?.()}
-            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center"
+            onClick={() => {
+              if (isMultiplayer && isCurrentUserHost) {
+                onHostStartSession();
+              } else {
+                context?.openCreateSessionModal?.();
+              }
+            }}
+            className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center z-50 relative pointer-events-auto"
           >
-            START SESSION
+            {isMultiplayer && isCurrentUserHost ? 'START SHARED SESSION' : 'START SESSION'}
           </button>
 
           <div className="flex items-center gap-4 sm:gap-6">
@@ -421,7 +448,6 @@ export function RecentActivityWidget({
   let mergedActivities = [...recentActivities];
 
   try {
-    // Gumamit ng user-specific history key para hiwalay ang bawat account
     const savedHistory = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
     const todayStr = new Date().toISOString().split('T')[0];
 

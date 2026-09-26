@@ -17,6 +17,7 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 from pypdf import PdfReader
 import uuid
 from datetime import datetime
+import re
 
 load_dotenv()
 
@@ -649,9 +650,9 @@ def send_message():
 def save_session():
     data = request.json or {}
     email = data.get('email')
-    activity = data.get('activity', 'Focus Session')
-    technique = data.get('technique', 'Pomodoro')
-    duration = int(data.get('duration', 0))
+    activity = data.get('activity') or data.get('workType') or 'Focus Session'
+    technique = data.get('technique') or data.get('techniqueName') or 'Pomodoro'
+    duration = int(data.get('duration') or data.get('focusTime') or data.get('durationMinutes') or 0)
     total_tasks = int(data.get('totalTasks', 0))
     completed_tasks = int(data.get('completedTasks', 0))
     
@@ -674,12 +675,15 @@ def save_session():
 def complete_focus_session():
     data = request.json or {}
     raw_email = data.get('email', '').strip()
-    duration_minutes = int(data.get('durationMinutes', 25))
-    technique = data.get('technique', 'Pomodoro').strip()
+    
+    # Masusing pag-salo sa mga posibleng pangalan ng keys galing sa frontend
+    duration_minutes = int(data.get('durationMinutes') or data.get('focusTime') or data.get('duration') or 25)
+    technique = str(data.get('technique') or data.get('techniqueName') or 'Pomodoro').strip()
+    activity_name = str(data.get('activity') or data.get('workType') or 'Focus Session').strip()
+    
     tasks_completed = max(0, int(data.get('tasksCompleted', 0)))
     total_tasks = max(tasks_completed, int(data.get('totalTasks', tasks_completed)))
     tasks_list = data.get('tasksList', [])
-    activity_name = data.get('activity', 'Focus Session')
     
     # --- Feedback Fields galing sa Feedback Modal ---
     task_status = data.get('taskStatus', 'Completed').strip()
@@ -1031,6 +1035,14 @@ def on_join_room(data):
         'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
     }, room=room)
 
+@app.route('/api/rooms', methods=['GET'])
+def get_rooms():
+    try:
+        res = supabase.table('rooms').select('*').execute()
+        return jsonify({'success': True, 'rooms': res.data}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @socketio.on('request_join_private_room')
 def handle_private_join_request(data):
     room_name = data.get('room')
@@ -1172,34 +1184,65 @@ TASK_DICTIONARIES = {
 @app.route('/api/validate-task', methods=['POST'])
 def validate_task():
     data = request.get_json() or {}
-    category = data.get('category', '').lower()
+    category = str(data.get('category', '')).strip().lower()
     tasks = data.get('tasks', [])
 
     if not category or not tasks:
         return jsonify({'success': False, 'error': 'Category and tasks are required.'}), 400
 
     keywords = TASK_DICTIONARIES.get(category, [])
-    results = []
-    overall_score = 0
+    # Unahin i-match ang pinakamahabang phrases (hal. "read chapter" bago ang "read")
+    sorted_keywords = sorted(keywords, key=len, reverse=True)
 
-    for task in tasks:
-        t_lower = task.lower()
-        matched_count = sum(1 for kw in keywords if kw in t_lower)
-        
-        # Simple scoring formula based on matched signals
-        score = min(1.0, (matched_count * 0.4) + (0.3 if len(t_lower) > 3 else 0.1))
-        
+    results = []
+    overall_score = 0.0
+
+    for raw_task in tasks:
+        task_str = str(raw_task).strip()
+        # Normalization: alisin ang mga bantas at gawing lowercase
+        clean_task = re.sub(r'[^\w\s-]', ' ', task_str.lower())
+        temp_text = f" {clean_task} "
+
+        matched_keywords = []
+
+        for kw in sorted_keywords:
+            kw_clean = kw.strip().lower()
+            # \b (word boundary) para buong salita lang ang itugma
+            pattern = rf'\b{re.escape(kw_clean)}\b'
+            if re.search(pattern, temp_text):
+                matched_keywords.append(kw_clean)
+                # Burahin ang na-match na salita sa temp_text para maiwasan ang double-counting
+                temp_text = re.sub(pattern, ' ', temp_text)
+
+        matched_count = len(matched_keywords)
+
+        # Matatag na Scoring Formula batay sa tunay na matches:
+        if matched_count == 0:
+            score = 0.0
+        elif matched_count == 1:
+            score = 0.75  # May isang malinaw na keyword/phrase match -> Aligned
+        elif matched_count == 2:
+            score = 0.90  # Mas detalyadong signal
+        else:
+            score = 1.0   # Maraming tugmang keywords
+
+        # Threshold categorization mula sa Section 5 ng Thesis
         if score >= 0.70:
             status = "Aligned"
         elif score >= 0.40:
             status = "Needs Review"
         else:
             status = "Not Aligned"
-            
-        results.append({'task': task, 'score': score, 'status': status})
+
+        results.append({
+            'task': task_str,
+            'score': round(score, 2),
+            'status': status,
+            'matchedKeywords': matched_keywords
+        })
         overall_score += score
 
-    avg_score = overall_score / len(tasks) if tasks else 0
+    avg_score = round(overall_score / len(tasks), 2) if tasks else 0.0
     final_status = "Aligned" if avg_score >= 0.70 else ("Needs Review" if avg_score >= 0.40 else "Not Aligned")
 
     return jsonify({
@@ -1686,14 +1729,6 @@ You have received a new feedback and feature idea from a user:
         print("Error sending feedback email:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/api/rooms', methods=['GET'])
-def get_rooms():
-    try:
-        res = supabase.table('rooms').select('*').order('created_at', desc=True).execute()
-        return jsonify({'success': True, 'rooms': res.data}), 200
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 @app.route('/api/rooms', methods=['POST'])
 def create_room():
     data = request.get_json() or {}
@@ -1710,8 +1745,7 @@ def create_room():
             if len(today_rooms) >= 3:
                 return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
 
-        # WALA NA ANG room_config DITO PARA HINDI NA MAG-ERROR ANG SUPABASE.
-        # Ang custom design ng room ay kukunin na lang dynamic galing sa 'users' profile table ng host kapag may nag-join.
+        # Tamang payload na tugma na sa bagong columns ng rooms table sa database
         room_payload = {
             "name": data.get('name'),
             "course": data.get('course', 'General Studies'),
@@ -1720,13 +1754,12 @@ def create_room():
             "code": data.get('code'),
             "current_members": data.get('current_members', 1),
             "max_members": max_members,
+            "task_type": data.get('task_type', 'individual'),
+            "is_started": data.get('is_started', False),
             "technique": data.get('technique', 'Pomodoro'),
-            "focus": data.get('focus', '1h 00m'),
-            "break_time": data.get('breakTime', '0h 15m'),
-            "sessions": data.get('sessions', 1),
-            "tasks": data.get('tasks', []),
-            "xp": data.get('xp', 0),
-            "coins": data.get('coins', 0)
+            "focus_time": data.get('focus_time', 25),
+            "break_time": data.get('break_time', 5),
+            "tasks": data.get('tasks', [])
         }
         
         res = supabase.table('rooms').insert(room_payload).execute()
@@ -1885,6 +1918,20 @@ def handle_kick_room_member(data):
     
     # I-broadcast sa buong room (o sa partikular na user) na sila ay na-kick
     emit('kicked_from_room', {'username': target_username}, room=room)
+
+@socketio.on('start_shared_room')
+def handle_start_shared_room(data):
+    room_name = data.get('room')
+    
+    # 1. I-update ang database para maging is_started = True
+    try:
+        supabase.table('rooms').update({'is_started': True}).eq('name', room_name).execute()
+    except Exception as e:
+        print("Error updating room start state:", e)
+
+    # 2. I-broadcast sa lahat ng nasa room na nagsimula na ang sesyon
+    socketio.emit('shared_room_started', {'room': room_name}, room=room_name)
+    
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
