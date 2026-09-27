@@ -5,7 +5,6 @@ import { jwtDecode } from 'jwt-decode';
 import { useLoading } from './context/LoadingContext';
 import { usePlayer } from './context/PlayerContext';
 
-// Password Rules & Standard Guidance Text
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_+\-\[\]\\\/]).{8,}$/;
 const studentIdRegex = /^[a-zA-Z]\d{8}$/;
 const umakEmailRegex = /^[a-zA-Z0-9._%+-]+@umak\.edu\.ph$/i;
@@ -48,7 +47,7 @@ export default function Auth() {
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
 
-  // Sign Up Terms Consent Modal States (Manual Form)
+  // Sign Up Terms Consent Modal States
   const [signupConsentPending, setSignupConsentPending] = useState(false);
   const [signupAgeTermsChecked, setSignupAgeTermsChecked] = useState(false);
   const [signupTermsErr, setSignupTermsErr] = useState('');
@@ -73,7 +72,6 @@ export default function Auth() {
   // Toasts State
   const [toasts, setToasts] = useState([]);
 
-  // Toast Helper
   const triggerToast = (message) => {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, message }]);
@@ -82,7 +80,6 @@ export default function Auth() {
     }, 4000);
   };
 
-  // Sync state with URL Hash
   useEffect(() => {
     if (location.hash === '#signup') {
       setActiveView('signup');
@@ -91,7 +88,6 @@ export default function Auth() {
     }
   }, [location.hash]);
 
-  // Check for incoming success toast from previous actions
   useEffect(() => {
     if (localStorage.getItem('passwordChangedSuccess') === 'true') {
       localStorage.removeItem('passwordChangedSuccess');
@@ -99,7 +95,6 @@ export default function Auth() {
     }
   }, []);
 
-  // Clear Validation Messages when switching views
   const switchView = (view) => {
     setActiveView(view);
     setLoginError('');
@@ -112,7 +107,7 @@ export default function Auth() {
     setIsConfirmPasswordCustomError(false);
   };
 
-  // --- LIVE VALIDATION FUNCTIONS ---
+  // Live Validation Functions
   const validateUsername = (val = signupUsername) => {
     const trimmed = val.trim();
     if (trimmed === '') {
@@ -182,7 +177,7 @@ export default function Auth() {
     return true;
   };
 
-  // --- GOOGLE OAUTH HANDLERS ---
+  // Google OAuth Handlers
   const handleGoogleSuccess = async (credentialResponse) => {
     let decoded;
     if (credentialResponse.credential) {
@@ -196,7 +191,6 @@ export default function Auth() {
 
     if (!decoded || !decoded.email) return;
 
-    // Reject non-umak Google accounts immediately, before hitting the backend
     if (!umakEmailRegex.test(decoded.email)) {
       setLoginError('✘ You must sign in with a valid @umak.edu.ph email.');
       return;
@@ -209,6 +203,16 @@ export default function Auth() {
         body: JSON.stringify({ email: decoded.email, google_id: decoded.sub || decoded.id }),
       });
       const data = await response.json();
+
+      if (data.suspended || data.is_suspended) {
+        setSuspendedUserData({
+          email: decoded.email,
+          reason: data.reason || 'Community Guidelines Violation',
+          liftUntil: data.liftUntil || 'Until reviewed by IT administration',
+        });
+        setShowSuspendedModal(true);
+        return;
+      }
 
       if (!response.ok) {
         setLoginError(data.error || 'Google sign in failed.');
@@ -340,7 +344,7 @@ export default function Auth() {
     }
   };
 
-  // --- SUBMIT HANDLERS (Connected to Flask Backend) ---
+  // Submit Handlers
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -353,17 +357,7 @@ export default function Auth() {
       return;
     }
 
-    // --- MOCK SUSPENDED ACCOUNT CHECK ---
-    if (emailVal.toLowerCase() === 'suspended@studycircle.app') {
-      setSuspendedUserData({
-        email: emailVal,
-        reason: 'Terms of Service Violation',
-        liftUntil: 'October 25, 2026 at 11:59 PM',
-      });
-      setShowSuspendedModal(true);
-      return;
-    }
-
+    // Direct IT Admin bypass credentials if configured
     if (emailVal.toLowerCase() === 'itadmin@studycircle.app' && passwordVal === 'Admin123!') {
       localStorage.setItem('active_user_email', emailVal);
       startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
@@ -380,29 +374,19 @@ export default function Auth() {
       });
       const data = await response.json();
 
-      if (!response.ok) {
-        // Handle backend response indicating account suspension
-        if (data.suspended) {
-          setSuspendedUserData({
-            email: emailVal,
-            reason: data.reason || 'Community Guidelines Violation',
-            liftUntil: data.liftUntil || 'October 25, 2026 at 11:59 PM',
-          });
-          setShowSuspendedModal(true);
-          return;
-        }
-        setLoginError(`✘ ${data.error || 'Invalid email or password.'}`);
-        return;
-      }
-
-      // Check if success payload itself explicitly specifies suspended status
-      if (data.suspended) {
+      // Check for real suspension flag from backend
+      if (data.suspended || data.is_suspended) {
         setSuspendedUserData({
           email: emailVal,
           reason: data.reason || 'Community Guidelines Violation',
-          liftUntil: data.liftUntil || 'October 25, 2026 at 11:59 PM',
+          liftUntil: data.liftUntil || 'Until reviewed by IT administration',
         });
         setShowSuspendedModal(true);
+        return;
+      }
+
+      if (!response.ok) {
+        setLoginError(`✘ ${data.error || 'Invalid email or password.'}`);
         return;
       }
 
@@ -739,7 +723,6 @@ export default function Auth() {
                   </button>
                 </div>
 
-                {/* OR DIVIDER WITH DASHED LINES */}
                 <div className="flex items-center gap-2 my-1">
                   <div className="flex-1 border-t-2 border-theme-dark" />
                   <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
@@ -923,7 +906,6 @@ export default function Auth() {
                   SIGN UP
                 </button>
 
-                {/* OR DIVIDER WITH DASHED LINES */}
                 <div className="flex items-center gap-2 my-1">
                   <div className="flex-1 border-t-2 border-theme-dark" />
                   <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
@@ -1013,11 +995,10 @@ export default function Auth() {
                 </div>
               )}
 
-              {/* FOCAL CALLOUT BOX FOR SUSPENSION LIFT DATE */}
               {suspendedUserData && suspendedUserData.liftUntil && (
                 <div className="bg-theme-primary/10 border-2 border-theme-primary p-3 rounded-xl flex flex-col gap-2">
                   <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark">
-                    You can log in again on:
+                    Suspension Duration / Expiration:
                   </span>
                   <span className="font-pixel text-[18px] sm:text-[24px] text-theme-primary leading-5">
                     {suspendedUserData.liftUntil}
@@ -1116,7 +1097,7 @@ export default function Auth() {
 
         {/* GOOGLE USERNAME MODAL */}
         {googleUserPending && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
             <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center gap-3">
                 {googleUserPending.picture && (
@@ -1168,7 +1149,7 @@ export default function Auth() {
                       googleStudentIdErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
                   />
-                  {googleStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {googleStudentIdErr}</p>}
+                  {googleStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleStudentIdErr}</p>}
                 </div>
 
                 <div className="flex flex-col gap-1 mt-1">
@@ -1336,7 +1317,7 @@ export default function Auth() {
                 <span className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">StudyCircle</span>
               </div>
               <p className="font-pixel text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-[1.2] select-none">
-                Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pressstart-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
+                Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pixel-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
               </p>
               <div className="flex items-center gap-2 mt-2 select-none">
                 <img src="media/coin_logo.png" alt="Coin Logo" className="w-[31px] h-[31px] object-contain block" />

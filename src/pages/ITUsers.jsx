@@ -23,12 +23,14 @@ export default function ITUsers() {
   const [suspendDuration, setSuspendDuration] = useState('24 Hours / 1 Day');
   const [customDurationInput, setCustomDurationInput] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
+  const [isSubmittingSuspend, setIsSubmittingSuspend] = useState(false);
   
   // Success State
   const [suspendSuccessData, setSuspendSuccessData] = useState(null);
 
   // REAL DATA STATES
   const [usersList, setUsersList] = useState([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [metricsData, setMetricsData] = useState({
     totalUsers: { value: '0', changeNum: '—', positive: true },
     activeUsers: { value: '0', changeNum: '—', positive: true },
@@ -36,46 +38,32 @@ export default function ITUsers() {
     reportedUsers: { value: '0', changeNum: '—', positive: false },
   });
 
-  // Fetch real users and metrics from backend API / database
-  useEffect(() => {
-    const fetchITUsersData = async () => {
-      try {
-        const response = await fetch('http://localhost:5000/api/leaderboard');
-        const data = await response.json();
+  // Fetch real users and metrics from backend database via IT Admin API
+  const fetchITUsersData = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const response = await fetch('http://localhost:5000/api/itadmin/users');
+      const data = await response.json();
 
-        if (data.success && data.leaderboard) {
-          // Kunin ang all-time users mula sa leaderboard data (o maaari kang gumawa ng dedicated /api/it-users endpoint)
-          const rawUsers = data.leaderboard['all-time'] || [];
-          
-          const mappedUsers = rawUsers.map((u, idx) => ({
-            id: u.id || idx + 1,
-            username: u.username || 'Hero User',
-            email: u.email || `${u.username?.toLowerCase() || 'user'}@studycircle.dev`,
-            status: u.status || (idx % 5 === 0 ? 'Inactive' : 'Active'),
-            totalSessions: u.score ? Math.floor(u.score / 50) : (u.streak || 1) * 3,
-            lastActive: 'Today',
-            daysAgo: 0,
-            flags: u.flags || 0,
-          }));
+      if (data.success && data.users) {
+        setUsersList(data.users);
 
-          setUsersList(mappedUsers);
-
-          const totalCount = mappedUsers.length;
-          const activeCount = mappedUsers.filter(u => u.status === 'Active').length;
-          const studyingCount = Math.floor(activeCount * 0.4); // Estimated active studying users
-
-          setMetricsData({
-            totalUsers: { value: totalCount.toLocaleString(), changeNum: '↑ 12%', positive: true },
-            activeUsers: { value: activeCount.toLocaleString(), changeNum: '↑ 8%', positive: true },
-            currentlyStudying: { value: studyingCount.toLocaleString(), changeNum: '↑ 15%', positive: true },
-            reportedUsers: { value: '0', changeNum: '↓ 4%', positive: false },
-          });
-        }
-      } catch (err) {
-        console.error("Failed to fetch IT Users data from backend:", err);
+        const m = data.metrics || {};
+        setMetricsData({
+          totalUsers: { value: (m.totalUsers || data.users.length).toLocaleString(), changeNum: '↑ 12%', positive: true },
+          activeUsers: { value: (m.activeUsers || 0).toLocaleString(), changeNum: '↑ 8%', positive: true },
+          currentlyStudying: { value: (m.currentlyStudying || 0).toLocaleString(), changeNum: '↑ 15%', positive: true },
+          reportedUsers: { value: (m.reportedUsers || 0).toLocaleString(), changeNum: '↓ 4%', positive: false },
+        });
       }
-    };
+    } catch (err) {
+      console.error("Failed to fetch IT Users data from backend:", err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
 
+  useEffect(() => {
     fetchITUsersData();
   }, []);
 
@@ -113,10 +101,8 @@ export default function ITUsers() {
     }
   };
 
-  // Check if current view is Today to hide percentage trend indicators
   const isToday = dateRange === 'Today';
 
-  // Dynamic Timeframe Mapping Logic Helper matching ITDashboard
   const getTimeframeLabel = () => {
     switch (dateRange) {
       case 'Yesterday':
@@ -156,66 +142,82 @@ export default function ITUsers() {
 
   // Filtering users based on search query, status filter, and date filter
   const filteredUsers = usersList.filter((user) => {
-    const matchesSearch =
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus =
-      statusFilter === 'All Status' || user.status.toLowerCase() === statusFilter.toLowerCase();
+    const username = (user.username || '').toLowerCase();
+    const email = (user.email || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
 
-    const matchesDate = matchesDateFilter(user.daysAgo);
+    const matchesSearch = username.includes(q) || email.includes(q);
+    const matchesStatus =
+      statusFilter === 'All Status' || (user.status || '').toLowerCase() === statusFilter.toLowerCase();
+    const matchesDate = matchesDateFilter(user.daysAgo ?? 0);
 
     return matchesSearch && matchesStatus && matchesDate;
   });
 
-  // Pagination Calculations (Strictly 20 rows per page as requested in documentation)
+  // Pagination Calculations
   const totalPages = Math.ceil(filteredUsers.length / rowsPerPage) || 1;
   const indexOfLastRow = currentPage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = filteredUsers.slice(indexOfFirstRow, indexOfLastRow);
 
-  // Handle page change
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
     }
   };
 
-  // Suspend action confirmation & simulated backend flow handler
+  // Suspend action confirmation and backend request
   const confirmSuspendUser = async () => {
-    if (userToSuspend) {
-      const durationText = suspendDuration === 'Custom Date/Time' ? customDurationInput || 'Custom Duration' : suspendDuration;
+    if (!userToSuspend) return;
+    setIsSubmittingSuspend(true);
 
-      // Update user status in state list to 'Suspended'
-      setUsersList((prev) =>
-        prev.map((u) => (u.id === userToSuspend.id ? { ...u, status: 'Suspended' } : u))
-      );
+    const durationText = suspendDuration === 'Custom Date/Time' ? customDurationInput || 'Custom Duration' : suspendDuration;
 
-      // Trigger backend request to update user suspension status and notify via email
-      try {
-        await fetch('http://localhost:5000/api/itadmin/suspend-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: userToSuspend.email,
-            reason: suspendReason,
-            duration: durationText,
-            notes: internalNotes
-          })
-        });
-      } catch (e) {
-        console.error("Backend notification/suspension dispatch notice:", e);
-      }
-
-      setSuspendSuccessData({
-        username: userToSuspend.username,
-        duration: durationText,
+    try {
+      const response = await fetch('http://localhost:5000/api/itadmin/suspend-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userToSuspend.email,
+          reason: suspendReason,
+          duration: durationText,
+          customDatetime: customDurationInput,
+          notes: internalNotes
+        })
       });
+      const data = await response.json();
+
+      if (data.success) {
+        setUsersList((prev) =>
+          prev.map((u) =>
+            u.email === userToSuspend.email
+              ? {
+                  ...u,
+                  status: 'Suspended',
+                  flags: (u.flags || 0) + 1, // Keep lifetime count
+                  isSuspended: true
+                }
+              : u
+          )
+        );
+
+        setSuspendSuccessData({
+          username: userToSuspend.username,
+          duration: durationText,
+        });
+      } else {
+        alert(data.message || 'Failed to suspend user.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Network error while suspending user.');
+    } finally {
+      setIsSubmittingSuspend(false);
     }
   };
 
   // Helper for status badge styling
-  const renderUserStatusBadge = (status) => {
+  const renderUserStatusBadge = (status = '') => {
     let dotColor = 'bg-theme-safe';
     if (status.toLowerCase() === 'inactive') {
       dotColor = 'bg-theme-dark/40';
@@ -234,7 +236,7 @@ export default function ITUsers() {
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
       
-      {/* ROW 1: COMBINED SEARCH BAR AND DROPDOWNS IN A SINGLE RESPONSIVE ROW */}
+      {/* ROW 1: COMBINED SEARCH BAR AND DROPDOWNS */}
       <div className="w-full flex flex-col md:flex-row items-center gap-3">
         
         {/* Search Bar Container */}
@@ -250,7 +252,7 @@ export default function ITUsers() {
               setSearchQuery(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search user..."
+            placeholder="Search username or email..."
             className="font-pixel text-[16px] sm:text-[20px] text-theme-dark bg-transparent outline-none w-full"
           />
         </div>
@@ -364,7 +366,7 @@ export default function ITUsers() {
           </div>
         </div>
 
-        {/* CARD 4: Reported Users */}
+        {/* CARD 4: Reported / Suspended Users */}
         <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-5 shadow-md flex items-start gap-4 relative">
           <div className="w-12 h-12 rounded-full bg-theme-muted border border-theme-dark flex items-center justify-center shrink-0 text-theme-primary self-start">
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
@@ -389,7 +391,7 @@ export default function ITUsers() {
 
       </div>
 
-      {/* USER MANAGEMENT DATA TABLE & LEDGER CONTAINER */}
+      {/* USER MANAGEMENT DATA TABLE */}
       <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-md flex flex-col justify-between gap-6">
         
         {/* Table Wrapper */}
@@ -407,7 +409,13 @@ export default function ITUsers() {
               </tr>
             </thead>
             <tbody className="divide-y divide-theme-dark/10 font-pixel text-[15px] sm:text-[18px] text-theme-dark">
-              {currentRows.length > 0 ? (
+              {isLoadingUsers ? (
+                <tr>
+                  <td colSpan="7" className="py-12 text-center font-pixel text-lg text-theme-dark/60 animate-pulse">
+                    Loading users from database...
+                  </td>
+                </tr>
+              ) : currentRows.length > 0 ? (
                 currentRows.map((user) => (
                   <tr key={user.id} className="hover:bg-theme-muted/50 transition-colors">
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-left">{user.username}</td>
@@ -418,13 +426,13 @@ export default function ITUsers() {
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">{user.totalSessions}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">{user.lastActive}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">
-                      <span className={`font-pixel text-[15px] sm:text-[20px] rounded-[4px] inline-block ${user.flags > 0 ? 'text-theme-danger' : 'text-theme-dark'}`}>
+                      <span className={`font-pixel text-[15px] sm:text-[20px] rounded-[4px] inline-block ${user.flags > 0 ? 'text-theme-danger font-bold' : 'text-theme-dark'}`}>
                         {user.flags}
                       </span>
                     </td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">
                       <div className="flex justify-center w-full">
-                        {user.status.toLowerCase() !== 'suspended' ? (
+                        {user.status?.toLowerCase() !== 'suspended' && !user.isSuspended ? (
                           <button
                             type="button"
                             onClick={() => {
@@ -436,7 +444,7 @@ export default function ITUsers() {
                               setSuspendSuccessData(null);
                               setShowSuspendModal(true);
                             }}
-                            className="font-pixel font-normal text-[15px] sm:text-[18px] bg-theme-danger text-white px-3.5 py-1 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer"
+                            className="font-pixel font-normal text-[15px] sm:text-[18px] bg-theme-danger text-white px-3.5 py-1 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
                           >
                             Suspend
                           </button>
@@ -465,7 +473,6 @@ export default function ITUsers() {
           </span>
 
           <div className="flex items-center gap-1.5 flex-wrap justify-center">
-            {/* Previous Arrow Button */}
             <button
               type="button"
               onClick={() => handlePageChange(currentPage - 1)}
@@ -475,7 +482,6 @@ export default function ITUsers() {
               &lt;
             </button>
 
-            {/* Page Number Buttons */}
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((num) => (
               <button
                 key={num}
@@ -491,7 +497,6 @@ export default function ITUsers() {
               </button>
             ))}
 
-            {/* Next Arrow Button */}
             <button
               type="button"
               onClick={() => handlePageChange(currentPage + 1)}
@@ -512,7 +517,6 @@ export default function ITUsers() {
             
             {!suspendSuccessData ? (
               <>
-                {/* Modal Header with Warning Icon */}
                 <div className="flex items-center border-b-2 border-theme-dark/10 pb-3">
                   <div className="w-7 h-7 rounded-full text-theme-danger flex items-center justify-center shrink-0">
                     <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
@@ -524,12 +528,11 @@ export default function ITUsers() {
                   </h3>
                 </div>
 
-                <p className="font-pixel text-[18px] sm:text-[24px] text-theme-dark">
-                  Target User: <span className="text-theme-primary">{userToSuspend.username}</span>
+                <p className="font-pixel text-[18px] sm:text-[24px] text-theme-dark mt-2">
+                  Target User: <span className="text-theme-primary">{userToSuspend.username}</span> ({userToSuspend.email})
                 </p>
 
-                {/* Form Fields Container */}
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 mt-3">
                   
                   {/* Reason Dropdown */}
                   <div className="flex flex-col gap-1">
@@ -568,7 +571,6 @@ export default function ITUsers() {
                     </select>
                   </div>
 
-                  {/* Additional Input Field if Custom Date/Time is selected */}
                   {suspendDuration === 'Custom Date/Time' && (
                     <div className="flex flex-col gap-1 animate-fadeIn">
                       <label className="font-pixel text-[18px] sm:text-[24px] text-theme-dark">Custom Expiration Datetime</label>
@@ -599,6 +601,7 @@ export default function ITUsers() {
                 <div className="flex gap-3 justify-center mt-4 pt-2">
                   <button
                     type="button"
+                    disabled={isSubmittingSuspend}
                     onClick={() => {
                       setShowSuspendModal(false);
                       setUserToSuspend(null);
@@ -609,10 +612,11 @@ export default function ITUsers() {
                   </button>
                   <button
                     type="button"
+                    disabled={isSubmittingSuspend}
                     onClick={confirmSuspendUser}
-                    className="bg-[#8B0000] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow"
+                    className="bg-[#8B0000] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow disabled:opacity-50"
                   >
-                    CONFIRM
+                    {isSubmittingSuspend ? 'SUSPENDING...' : 'CONFIRM'}
                   </button>
                 </div>
               </>

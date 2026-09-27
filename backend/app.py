@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask_mail import Mail, Message
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import google.generativeai as genai
 from flask_socketio import SocketIO, join_room, leave_room, emit
@@ -141,17 +141,14 @@ def signup():
         return jsonify({'error': 'Invalid student ID format.', 'field': 'student_id'}), 400
 
     try:
-        # 1. Check if the email is already registered
         existing_email = supabase.table('users').select('*').eq('email', email).execute()
         if existing_email.data:
             return jsonify({'error': 'This email is already registered.', 'field': 'email'}), 400
 
-        # 2. Check if the username is already taken
         existing_username = supabase.table('users').select('*').eq('username', username).execute()
         if existing_username.data:
             return jsonify({'error': 'Username is already taken.', 'field': 'username'}), 400
 
-        # 3. Check if the student ID is already registered
         existing_student_id = supabase.table('users').select('*').eq('student_id', student_id).execute()
         if existing_student_id.data:
             return jsonify({'error': 'This student ID is already registered.', 'field': 'student_id'}), 400
@@ -165,12 +162,12 @@ def signup():
             "password": hashed_password,
             "coins": 100,
             "streak": 0,
-            "inventory": []
+            "inventory": [],
+            "status": "offline",
         }).execute()
 
         created_user = response.data[0] if response.data else {}
 
-        # Give this new user a streak-freeze inventory row
         if created_user.get('id'):
             ensure_streak_freeze_row(created_user['id'])
 
@@ -187,14 +184,13 @@ def signup():
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
                 'currentXP': created_user.get('current_xp', 0),
-                'maxXP': created_user.get('max_xp', 1250),
+                'maxXP': created_user.get('max_xp', 10000),
                 'level': created_user.get('level', 1),
                 'inventory': inv_data or []
             }
         }), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
 
 @app.route('/api/google-signup', methods=['POST'])
 def google_signup():
@@ -213,11 +209,32 @@ def google_signup():
         return jsonify({'error': 'You must sign in with a valid @umak.edu.ph email.'}), 400
 
     try:
-        # Check if the email already exists
         existing_user = supabase.table('users').select('*').eq('email', email).execute()
 
         if existing_user.data:
             user = existing_user.data[0]
+
+            # --- CHECK ACTIVE SUSPENSION ---
+            active_susp = get_active_suspension(user['id'])
+            if active_susp:
+                reason = active_susp.get('reason') or "Community Guidelines Violation"
+                suspended_until = active_susp.get('suspended_until')
+                lift_display = active_susp.get('duration') or 'Until reviewed by IT administration'
+                if suspended_until:
+                    try:
+                        dt = datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
+                        lift_display = dt.strftime('%B %d, %Y at %I:%M %p UTC')
+                    except Exception:
+                        lift_display = suspended_until
+
+                return jsonify({
+                    'suspended': True,
+                    'is_suspended': True,
+                    'error': f"ACCOUNT SUSPENDED: {reason}",
+                    'reason': reason,
+                    'liftUntil': lift_display
+                }), 403
+
             raw_inv = user.get('inventory')
             if isinstance(raw_inv, str):
                 raw_inv = json.loads(raw_inv)
@@ -231,7 +248,7 @@ def google_signup():
                     'coins': user.get('coins', 100),
                     'streak': user.get('streak', 0),
                     'currentXP': user.get('current_xp', 0),
-                    'maxXP': user.get('max_xp', 1250),
+                    'maxXP': user.get('max_xp', 10000),
                     'level': user.get('level', 1),
                     'inventory': raw_inv or [],
                     'avatarConfig': json.loads(user['avatar_config']) if user.get('avatar_config') else None,
@@ -240,8 +257,6 @@ def google_signup():
                 }
             }), 200
 
-        # If the user doesn't exist yet and no username/student ID was passed,
-        # tell the frontend both are needed (open the username modal)
         if not username or not student_id:
             return jsonify({'needs_username': True}), 200
 
@@ -263,12 +278,12 @@ def google_signup():
             "password": dummy_password,
             "coins": 100,
             "streak": 0,
-            "inventory": []
+            "inventory": [],
+            "status": "offline"
         }).execute()
 
         created_user = response.data[0] if response.data else {}
 
-        # Give this new user a streak-freeze inventory row
         if created_user.get('id'):
             ensure_streak_freeze_row(created_user['id'])
 
@@ -291,7 +306,6 @@ def google_signup():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -302,13 +316,37 @@ def login():
         return jsonify({'error': 'Please provide email and password.'}), 400
 
     try:
-        response = supabase.table('users').select('*').eq('email', email).execute()
+        response = supabase.table('users').select('*').eq('email', email.strip()).execute()
         users = response.data
 
         if not users:
             return jsonify({'error': 'Invalid email or password.'}), 401
 
         user = users[0]
+
+        # --- CHECK ACTIVE SUSPENSION FROM 'suspensions' TABLE ---
+        active_susp = get_active_suspension(user['id'])
+        if active_susp:
+            reason = active_susp.get('reason') or "Community Guidelines Violation"
+            suspended_until = active_susp.get('suspended_until')
+            
+            lift_display = active_susp.get('duration') or 'Until reviewed by IT administration'
+            if suspended_until:
+                try:
+                    dt = datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
+                    lift_display = dt.strftime('%B %d, %Y at %I:%M %p UTC')
+                except Exception:
+                    lift_display = suspended_until
+
+            return jsonify({
+                'suspended': True,
+                'is_suspended': True,
+                'error': f"ACCOUNT SUSPENDED: {reason}",
+                'reason': reason,
+                'liftUntil': lift_display
+            }), 403
+
+        # Normal password check
         if not bcrypt.check_password_hash(user['password'], password):
             return jsonify({'error': 'Invalid email or password.'}), 401
 
@@ -325,12 +363,9 @@ def login():
                 'coins': user.get('coins', 100),
                 'streak': user.get('streak', 0),
                 'currentXP': user.get('current_xp', 0),
-                'maxXP': user.get('max_xp', 1250),
+                'maxXP': user.get('max_xp', 10000),
                 'level': user.get('level', 1),
-                'inventory': raw_inv or [],
-                'avatarConfig': json.loads(user['avatar_config']) if user.get('avatar_config') else None,
-                'roomConfig': json.loads(user['room_config']) if user.get('room_config') else None,
-                'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None
+                'inventory': raw_inv or []
             }
         }), 200
     except Exception as e:
@@ -2096,6 +2131,237 @@ You have received a new feedback and feature idea from a user:
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+# =============================================================================
+# IT ADMIN MODULE
+# =============================================================================
+
+@app.route('/api/itadmin/users', methods=['GET'])
+def admin_get_users():
+    try:
+        users_res = supabase.table('users').select('id, username, email, status, created_at').order('created_at', desc=True).execute()
+        users = users_res.data or []
+
+        # 1. Total sessions from study_sessions table
+        sessions_res = supabase.table('study_sessions').select('email').execute()
+        sessions_count_by_email = {}
+        for s in (sessions_res.data or []):
+            em = s.get('email')
+            if em:
+                em_lower = em.strip().lower()
+                sessions_count_by_email[em_lower] = sessions_count_by_email.get(em_lower, 0) + 1
+
+        # 2. Lifetime flags count and active suspension check
+        susp_res = supabase.table('suspensions').select('*').order('created_at', desc=True).execute()
+        all_suspensions = susp_res.data or []
+
+        flags_count_by_user = {}
+        active_susp_by_user = {}
+        now = datetime.now(timezone.utc)
+
+        for s in all_suspensions:
+            u_id = s.get('user_id')
+            if u_id is not None:
+                # Count ALL rows = permanent flags history (never resets to 0)
+                flags_count_by_user[u_id] = flags_count_by_user.get(u_id, 0) + 1
+
+                if s.get('is_active'):
+                    suspended_until_str = s.get('suspended_until')
+                    if suspended_until_str:
+                        try:
+                            suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
+                            if now >= suspended_until:
+                                supabase.table('suspensions').update({'is_active': False}).eq('id', s['id']).execute()
+                                continue
+                        except Exception:
+                            pass
+                    if u_id not in active_susp_by_user:
+                        active_susp_by_user[u_id] = s
+
+        formatted_users = []
+        for u in users:
+            u_id = u.get('id')
+            user_email = (u.get('email') or '').strip().lower()
+            is_active_susp = u_id in active_susp_by_user
+
+            created_time = u.get('created_at')
+            days_ago = 0
+            if created_time:
+                try:
+                    c_date = datetime.fromisoformat(created_time.replace('Z', '+00:00')).date()
+                    days_ago = (datetime.now().date() - c_date).days
+                except Exception:
+                    days_ago = 0
+
+            formatted_users.append({
+                'id': u_id,
+                'username': u.get('username') or 'User',
+                'email': u.get('email'),
+                'status': 'Suspended' if is_active_susp else ('Active' if (u.get('status') or '').lower() in ['active', 'online', 'studying'] else 'Inactive'),
+                'totalSessions': sessions_count_by_email.get(user_email, 0),
+                'lastActive': 'Today' if days_ago == 0 else f"{days_ago}d ago",
+                'daysAgo': days_ago,
+                'flags': flags_count_by_user.get(u_id, 0),  # Persistent lifetime count
+                'isSuspended': is_active_susp
+            })
+
+        total_users = len(formatted_users)
+        active_count = sum(1 for u in formatted_users if u['status'] == 'Active')
+        suspended_count = sum(1 for u in formatted_users if u['status'] == 'Suspended')
+
+        return jsonify({
+            'success': True,
+            'users': formatted_users,
+            'metrics': {
+                'totalUsers': total_users,
+                'activeUsers': active_count,
+                'currentlyStudying': 0,
+                'reportedUsers': suspended_count
+            }
+        }), 200
+    except Exception as e:
+        print("ADMIN GET USERS ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/itadmin/suspend-user', methods=['POST'])
+def admin_suspend_user():
+    """Inserts a suspension record into the public.suspensions table."""
+    data = request.json or {}
+    target_email = data.get('email')
+    reason = data.get('reason', 'Community Guidelines Violation')
+    duration = data.get('duration', '24 Hours / 1 Day')
+    custom_dt = data.get('customDatetime')
+    notes = data.get('notes', '')
+
+    if not target_email:
+        return jsonify({'success': False, 'message': 'Email required'}), 400
+
+    try:
+        user_res = supabase.table('users').select('id').eq('email', target_email).execute()
+        if not user_res.data:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        user_id = user_res.data[0]['id']
+        expiration_iso = calculate_suspension_expiration(duration, custom_dt)
+
+        # 1. Deactivate any prior active suspensions for this user
+        supabase.table('suspensions').update({'is_active': False}).eq('user_id', user_id).execute()
+
+        # 2. Insert new record in the dedicated suspensions table
+        supabase.table('suspensions').insert({
+            'user_id': user_id,
+            'email': target_email,
+            'reason': reason,
+            'duration': duration,
+            'internal_notes': notes,
+            'suspended_until': expiration_iso,
+            'is_active': True
+        }).execute()
+
+        # Keep user status updated
+        supabase.table('users').update({
+            'status': 'Suspended'
+        }).eq('id', user_id).execute()
+
+        return jsonify({
+            'success': True,
+            'message': f"Suspension logged for {target_email}",
+            'suspended_until': expiration_iso
+        }), 200
+    except Exception as e:
+        print("ADMIN SUSPEND ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+from datetime import datetime, timedelta, timezone
+
+# =============================================================================
+# SUSPENSION HELPERS
+# =============================================================================
+
+# Philippine Standard Time definition (UTC+8)
+PHT = timezone(timedelta(hours=8))
+
+def calculate_suspension_expiration(duration_str, custom_datetime_str=None):
+    """
+    Calculates an exact ISO timestamp when suspension expires in UTC.
+    Interprets HTML datetime-local input as Philippine Time (UTC+8)
+    and stores it in standard UTC for reliable database comparisons.
+    """
+    now = datetime.now(timezone.utc)
+    
+    if duration_str == 'Custom Date/Time' and custom_datetime_str:
+        try:
+            # <input type="datetime-local" /> produces "YYYY-MM-DDTHH:MM" without timezone.
+            # Treat as Philippine Time (UTC+8) and convert to UTC
+            dt = datetime.fromisoformat(custom_datetime_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=PHT)
+            return dt.astimezone(timezone.utc).isoformat()
+        except Exception as e:
+            print("Custom datetime parse error:", e)
+            return (now + timedelta(days=1)).isoformat()
+
+    durations = {
+        '24 Hours / 1 Day': timedelta(days=1),
+        '3 Days': timedelta(days=3),
+        '7 Days / 1 Week': timedelta(days=7),
+        '14 Days / 2 Weeks': timedelta(days=14),
+        '30 Days / 1 Month': timedelta(days=30),
+        '90 Days / 3 Months': timedelta(days=90),
+    }
+
+    if duration_str in durations:
+        return (now + durations[duration_str]).isoformat()
+    elif duration_str == 'Permanent / Indefinite':
+        return None  # Permanent / Indefinite
+    
+    return (now + timedelta(days=1)).isoformat()
+
+
+def get_active_suspension(user_id):
+    """
+    Checks the 'suspensions' table for any active suspension for this user.
+    If a suspension has passed its expiration time, it automatically deactivates it.
+    Returns: suspension record dict if actively suspended, None if free to log in.
+    """
+    try:
+        res = supabase.table('suspensions') \
+            .select('*') \
+            .eq('user_id', user_id) \
+            .eq('is_active', True) \
+            .order('created_at', desc=True) \
+            .limit(1) \
+            .execute()
+
+        if not res.data:
+            return None
+
+        suspension = res.data[0]
+        suspended_until_str = suspension.get('suspended_until')
+
+        # If permanent (no end date), they remain suspended
+        if not suspended_until_str:
+            return suspension
+
+        # Ensure safe timezone-aware comparison
+        suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
+        if suspended_until.tzinfo is None:
+            suspended_until = suspended_until.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+
+        if now >= suspended_until:
+            # AUTO-LIFT: Mark suspension as inactive in the suspensions table
+            supabase.table('suspensions').update({'is_active': False}).eq('id', suspension['id']).execute()
+            # Update user status back to offline
+            supabase.table('users').update({'status': 'offline'}).eq('id', user_id).execute()
+            print(f"[AUTO-LIFT] Suspension expired for user ID {user_id}. Restored access.")
+            return None
+
+        return suspension
+    except Exception as e:
+        print("Error checking suspension table:", e)
+        return None
+    
 # =============================================================================
 # APP ENTRY POINT
 # =============================================================================
