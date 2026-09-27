@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
 import CustomRoom from '../components/CustomRoom';
@@ -154,6 +154,24 @@ const ALL_ASSETS = [
   ...ROOM_CATALOG.room.map((a) => ({ ...a, folder: 'ROOMS', catKey: 'room' })),
 ];
 
+// Fallback defaults used only when a user has no saved config anywhere yet
+const DEFAULT_AVATAR_CONFIG = {
+  body: 'BODY1',
+  face: 'FACE1',
+  tops: 'TOP7',
+  bottoms: 'BOTTOM6',
+  shoes: '',
+  hair: '',
+  accessories: '',
+};
+const DEFAULT_ROOM_CONFIG = { room: 'ROOM1' };
+const DEFAULT_UNLOCKED_ITEMS = ['BODY1', 'BODY2', 'BODY3', 'FACE1', 'TOP7', 'BOTTOM6', 'ROOM1'];
+
+// FIX: every cached key below is namespaced per user email so one browser
+// can never show account A's avatar/room/inventory while account B is
+// logged in (this was the "Lekshi's avatar shows on Hehe's account" bug).
+const storageKey = (base, email) => (email ? `${base}_${email}` : `${base}_guest`);
+
 export default function UserCustomizer() {
   const { playerData, updateCoins } = usePlayer();
   const userEmail = playerData?.email || sessionStorage.getItem('active_user_email') || localStorage.getItem('active_user_email');
@@ -162,40 +180,53 @@ export default function UserCustomizer() {
   const [avatarCategory, setAvatarCategory] = useState('skin & face');
   const [roomCategory, setRoomCategory] = useState('room');
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [toast, setToast] = useState(null);
 
-  const [avatarConfig, setAvatarConfig] = useState(() => {
-    try {
-      if (playerData?.avatarConfig) return playerData.avatarConfig;
-      const saved = localStorage.getItem('user_avatar_config');
-      return saved
-        ? JSON.parse(saved)
-        : { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    } catch {
-      return { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    }
-  });
+  const [avatarConfig, setAvatarConfig] = useState(DEFAULT_AVATAR_CONFIG);
+  const [roomConfig, setRoomConfig] = useState(DEFAULT_ROOM_CONFIG);
+  const [unlockedItems, setUnlockedItems] = useState(DEFAULT_UNLOCKED_ITEMS);
 
-  const [roomConfig, setRoomConfig] = useState(() => {
-    try {
-      if (playerData?.roomConfig) return playerData.roomConfig;
-      const saved = localStorage.getItem('user_furniture_config');
-      return saved ? JSON.parse(saved) : { room: 'ROOM1' };
-    } catch {
-      return { room: 'ROOM1' };
+  // FIX: this effect re-loads the correct data whenever the logged-in user
+  // changes, or whenever playerData finishes loading from the backend.
+  // Before, a useState(() => ...) initializer only ran ONCE on first mount,
+  // so if playerData arrived a moment later (or belonged to a different
+  // user than before), the screen kept showing stale/wrong data.
+  useEffect(() => {
+    if (playerData?.avatarConfig) {
+      setAvatarConfig(playerData.avatarConfig);
+    } else {
+      const saved = localStorage.getItem(storageKey('user_avatar_config', userEmail));
+      try {
+        setAvatarConfig(saved ? JSON.parse(saved) : DEFAULT_AVATAR_CONFIG);
+      } catch {
+        setAvatarConfig(DEFAULT_AVATAR_CONFIG);
+      }
     }
-  });
 
-  const [unlockedItems, setUnlockedItems] = useState(() => {
-    try {
-      if (playerData?.unlockedItems) return playerData.unlockedItems;
-      const saved = localStorage.getItem('user_unlocked_assets');
-      return saved
-        ? JSON.parse(saved)
-        : ['BODY1', 'BODY2', 'BODY3', 'FACE1', 'TOP7', 'BOTTOM6', 'ROOM1'];
-    } catch {
-      return ['BODY1', 'BODY2', 'BODY3', 'FACE1', 'TOP7', 'BOTTOM6', 'ROOM1'];
+    if (playerData?.roomConfig) {
+      setRoomConfig(playerData.roomConfig);
+    } else {
+      const saved = localStorage.getItem(storageKey('user_furniture_config', userEmail));
+      try {
+        setRoomConfig(saved ? JSON.parse(saved) : DEFAULT_ROOM_CONFIG);
+      } catch {
+        setRoomConfig(DEFAULT_ROOM_CONFIG);
+      }
     }
-  });
+
+    if (playerData?.unlockedItems) {
+      setUnlockedItems(playerData.unlockedItems);
+    } else {
+      const saved = localStorage.getItem(storageKey('user_unlocked_assets', userEmail));
+      try {
+        setUnlockedItems(saved ? JSON.parse(saved) : DEFAULT_UNLOCKED_ITEMS);
+      } catch {
+        setUnlockedItems(DEFAULT_UNLOCKED_ITEMS);
+      }
+    }
+    // Re-run whenever the account changes or the backend data for this
+    // account finishes loading/updating.
+  }, [userEmail, playerData?.avatarConfig, playerData?.roomConfig, playerData?.unlockedItems]);
 
   const baseUrl = import.meta.env.BASE_URL.endsWith('/')
     ? import.meta.env.BASE_URL
@@ -204,22 +235,33 @@ export default function UserCustomizer() {
   const coinIconUrl = `${baseUrl}media/coin_logo.png`;
   const platformIconUrl = `${baseUrl}media/platform.png`;
 
+  const showToast = (message) => {
+    setToast(message);
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(null), 2200);
+  };
+
+  // FIX: this used to only look at the currently active tab (avatar OR
+  // room), which meant you could equip a paid item in one tab, switch to
+  // the other tab (where nothing was pending), and hit "Save Changes" to
+  // keep the paid item for free — it was never charged for and never
+  // added to unlockedItems. Now it always checks BOTH avatar and room
+  // items together, regardless of which tab is open, so nothing equipped
+  // can be saved without being paid for first.
   const getUnownedEquippedItems = () => {
     const unowned = [];
 
-    if (activeMode === 'avatar') {
-      Object.values(avatarConfig).forEach((assetId) => {
-        if (assetId && assetId !== 'NONE' && !unlockedItems.includes(assetId)) {
-          const item = ALL_ASSETS.find((a) => a.id === assetId);
-          if (item && item.price > 0) unowned.push(item);
-        }
-      });
-    } else {
-      const roomId = roomConfig.room;
-      if (roomId && !unlockedItems.includes(roomId)) {
-        const item = ALL_ASSETS.find((a) => a.id === roomId);
+    Object.values(avatarConfig).forEach((assetId) => {
+      if (assetId && assetId !== 'NONE' && !unlockedItems.includes(assetId)) {
+        const item = ALL_ASSETS.find((a) => a.id === assetId);
         if (item && item.price > 0) unowned.push(item);
       }
+    });
+
+    const roomId = roomConfig.room;
+    if (roomId && !unlockedItems.includes(roomId)) {
+      const item = ALL_ASSETS.find((a) => a.id === roomId);
+      if (item && item.price > 0) unowned.push(item);
     }
 
     return unowned;
@@ -269,9 +311,9 @@ export default function UserCustomizer() {
   };
 
   const saveCustomization = async () => {
-    localStorage.setItem('user_avatar_config', JSON.stringify(avatarConfig));
-    localStorage.setItem('user_furniture_config', JSON.stringify(roomConfig));
-    localStorage.setItem('user_unlocked_assets', JSON.stringify(unlockedItems));
+    localStorage.setItem(storageKey('user_avatar_config', userEmail), JSON.stringify(avatarConfig));
+    localStorage.setItem(storageKey('user_furniture_config', userEmail), JSON.stringify(roomConfig));
+    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(unlockedItems));
 
     window.dispatchEvent(new CustomEvent('avatar-updated', { detail: avatarConfig }));
     window.dispatchEvent(new CustomEvent('furniture-updated', { detail: roomConfig }));
@@ -293,15 +335,15 @@ export default function UserCustomizer() {
       }
     }
 
-    alert('Customization Saved!');
+    showToast('Changes saved!');
   };
 
   const saveCustomizationWithCoins = async (updatedCoins) => {
-    localStorage.setItem('user_avatar_config', JSON.stringify(avatarConfig));
-    localStorage.setItem('user_furniture_config', JSON.stringify(roomConfig));
-    localStorage.setItem('user_unlocked_assets', JSON.stringify(unlockedItems));
+    localStorage.setItem(storageKey('user_avatar_config', userEmail), JSON.stringify(avatarConfig));
+    localStorage.setItem(storageKey('user_furniture_config', userEmail), JSON.stringify(roomConfig));
+    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(unlockedItems));
 
-    // I-update din ang user object sa localStorage para sa coins pagka-refresh
+    // Also update the cached user object in localStorage so coins are correct after a refresh
     if (userEmail) {
       const userStorageKey = `user_${userEmail}`;
       const savedUserData = localStorage.getItem(userStorageKey);
@@ -345,7 +387,7 @@ export default function UserCustomizer() {
       }
     }
 
-    alert('Purchase Successful & Saved!');
+    showToast('Purchase successful!');
   };
 
   const handleConfirmPurchase = async () => {
@@ -358,7 +400,7 @@ export default function UserCustomizer() {
     const updatedUnlockedList = [...unlockedItems, ...newlyUnlockedIds];
 
     setUnlockedItems(updatedUnlockedList);
-    localStorage.setItem('user_unlocked_assets', JSON.stringify(updatedUnlockedList));
+    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(updatedUnlockedList));
 
     await saveCustomizationWithCoins(newCoinBalance);
     setShowCheckoutModal(false);
@@ -686,6 +728,13 @@ export default function UserCustomizer() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Small non-blocking toast, replaces the old alert() popups */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] bg-theme-dark text-theme-white font-pressstart text-[9px] sm:text-[10px] px-4 py-3 rounded-[8px] shadow-lg border-2 border-theme-primary animate-fade-in">
+          {toast}
         </div>
       )}
     </main>

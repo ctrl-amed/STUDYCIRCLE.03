@@ -375,12 +375,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return;
     }
 
-    // Basahin mula sa aktibong timer o sa completedSessionData cache
+    // Read from the active timer or completedSessionData cache
     const currentActiveSession = 
       timer.activeSession || 
       JSON.parse(localStorage.getItem('completedSessionData') || localStorage.getItem('activeSession') || '{}');
     
-    // Tiyaking napipili ang totoong piniling workType, technique, at duration
+    // Ensure the correct workType, technique, and duration are chosen
     const finalActivity = 
       currentActiveSession.workType || 
       currentActiveSession.activity || 
@@ -425,15 +425,17 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       if (data.success) {
         const storedUser = JSON.parse(localStorage.getItem(`user_${userEmail}`) || '{}');
         storedUser.coins = data.coins;
+        storedUser.currentXP = data.currentXP;
         storedUser.current_xp = data.currentXP;
         storedUser.level = data.level;
+        storedUser.maxXP = data.maxXP;
         storedUser.max_xp = data.maxXP;
         storedUser.streak = data.streak;
         localStorage.setItem(`user_${userEmail}`, JSON.stringify(storedUser));
 
         window.dispatchEvent(new Event('player-data-updated'));
 
-        // Linisin ang completedSessionData cache pagkatapos ma-save nang maayos
+        // Clear the completedSessionData cache after saving successfully
         localStorage.removeItem('activeSession');
         localStorage.removeItem('completedSessionData');
 
@@ -446,7 +448,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         alert("Failed to save session: " + data.error);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Network error while saving session:", err);
       alert("Network error while saving session.");
     }
   };
@@ -1982,7 +1984,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               type="button"
               onClick={() => {
                 setShowFeedbackSuccessModal(false);
-                window.location.reload();
               }}
               className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2 uppercase"
             >

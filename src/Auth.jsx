@@ -8,6 +8,7 @@ import { usePlayer } from './context/PlayerContext';
 // Password Rules & Standard Guidance Text
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_+\-\[\]\\\/]).{8,}$/;
 const studentIdRegex = /^[a-zA-Z]\d{8}$/;
+const umakEmailRegex = /^[a-zA-Z0-9._%+-]+@umak\.edu\.ph$/i;
 const defaultGuideText =
   'Create a strong password using 8 or more characters, including uppercase and lowercase letters, a number, and a special character.';
 
@@ -58,6 +59,8 @@ export default function Auth() {
   const [googleUsernameErr, setGoogleUsernameErr] = useState('');
   const [googleAgeTermsChecked, setGoogleAgeTermsChecked] = useState(false);
   const [googleTermsErr, setGoogleTermsErr] = useState('');
+  const [googleStudentId, setGoogleStudentId] = useState('');
+  const [googleStudentIdErr, setGoogleStudentIdErr] = useState('');
 
   // Legal Content Modal States
   const [showTermsModal, setShowTermsModal] = useState(false);
@@ -126,6 +129,10 @@ export default function Auth() {
       setSignupEmailErr("Email field can't be empty.");
       return false;
     }
+    if (!umakEmailRegex.test(trimmed)) {
+      setSignupEmailErr('You must use a valid @umak.edu.ph email address.');
+      return false;
+    }
     setSignupEmailErr('');
     return true;
   };
@@ -189,6 +196,12 @@ export default function Auth() {
 
     if (!decoded || !decoded.email) return;
 
+    // Reject non-umak Google accounts immediately, before hitting the backend
+    if (!umakEmailRegex.test(decoded.email)) {
+      setLoginError('✘ You must sign in with a valid @umak.edu.ph email.');
+      return;
+    }
+
     try {
       const response = await fetch('http://localhost:5000/api/google-signup', {
         method: 'POST',
@@ -198,7 +211,7 @@ export default function Auth() {
       const data = await response.json();
 
       if (!response.ok) {
-        setLoginError('Google sign in failed.');
+        setLoginError(data.error || 'Google sign in failed.');
         return;
       }
 
@@ -227,6 +240,8 @@ export default function Auth() {
         setGoogleUserPending(decoded);
         const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
         setGoogleUsernameInput(suggestedUsername);
+        setGoogleStudentId('');
+        setGoogleStudentIdErr('');
         setGoogleAgeTermsChecked(false);
         setGoogleTermsErr('');
         setGoogleUsernameErr('');
@@ -245,18 +260,21 @@ export default function Auth() {
   const handleGoogleUsernameSubmit = async (e) => {
     e.preventDefault();
     const trimmedUser = googleUsernameInput.trim();
+    const trimmedStudentId = googleStudentId.trim();
     const usernameRegex = /^[a-zA-Z0-9_-]{1,20}$/;
 
     if (!trimmedUser) {
       setGoogleUsernameErr("Username field can't be empty.");
       return;
     }
-
     if (!usernameRegex.test(trimmedUser)) {
       setGoogleUsernameErr('Username must be 1 to 20 characters and contain only letters, numbers, hyphens, or underscores.');
       return;
     }
-
+    if (!studentIdRegex.test(trimmedStudentId)) {
+      setGoogleStudentIdErr('Student ID must start with 1 letter followed by exactly 8 numbers (e.g., A12345678).');
+      return;
+    }
     if (!googleAgeTermsChecked) {
       setGoogleTermsErr('You must confirm you are at least 18 years old and agree to the Terms and Privacy Policy.');
       return;
@@ -269,13 +287,18 @@ export default function Auth() {
         body: JSON.stringify({
           username: trimmedUser,
           email: googleUserPending.email,
+          student_id: trimmedStudentId,
           google_id: googleUserPending.sub || googleUserPending.id,
         }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        setGoogleUsernameErr(data.error || 'Google sign in failed.');
+        if (data.field === 'student_id') {
+          setGoogleStudentIdErr(data.error);
+        } else {
+          setGoogleUsernameErr(data.error || 'Google sign in failed.');
+        }
         return;
       }
 
@@ -660,7 +683,7 @@ export default function Auth() {
                     type="email"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="you@studycircle.app"
+                    placeholder="you@umak.edu.ph"
                     className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
                       loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
@@ -771,7 +794,7 @@ export default function Auth() {
                       setSignupEmail(e.target.value);
                       validateEmail(e.target.value);
                     }}
-                    placeholder="you@studycircle.app"
+                    placeholder="you@umak.edu.ph"
                     className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
                       signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
                     }`}
@@ -945,7 +968,7 @@ export default function Auth() {
                     type="email"
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
-                    placeholder="you@studycircle.app"
+                    placeholder="you@umak.edu.ph"
                     className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
                   />
                   {resetError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-primary mt-0.5">{resetError}</p>}
@@ -1130,6 +1153,24 @@ export default function Auth() {
                   {googleUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleUsernameErr}</p>}
                 </div>
 
+                <div className="flex flex-col gap-1">
+                  <label className="font-pressstart text-[10px] text-theme-dark">STUDENT ID</label>
+                  <input
+                    type="text"
+                    value={googleStudentId}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9);
+                      setGoogleStudentId(val);
+                      setGoogleStudentIdErr('');
+                    }}
+                    placeholder="A12345678"
+                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full ${
+                      googleStudentIdErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+                    }`}
+                  />
+                  {googleStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {googleStudentIdErr}</p>}
+                </div>
+
                 <div className="flex flex-col gap-1 mt-1">
                   <label className="flex items-start gap-2 cursor-pointer">
                     <input
@@ -1168,6 +1209,8 @@ export default function Auth() {
                     type="button"
                     onClick={() => {
                       setGoogleUserPending(null);
+                      setGoogleStudentId('');
+                      setGoogleStudentIdErr('');
                       setGoogleAgeTermsChecked(false);
                       setGoogleTermsErr('');
                     }}
