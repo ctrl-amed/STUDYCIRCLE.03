@@ -10,14 +10,17 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from flask_mail import Mail, Message
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import google.generativeai as genai
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from pypdf import PdfReader
 import uuid
-from datetime import datetime
 import re
+
+# =============================================================================
+# APP CONFIGURATION & SETUP
+# =============================================================================
 
 load_dotenv()
 
@@ -26,20 +29,19 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 CORS(app)
 bcrypt = Bcrypt(app)
 
-load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Kukunin nito ang URL galing sa Render/Environment, o gagamit ng default
+# Pulled from Render/Environment, falls back to a local default if not set
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://your_local_fallback')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Supabase Credentials
+# Supabase credentials
 SUPABASE_URL = os.getenv("SUPABASE_URL", "YOUR_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "YOUR_SUPABASE_ANON_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Email Configuration (Replace with your actual mail server credentials)
+# Email configuration (replace with your actual mail server credentials)
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
@@ -49,36 +51,117 @@ app.config['DEFAULT_MAIL_SENDER'] = 'StudyCircle <your_email@gmail.com>'
 
 mail = Mail(app)
 
+
+# =============================================================================
+# SHARED LEVEL CALCULATION HELPER
+# One single function that turns "total XP" into "Level + XP needed for next
+# level". Every endpoint that needs to know a user's level calls this same
+# function, so a user's level can never disagree between different parts of
+# the app (this is FIX 3 from the review).
+# =============================================================================
+
+def calculate_level_from_total_xp(total_xp):
+    """
+    Works out a user's Level (1-50) and the XP needed for their next level,
+    based on total accumulated XP.
+    """
+    level = 1
+    cumulative = 0
+    for l in range(1, 51):
+        cost = int(100 * (l ** 1.5))
+        if total_xp >= cumulative:
+            level = l
+        cumulative += cost
+
+    next_level_xp = 0
+    running_total = 0
+    for l in range(1, level + 1):
+        running_total += int(100 * (l ** 1.5))
+    next_level_xp = running_total
+
+    return level, next_level_xp
+
+
+# =============================================================================
+# STREAK FREEZE HELPER
+# Ensures every user has exactly one row in streak_freezes_inventory. Called
+# right after a new account is created (signup / google-signup).
+# =============================================================================
+
+def ensure_streak_freeze_row(user_id):
+    try:
+        existing = supabase.table('streak_freezes_inventory').select('user_id').eq('user_id', user_id).execute()
+        if not existing.data:
+            supabase.table('streak_freezes_inventory').insert({
+                "user_id": user_id,
+                "freezes_count": 1,
+                "max_slots": 2
+            }).execute()
+    except Exception as e:
+        print("Could not create streak freeze row:", e)
+
+
+# =============================================================================
+# HEALTH CHECK
+# =============================================================================
+
 @app.route('/')
 def home():
     return jsonify({"status": "success", "message": "StudyCircle Backend is live and running!"}), 200
+
+
+# =============================================================================
+# AUTHENTICATION (signup, Google signup, login, password reset)
+# =============================================================================
+
+UMAK_EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@umak\.edu\.ph$', re.IGNORECASE)
+STUDENT_ID_REGEX = re.compile(r'^[a-zA-Z]\d{8}$')
+
+def is_umak_email(email):
+    return bool(email) and bool(UMAK_EMAIL_REGEX.match(email.strip()))
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.get_json()
     username = data.get('username')
     email = data.get('email')
+    student_id = data.get('student_id')
     password = data.get('password')
 
-    if not username or not email or not password:
+    if not username or not email or not password or not student_id:
         return jsonify({'error': 'Please provide all required fields.'}), 400
 
+    email = email.strip()
+    student_id = student_id.strip()
+
+    if not is_umak_email(email):
+        return jsonify({'error': 'You must sign up with a valid @umak.edu.ph email.', 'field': 'email'}), 400
+
+    if not STUDENT_ID_REGEX.match(student_id):
+        return jsonify({'error': 'Invalid student ID format.', 'field': 'student_id'}), 400
+
     try:
-        # 1. I-check muna kung existing na ang email
+        # 1. Check if the email is already registered
         existing_email = supabase.table('users').select('*').eq('email', email).execute()
         if existing_email.data:
             return jsonify({'error': 'This email is already registered.', 'field': 'email'}), 400
 
-        # 2. I-check muna kung existing na ang username
+        # 2. Check if the username is already taken
         existing_username = supabase.table('users').select('*').eq('username', username).execute()
         if existing_username.data:
             return jsonify({'error': 'Username is already taken.', 'field': 'username'}), 400
+
+        # 3. Check if the student ID is already registered
+        existing_student_id = supabase.table('users').select('*').eq('student_id', student_id).execute()
+        if existing_student_id.data:
+            return jsonify({'error': 'This student ID is already registered.', 'field': 'student_id'}), 400
 
         hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
         response = supabase.table('users').insert({
             "username": username,
             "email": email,
+            "student_id": student_id,
             "password": hashed_password,
             "coins": 100,
             "streak": 0,
@@ -86,6 +169,11 @@ def signup():
         }).execute()
 
         created_user = response.data[0] if response.data else {}
+
+        # Give this new user a streak-freeze inventory row
+        if created_user.get('id'):
+            ensure_streak_freeze_row(created_user['id'])
+
         inv_data = created_user.get('inventory')
         if isinstance(inv_data, str):
             inv_data = json.loads(inv_data)
@@ -95,6 +183,7 @@ def signup():
             'user': {
                 'username': created_user.get('username', username),
                 'email': created_user.get('email', email),
+                'studentId': created_user.get('student_id', student_id),
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
                 'currentXP': created_user.get('current_xp', 0),
@@ -106,20 +195,27 @@ def signup():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+
 @app.route('/api/google-signup', methods=['POST'])
 def google_signup():
     data = request.get_json()
     username = data.get('username')
     email = data.get('email')
+    student_id = data.get('student_id')
     google_id = data.get('google_id')
 
     if not email:
         return jsonify({'error': 'Email is required.'}), 400
 
+    email = email.strip()
+
+    if not is_umak_email(email):
+        return jsonify({'error': 'You must sign in with a valid @umak.edu.ph email.'}), 400
+
     try:
-        # I-check muna kung nag-e-exist na ang email
+        # Check if the email already exists
         existing_user = supabase.table('users').select('*').eq('email', email).execute()
-        
+
         if existing_user.data:
             user = existing_user.data[0]
             raw_inv = user.get('inventory')
@@ -131,27 +227,39 @@ def google_signup():
                 'user': {
                     'username': user['username'],
                     'email': user['email'],
+                    'studentId': user.get('student_id'),
                     'coins': user.get('coins', 100),
                     'streak': user.get('streak', 0),
-                    'currentXP': user.get('current_xp', 0),    
-                    'maxXP': user.get('max_xp', 1250),      
+                    'currentXP': user.get('current_xp', 0),
+                    'maxXP': user.get('max_xp', 1250),
                     'level': user.get('level', 1),
                     'inventory': raw_inv or [],
                     'avatarConfig': json.loads(user['avatar_config']) if user.get('avatar_config') else None,
                     'roomConfig': json.loads(user['room_config']) if user.get('room_config') else None,
-                    'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None            
+                    'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None
                 }
             }), 200
 
-        # Kung wala pa at walang username na pinasa, sabihin sa frontend na kailangan ng username (buksan ang modal)
-        if not username:
+        # If the user doesn't exist yet and no username/student ID was passed,
+        # tell the frontend both are needed (open the username modal)
+        if not username or not student_id:
             return jsonify({'needs_username': True}), 200
 
+        student_id = student_id.strip()
+
+        if not STUDENT_ID_REGEX.match(student_id):
+            return jsonify({'error': 'Invalid student ID format.', 'field': 'student_id'}), 400
+
+        existing_student_id = supabase.table('users').select('*').eq('student_id', student_id).execute()
+        if existing_student_id.data:
+            return jsonify({'error': 'This student ID is already registered.', 'field': 'student_id'}), 400
+
         dummy_password = bcrypt.generate_password_hash(google_id or 'google_secure_pass').decode('utf-8')
-        
+
         response = supabase.table('users').insert({
             "username": username,
             "email": email,
+            "student_id": student_id,
             "password": dummy_password,
             "coins": 100,
             "streak": 0,
@@ -159,6 +267,11 @@ def google_signup():
         }).execute()
 
         created_user = response.data[0] if response.data else {}
+
+        # Give this new user a streak-freeze inventory row
+        if created_user.get('id'):
+            ensure_streak_freeze_row(created_user['id'])
+
         raw_inv = created_user.get('inventory')
         if isinstance(raw_inv, str):
             raw_inv = json.loads(raw_inv)
@@ -168,6 +281,7 @@ def google_signup():
             'user': {
                 'username': created_user.get('username', username),
                 'email': created_user.get('email', email),
+                'studentId': created_user.get('student_id', student_id),
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
                 'inventory': raw_inv or []
@@ -176,6 +290,7 @@ def google_signup():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -206,50 +321,51 @@ def login():
             'user': {
                 'username': user['username'],
                 'email': user['email'],
+                'studentId': user.get('student_id'),
                 'coins': user.get('coins', 100),
                 'streak': user.get('streak', 0),
-                'currentXP': user.get('current_xp', 0),    
-                'maxXP': user.get('max_xp', 1250),      
+                'currentXP': user.get('current_xp', 0),
+                'maxXP': user.get('max_xp', 1250),
                 'level': user.get('level', 1),
                 'inventory': raw_inv or [],
                 'avatarConfig': json.loads(user['avatar_config']) if user.get('avatar_config') else None,
                 'roomConfig': json.loads(user['room_config']) if user.get('room_config') else None,
-                'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None            
+                'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None
             }
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
     email = data.get('email')
 
-    # Validate if email is provided in the request
     if not email:
         return jsonify({'error': 'Please provide an email address.'}), 400
 
     try:
         # Check if the email exists in the Supabase database
         response = supabase.table('users').select('*').eq('email', email).execute()
-        
+
         if not response.data:
             return jsonify({'error': 'Email address not found in our system.'}), 404
 
         user = response.data[0]
         username = user.get('username', 'User')
 
-        # Generate a secure random token for the password reset and SAVE to Supabase
+        # Generate a secure random token for the password reset and save it to Supabase
         reset_token = secrets.token_urlsafe(32)
         supabase.table('users').update({'reset_token': reset_token}).eq('email', email).execute()
-        
+
         reset_link = f"http://localhost:5173/changepassword?token={reset_token}"
 
-        # Email Configuration using Gmail SMTP
+        # Email configuration using Gmail SMTP
         sender_email = os.getenv("MAIL_USERNAME")
         sender_password = os.getenv("MAIL_PASSWORD")
 
-        # Create the email message
+        # Build the email message
         msg = MIMEMultipart()
         msg['From'] = sender_email
         msg['To'] = email
@@ -280,11 +396,12 @@ If you didn't request this, simply ignore this email.
 
         return jsonify({
             'message': 'Password reset link sent successfully to your email!',
-            'reset_link': reset_link  
+            'reset_link': reset_link
         }), 200
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/change-password', methods=['POST'])
 def change_password():
@@ -292,14 +409,13 @@ def change_password():
     token = data.get('token')
     new_password = data.get('new_password')
 
-    # Validate inputs
     if not token or not new_password:
         return jsonify({'error': 'Token and new password are required.'}), 400
 
     try:
-        # Patahin kung tama ang token sa database
+        # Check if the token is valid
         response = supabase.table('users').select('*').eq('reset_token', token).execute()
-        
+
         if not response.data:
             return jsonify({'error': 'Invalid or expired reset token.'}), 400
 
@@ -307,8 +423,8 @@ def change_password():
 
         # Hash the new password securely
         hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
-        
-        # Update ang password at i-clear ang reset token
+
+        # Update the password and clear the reset token
         supabase.table('users').update({
             'password': hashed_password,
             'reset_token': None
@@ -320,17 +436,21 @@ def change_password():
         return jsonify({'error': str(e)}), 500
 
 
-# Background function that runs periodically to send reminders
+# =============================================================================
+# EMAIL REMINDERS (scheduled background job + settings endpoints)
+# =============================================================================
+
 def send_study_reminder():
+    """Background function that runs periodically to send reminders."""
     with app.app_context():
         current_time_str = datetime.now().strftime("%H:%M")
-        
-        # TODO: Query your database for users who have reminders enabled 
+
+        # TODO: Query your database for users who have reminders enabled
         # and whose reminder_time matches the current hour/minute.
         # Example using SQLAlchemy:
         # users_to_remind = User.query.filter_by(reminder_enabled=True, reminder_time=current_time_str).all()
-        users_to_remind = [] 
-        
+        users_to_remind = []
+
         for user in users_to_remind:
             msg = Message(
                 subject="⏰ StudyCircle Daily Reminder: Time to Focus!",
@@ -343,26 +463,27 @@ def send_study_reminder():
             except Exception as e:
                 print(f"Error sending email to {user.email}: {e}")
 
-# Setup Background Scheduler to check every minute for scheduled reminders
+
+# Background scheduler that checks every minute for scheduled reminders
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=send_study_reminder, trigger="interval", minutes=1)
 scheduler.start()
 
-# API endpoint to update and save reminder settings
+
 @app.route('/api/update-reminder', methods=['POST'])
 def update_reminder():
     data = request.json
     email = data.get('email')
     enabled = data.get('enabled')
     reminder_time = data.get('time')
-    
+
     if not email:
         return jsonify({"success": False, "message": "Email is required"}), 400
 
     try:
         print(f"Saved reminder for {email}: Enabled={enabled}, Time={reminder_time}")
-        
-        # Kung naka-enable, magpadala agad ng confirmation/test reminder email para makita natin
+
+        # If enabled, immediately send a confirmation/test reminder email so we can see it
         if enabled:
             msg = Message(
                 subject="⏰ StudyCircle Reminder Set Successfully!",
@@ -376,12 +497,13 @@ def update_reminder():
     except Exception as e:
         print(f"Error sending email: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-    
+
+
 @app.route('/api/test-email', methods=['POST'])
 def test_email():
     data = request.json
     recipient_email = data.get('email')
-    
+
     if not recipient_email:
         return jsonify({"success": False, "message": "No email provided"}), 400
 
@@ -395,6 +517,11 @@ def test_email():
         return jsonify({"success": True, "message": "Test email sent successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+# =============================================================================
+# PROFILE & CUSTOMIZATION
+# =============================================================================
 
 @app.route('/api/update-profile', methods=['POST'])
 def update_profile():
@@ -416,8 +543,9 @@ def update_profile():
         response = supabase.table('users').update(update_data).eq('email', old_email).execute()
         return jsonify({'success': True, 'message': 'Profile updated successfully!'}), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500      
-    
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/update-customization', methods=['POST'])
 def update_customization():
     data = request.json
@@ -425,144 +553,172 @@ def update_customization():
     avatar_config = data.get('avatarConfig')
     room_config = data.get('roomConfig')
     unlocked_items = data.get('unlockedItems')
-    
+
     if not email:
         return jsonify({"success": False, "message": "Email is required"}), 400
 
     try:
-        # Isinusulat na nito nang totoo sa Supabase table base sa email ng user
+        # Persist the customization to Supabase, keyed by the user's email
         supabase.table('users').update({
             "avatar_config": json.dumps(avatar_config) if avatar_config else None,
             "room_config": json.dumps(room_config) if room_config else None,
             "unlocked_items": json.dumps(unlocked_items) if unlocked_items else None
         }).eq('email', email).execute()
-        
+
         return jsonify({"success": True, "message": "Customization saved to database successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 1. SEARCH USERS TO ADD ---
+
+# =============================================================================
+# FRIENDS SYSTEM (search, requests, accept/reject, list, remove)
+# =============================================================================
+
 @app.route('/api/search-users', methods=['GET'])
 def search_users():
     query = request.args.get('query', '').strip()
     current_email = request.args.get('email', '')
-    
+
     if not query:
         return jsonify({"success": True, "users": []}), 200
 
     try:
-        # 1. Kunin muna ang lahat ng email ng kaibigan at may pending request para hindi na lumabas
+        # 1. Get every email that's already a friend or has a pending request,
+        #    so they don't show up again in search results
         friendships_res = supabase.table('friendships').select('*').or_(f"sender_email.eq.{current_email},receiver_email.eq.{current_email}").execute()
-        
+
         excluded_emails = {current_email}
         for item in friendships_res.data:
             if item['status'] in ['accepted', 'pending']:
                 other_email = item['receiver_email'] if item['sender_email'] == current_email else item['sender_email']
                 excluded_emails.add(other_email)
 
-        # 2. Mag-search ng users na hindi kasama sa excluded list
+        # 2. Search for users not in the excluded list
         response = supabase.table('users').select('username, email, level, avatar_config').ilike('username', f"%{query}%").execute()
-        
+
         filtered_users = [u for u in response.data if u['email'] not in excluded_emails]
 
         return jsonify({"success": True, "users": filtered_users}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 2. SEND FRIEND REQUEST ---
+
 @app.route('/api/send-friend-request', methods=['POST'])
 def send_friend_request():
     data = request.get_json()
     sender_email = data.get('senderEmail')
     receiver_email = data.get('receiverEmail')
-    
+
     if not sender_email or not receiver_email:
         return jsonify({"success": False, "message": "Sender and receiver emails are required."}), 400
 
     try:
-        # I-save ang request sa Supabase friendships table
+        # Save the request in the Supabase friendships table
         supabase.table('friendships').insert({
             "sender_email": sender_email,
             "receiver_email": receiver_email,
             "status": "pending"
         }).execute()
-        
+
         return jsonify({"success": True, "message": "Friend request sent successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 3. GET FRIENDS & PENDING REQUESTS ---
+
 @app.route('/api/get-friends-data', methods=['GET'])
 def get_friends_data():
     email = request.args.get('email')
-    
+
     if not email:
         return jsonify({"success": False, "message": "Email is required."}), 400
 
     try:
-        # Kunin ang mga accepted friends at incoming requests
+        # Get accepted friends and incoming requests
         response = supabase.table('friendships').select('*').or_(f"sender_email.eq.{email},receiver_email.eq.{email}").execute()
-        
-        # Safe check kung null o walang laman ang response data
+
+        # Safe check in case the response data is null or empty
         if not response.data:
             return jsonify({"success": True, "friends": [], "requests": []}), 200
-        
+
         friends = []
         requests = []
-        
+
         for item in response.data:
             status = item.get('status')
             sender = item.get('sender_email')
             receiver = item.get('receiver_email')
-            
+
             if status == 'accepted':
                 friend_email = receiver if sender == email else sender
-                # Kunin ang details ng kaibigan mula sa users table
+                # Get the friend's details from the users table
                 u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', friend_email).execute()
                 if u_res.data:
                     friends.append(u_res.data[0])
-                    
+
             elif status == 'pending' and receiver == email:
-                # Incoming request para sa iyo
+                # Incoming request for this user
                 u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', sender).execute()
                 if u_res.data:
                     requests.append({
                         "id": item.get('id'),
                         "sender": u_res.data[0]
                     })
-                    
+
         return jsonify({"success": True, "friends": friends, "requests": requests}), 200
-        
+
     except Exception as e:
-        print(f"Error in get_friends_data: {str(e)}") # Magpapakita sa Flask terminal para madaling i-debug
+        print(f"Error in get_friends_data: {str(e)}")  # Shown in the Flask terminal for easier debugging
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 4. ACCEPT OR REJECT FRIEND REQUEST ---
+
 @app.route('/api/handle-friend-request', methods=['POST'])
 def handle_friend_request():
     data = request.get_json()
     request_id = data.get('requestId')
-    action = data.get('action') # 'accept' or 'reject'
-    
+    action = data.get('action')  # 'accept' or 'reject'
+
     try:
         if action == 'accept':
             supabase.table('friendships').update({"status": "accepted"}).eq('id', request_id).execute()
         else:
             supabase.table('friendships').delete().eq('id', request_id).execute()
-            
+
         return jsonify({"success": True, "message": f"Request {action}ed successfully!"}), 200
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500    
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
-# --- 5. GET LEADERBOARD DATA ---
+@app.route('/api/remove-friend', methods=['POST'])
+def remove_friend():
+    data = request.get_json()
+    user_email = data.get('userEmail')
+    friend_email = data.get('friendEmail')
+
+    if not user_email or not friend_email:
+        return jsonify({"success": False, "message": "Both emails are required."}), 400
+
+    try:
+        # Delete the friendship record no matter which side is sender/receiver
+        supabase.table('friendships').delete().or_(
+            f"and(sender_email.eq.{user_email},receiver_email.eq.{friend_email}),and(sender_email.eq.{friend_email},receiver_email.eq.{user_email})"
+        ).execute()
+
+        return jsonify({"success": True, "message": "Friend removed successfully!"}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# =============================================================================
+# LEADERBOARD
+# =============================================================================
+
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
     try:
-        # Kunin ang top 10 users base sa XP para sa All Time
+        # Top 10 users by XP for "All Time"
         all_time_res = supabase.table('users').select('username, avatar_url, avatar_config, current_xp').order('current_xp', desc=True).limit(10).execute()
-        
-        # Kunin ang top 10 users base sa Streak
+
+        # Top 10 users by streak
         streaks_res = supabase.table('users').select('username, avatar_url, avatar_config, streak').order('streak', desc=True).limit(10).execute()
 
         def format_avatar(url, username):
@@ -589,63 +745,70 @@ def get_leaderboard():
             })
 
         return jsonify({
-            "success": True, 
+            "success": True,
             "leaderboard": {
                 "all-time": all_time,
-                "this-month": all_time, # Placeholder kung wala ka pang monthly tracking table
+                "this-month": all_time,  # Placeholder until there's a monthly tracking table
                 "streaks": streaks
             }
         }), 200
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500    
+        return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 6. GET CHAT MESSAGES ---
+
+# =============================================================================
+# CHAT / MESSAGING
+# =============================================================================
+
 @app.route('/api/messages', methods=['GET'])
 def get_messages():
     user1 = request.args.get('user1')
     user2 = request.args.get('user2')
-    
+
     if not user1 or not user2:
         return jsonify({"success": False, "message": "Missing user emails"}), 400
-        
+
     try:
-        # Kunin ang lahat ng mensahe sa pagitan ng dalawang user
+        # Get all messages between the two users
         response = supabase.table('messages').select('*') \
             .in_('sender_email', [user1, user2]) \
             .in_('receiver_email', [user1, user2]) \
             .order('created_at').execute()
-        
+
         return jsonify({"success": True, "messages": response.data}), 200
     except Exception as e:
         print("Error fetching messages:", e)
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# --- 7. SEND CHAT MESSAGE ---
 @app.route('/api/send-message', methods=['POST'])
 def send_message():
     data = request.json
     sender = data.get('sender_email')
     receiver = data.get('receiver_email')
     message = data.get('message')
-    
+
     if not sender or not receiver or not message:
         return jsonify({"success": False, "message": "Incomplete data"}), 400
-        
+
     try:
-        # I-save ang mensahe sa database
+        # Save the message to the database
         supabase.table('messages').insert({
             "sender_email": sender,
             "receiver_email": receiver,
             "message": message
         }).execute()
-        
+
         return jsonify({"success": True}), 200
     except Exception as e:
         print("Error sending message:", e)
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- 8. SAVE STUDY SESSION ---
+
+# =============================================================================
+# STUDY SESSIONS & XP ENGINE
+# =============================================================================
+
 @app.route('/api/save-session', methods=['POST'])
 def save_session():
     data = request.json or {}
@@ -655,7 +818,7 @@ def save_session():
     duration = int(data.get('duration') or data.get('focusTime') or data.get('durationMinutes') or 0)
     total_tasks = int(data.get('totalTasks', 0))
     completed_tasks = int(data.get('completedTasks', 0))
-    
+
     try:
         supabase.table('study_sessions').insert({
             "email": email,
@@ -670,22 +833,22 @@ def save_session():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-# --- 9. v2.1 EXP ENGINE & API SPECIFICATION CONTROLLER ---
 @app.route('/api/v1/sessions/complete', methods=['POST'])
 def complete_focus_session():
+    """v2.1 EXP Engine & API Specification Controller."""
     data = request.json or {}
     raw_email = data.get('email', '').strip()
-    
-    # Masusing pag-salo sa mga posibleng pangalan ng keys galing sa frontend
+
+    # Carefully handle all the possible key names coming from the frontend
     duration_minutes = int(data.get('durationMinutes') or data.get('focusTime') or data.get('duration') or 25)
     technique = str(data.get('technique') or data.get('techniqueName') or 'Pomodoro').strip()
     activity_name = str(data.get('activity') or data.get('workType') or 'Focus Session').strip()
-    
+
     tasks_completed = max(0, int(data.get('tasksCompleted', 0)))
     total_tasks = max(tasks_completed, int(data.get('totalTasks', tasks_completed)))
     tasks_list = data.get('tasksList', [])
-    
-    # --- Feedback Fields galing sa Feedback Modal ---
+
+    # --- Feedback fields from the feedback modal ---
     task_status = data.get('taskStatus', 'Completed').strip()
     productivity_level = int(data.get('productivityLevel', 3))
     accomplished_text = data.get('accomplishedText', '').strip()
@@ -751,13 +914,37 @@ def complete_focus_session():
         calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
         rounded_exp_gained = round(calculated_exp, 4)
 
-        # Ensure at least 1 coin is gained even for short test durations
-        base_coins_gained = max(1, int(round(duration_minutes * 0.2)))
+        # ---------------------------------------------------------------
+        # FIX: look at this user's session history once — it is used for
+        # BOTH the daily coin cap AND the streak check below, so we only
+        # query the database a single time instead of twice.
+        # ---------------------------------------------------------------
+        today = datetime.now().date()
+        today_str = today.strftime('%Y-%m-%d')
+        yesterday_str = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+
+        history_res = supabase.table('study_sessions').select('created_at, coins_gained').ilike('email', raw_email).execute()
+        history = history_res.data or []
+
+        studied_today = False
+        studied_yesterday = False
+        coins_earned_today = 0
+        for s in history:
+            created_at = s.get('created_at') or ''
+            if created_at.startswith(today_str):
+                studied_today = True
+                coins_earned_today += int(s.get('coins_gained') or 0)
+            elif created_at.startswith(yesterday_str):
+                studied_yesterday = True
+
+        # --- FIX: enforce the 100-coin-per-day limit ---
+        raw_coins_gained = max(1, int(round(duration_minutes * 0.2)))
+        coins_gained = max(0, min(raw_coins_gained, 100 - coins_earned_today))
 
         new_xp = current_xp + rounded_exp_gained
-        new_coins = current_coins + base_coins_gained
+        new_coins = current_coins + coins_gained
 
-        # --- TULOY-TULOY NA PAGKAKALKULA NG LEVEL (Sequential Leveling) ---
+        # --- Level calculation (1 to 50, continuous / sequential leveling) ---
         new_level = 1
         cum_exp = 0
         for l in range(1, 51):
@@ -773,26 +960,37 @@ def complete_focus_session():
             temp_cum += int(100 * (l ** 1.5))
         new_max_xp = temp_cum
 
-        # --- STREAK CHECK: Isang beses lang kada araw ---
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        sessions_today_res = supabase.table('study_sessions').select('created_at').ilike('email', raw_email).execute()
-        
-        already_studied_today = False
-        if sessions_today_res.data:
-            for s in sessions_today_res.data:
-                created_at = s.get('created_at', '')
-                if created_at and created_at.startswith(today_str):
-                    already_studied_today = True
-                    break
-
-        if already_studied_today:
-            # Kung nakapag-aral na kanina ngayong araw, panatilihin ang kasalukuyang streak
+        # --- Streak logic, now freeze-aware ---
+        freeze_used = False
+        if studied_today:
+            # Already logged a session today — keep the streak where it is
             new_streak = current_streak if current_streak > 0 else 1
-        else:
-            # Kung ito ang unang sesyon ngayong araw, dagdagan ng 1 ang streak
+        elif studied_yesterday or current_streak == 0:
+            # Picking up right where yesterday left off, or starting a brand new streak
             new_streak = current_streak + 1
+        else:
+            # A day was missed — see if a streak freeze can save it
+            sf_res = supabase.table('streak_freezes_inventory').select('*').eq('user_id', user_id).execute()
+            freezes_count = sf_res.data[0].get('freezes_count', 0) if sf_res.data else 0
 
-        # 1. Update users table (isinama na rin ang streak)
+            if freezes_count > 0:
+                supabase.table('streak_freezes_inventory').update({
+                    "freezes_count": freezes_count - 1
+                }).eq('user_id', user_id).execute()
+                new_streak = current_streak + 1
+                freeze_used = True
+            else:
+                # No freeze available — the streak resets
+                new_streak = 1
+
+        # --- unlock the 3rd streak-freeze slot the moment someone hits Level 20 ---
+        if new_level >= 20 and current_level < 20:
+            try:
+                supabase.table('streak_freezes_inventory').update({"max_slots": 3}).eq('user_id', user_id).execute()
+            except Exception as freeze_err:
+                print("Note: could not update streak freeze slots:", freeze_err)
+
+        # 1. Update the users table (streak included)
         supabase.table('users').update({
             "current_xp": int(round(new_xp)),
             "coins": new_coins,
@@ -801,7 +999,7 @@ def complete_focus_session():
             "streak": new_streak
         }).eq('id', user_id).execute()
 
-        # 2. Insert study_sessions table kasama ang feedback fields
+        # 2. Insert into study_sessions table, including feedback fields
         supabase.table('study_sessions').insert({
             "email": user['email'],
             "activity_name": activity_name,
@@ -813,11 +1011,11 @@ def complete_focus_session():
             "task_status": task_status,
             "productivity_level": productivity_level,
             "accomplished_text": accomplished_text,
-            "exp_gained": rounded_exp_gained, 
-            "coins_gained": base_coins_gained
+            "exp_gained": rounded_exp_gained,
+            "coins_gained": coins_gained
         }).execute()
 
-        print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{base_coins_gained} Coins, Level: {new_level}, Streak: {new_streak}")
+        print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{coins_gained} Coins, Level: {new_level}, Streak: {new_streak}")
 
         return jsonify({
             "success": True,
@@ -828,16 +1026,35 @@ def complete_focus_session():
             "level": new_level,
             "maxXP": new_max_xp,
             "streak": new_streak,
+            "streakFreezeUsed": freeze_used,
             "didLevelUp": new_level > current_level
         }), 200
 
     except Exception as e:
         print("[v2.1 EXP ERROR]:", str(e))
         return jsonify({"success": False, "error": str(e)}), 500
-    
-# 1. Endpoint para sa AI Chat (Kitsu AI Chat)
+
+
+@app.route('/api/get-all-sessions', methods=['GET'])
+def get_all_sessions():
+    email = request.args.get('email')
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
+    try:
+        response = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).execute()
+        return jsonify({"success": True, "sessions": response.data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# =============================================================================
+# AI FEATURES (Kitsu chat, flashcards/quizzes/notes generation,
+# task-text validation, and the WSM technique recommendation engine)
+# =============================================================================
+
 @app.route('/api/kitsu-chat', methods=['POST'])
 def kitsu_chat():
+    """Endpoint for the AI Chat feature (Kitsu AI Chat)."""
     data = request.get_json()
     user_message = data.get('message', '')
 
@@ -849,17 +1066,15 @@ def kitsu_chat():
         if not api_key:
             return jsonify({'success': False, 'error': 'GEMINI_API_KEY is missing.'}), 500
 
-        # Direktang ipasa ang client configuration gamit ang bagong genai client setup kung maaari,
-        # o i-clear ang anumang vertex environment variables na nagdudulot ng 401.
+        # Pass the API key directly and re-configure genai to avoid stale
+        # Vertex environment variables that can cause 401 errors.
         os.environ["GEMINI_API_KEY"] = api_key
-        
         genai.configure(api_key=api_key)
-        
-        # Subukan nating gamitin ang gemini-1.5-flash
+
         model = genai.GenerativeModel('gemini-3.6-flash')
-        
+
         prompt = f"You are Kitsu, a cozy, friendly, and helpful anime-style study fox assistant for a study app called StudyCircle. Keep your answers encouraging, concise, and study-focused. User says: {user_message}"
-        
+
         response = model.generate_content(prompt)
         ai_reply = response.text
 
@@ -868,11 +1083,10 @@ def kitsu_chat():
         print("EXACT GEMINI ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# 2. Endpoint para sa pag-generate ng Flashcards / Quizzes / Notes mula sa Real Files
-import json
 
 @app.route('/api/generate-ai-tool', methods=['POST'])
 def generate_ai_tool():
+    """Generates Flashcards / Quizzes / Notes from an uploaded PDF file."""
     tool_type = request.form.get('toolType', 'Notes')
     file = request.files.get('file')
 
@@ -923,7 +1137,7 @@ def generate_ai_tool():
             ]
             Text: {extracted_text[:6000]}
             """
-        else: # Notes
+        else:  # Notes
             prompt = f"""
             Analyze the following document text and provide comprehensive, structured study notes with clear headings and bullet points based strictly on the text content:
             Text: {extracted_text[:6000]}
@@ -931,7 +1145,7 @@ def generate_ai_tool():
 
         response = model.generate_content(prompt)
         result_text = response.text.strip()
-        
+
         if result_text.startswith("```json"):
             result_text = result_text[7:]
         if result_text.endswith("```"):
@@ -949,126 +1163,9 @@ def generate_ai_tool():
             except:
                 pass
 
-# --- REAL-TIME MULTIPLAYER SOCKET EVENTS ---
-room_members = {}
 
-@socketio.on('join_room')
-def on_join_room(data):
-    room = data.get('room')
-    username = data.get('username')
-    avatar_config = data.get('avatar_config')
-    status = data.get('status', 'ONLINE')
-    level = data.get('level', 1)
-    
-    join_room(room)
-    
-    if room not in room_members:
-        room_members[room] = []
-    
-    user_email = ""
-    db_avatar = avatar_config
-    total_focus_formatted = "0h 00m"  # FIX: Default focus time kung wala pang history
-    
-    try:
-        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
-        if u_res.data:
-            user_email = u_res.data[0].get('email', '')
-            db_avatar = u_res.data[0].get('avatar_config')
-            level = u_res.data[0].get('level', level)
-            
-            # FIX: Kalkulahin ang totoong total focus time galing sa 'study_sessions'
-            sessions_res = supabase.table('study_sessions').select('duration_minutes').eq('email', user_email).execute()
-            if sessions_res.data:
-                total_minutes = sum(int(s.get('duration_minutes', 0)) for s in sessions_res.data)
-                hours = total_minutes // 60
-                mins = total_minutes % 60
-                total_focus_formatted = f"{hours}h {mins:02d}m"
-                
-    except Exception as e:
-        print("Error fetching user info:", e)
+# --- WSM (Weighted Sum Model) constants, used by the technique recommendation engine ---
 
-    is_host = False
-    room_cfg = None  
-    try:
-        room_res = supabase.table('rooms').select('host').eq('name', room).execute()
-        if room_res.data:
-            host_username = room_res.data[0].get('host')
-            if host_username == username:
-                is_host = True
-            
-            host_user_res = supabase.table('users').select('room_config').eq('username', host_username).execute()
-            if host_user_res.data:
-                room_cfg = host_user_res.data[0].get('room_config')
-    except Exception as e:
-        print("Error verifying host status:", e)
-
-    if isinstance(room_cfg, str):
-        try:
-            room_cfg = json.loads(room_cfg)
-        except:
-            pass
-
-    existing_user = next((m for m in room_members[room] if m['username'] == username), None)
-    if existing_user:
-        existing_user['status'] = status
-        if db_avatar:
-            existing_user['avatar_config'] = db_avatar
-        existing_user['level'] = level
-        existing_user['isHost'] = is_host
-        existing_user['email'] = user_email
-        existing_user['totalFocusTime'] = total_focus_formatted  # FIX: i-update ang focus time
-    else:
-        room_members[room].append({
-            'id': username,
-            'username': username,
-            'email': user_email,
-            'status': status,
-            'avatar_config': db_avatar,
-            'level': level,
-            'isHost': is_host,
-            'totalFocusTime': total_focus_formatted  # FIX: i-set ang focus time
-        })
-    
-    emit('room_update', {
-        'members': room_members[room],
-        'room_config': room_cfg,  
-        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
-    }, room=room)
-
-@app.route('/api/rooms', methods=['GET'])
-def get_rooms():
-    try:
-        res = supabase.table('rooms').select('*').execute()
-        return jsonify({'success': True, 'rooms': res.data}), 200
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@socketio.on('request_join_private_room')
-def handle_private_join_request(data):
-    room_name = data.get('room')
-    # I-broadcast ang incoming request patungo lamang sa host ng room na iyon
-    emit('incoming_join_request', data, room=room_name)
-
-@socketio.on('leave_room')
-def handle_leave_room(data):
-    room = data.get('room')
-    username = data.get('username')
-    leave_room(room)
-    emit('user_left', {'username': username, 'message': f'{username} left the room.'}, room=room)
-
-@socketio.on('send_room_message')
-def handle_room_message(data):
-    room = data.get('room')
-    username = data.get('sender')
-    message = data.get('text')
-    emit('receive_room_message', {'sender': username, 'text': message, 'time': data.get('time')}, room=room)
-
-@socketio.on('sync_timer')
-def handle_sync_timer(data):
-    room = data.get('room')
-    emit('timer_update', data, room=room, include_self=False)
-
-# WSM Constants mula sa Architecture Spec
 TASK_WEIGHTS = {
     "Creation": {"df": 0.8, "fm": 0.1, "cs": 0.1},
     "Writing": {"df": 0.7, "fm": 0.2, "cs": 0.1},
@@ -1084,7 +1181,8 @@ FRAMEWORK_SCORES = {
     "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
 }
 
-# --- TASK VALIDATION DICTIONARY & ENDPOINT ---
+# --- Task validation dictionary, used to check whether a task description matches its category ---
+
 TASK_DICTIONARIES = {
     "reading": [
         "read", "reading", "reread", "re-read", "go through", "go over", "look through", "scan", "skim",
@@ -1181,6 +1279,7 @@ TASK_DICTIONARIES = {
     ]
 }
 
+
 @app.route('/api/validate-task', methods=['POST'])
 def validate_task():
     data = request.get_json() or {}
@@ -1191,7 +1290,7 @@ def validate_task():
         return jsonify({'success': False, 'error': 'Category and tasks are required.'}), 400
 
     keywords = TASK_DICTIONARIES.get(category, [])
-    # Unahin i-match ang pinakamahabang phrases (hal. "read chapter" bago ang "read")
+    # Match the longest phrases first (e.g. "read chapter" before "read")
     sorted_keywords = sorted(keywords, key=len, reverse=True)
 
     results = []
@@ -1199,7 +1298,7 @@ def validate_task():
 
     for raw_task in tasks:
         task_str = str(raw_task).strip()
-        # Normalization: alisin ang mga bantas at gawing lowercase
+        # Normalize: strip punctuation and lowercase
         clean_task = re.sub(r'[^\w\s-]', ' ', task_str.lower())
         temp_text = f" {clean_task} "
 
@@ -1207,26 +1306,26 @@ def validate_task():
 
         for kw in sorted_keywords:
             kw_clean = kw.strip().lower()
-            # \b (word boundary) para buong salita lang ang itugma
+            # \b (word boundary) so only whole words are matched
             pattern = rf'\b{re.escape(kw_clean)}\b'
             if re.search(pattern, temp_text):
                 matched_keywords.append(kw_clean)
-                # Burahin ang na-match na salita sa temp_text para maiwasan ang double-counting
+                # Remove the matched word from temp_text to avoid double-counting
                 temp_text = re.sub(pattern, ' ', temp_text)
 
         matched_count = len(matched_keywords)
 
-        # Matatag na Scoring Formula batay sa tunay na matches:
+        # Scoring formula based on the actual number of matches:
         if matched_count == 0:
             score = 0.0
         elif matched_count == 1:
-            score = 0.75  # May isang malinaw na keyword/phrase match -> Aligned
+            score = 0.75  # One clear keyword/phrase match -> Aligned
         elif matched_count == 2:
-            score = 0.90  # Mas detalyadong signal
+            score = 0.90  # Stronger signal
         else:
-            score = 1.0   # Maraming tugmang keywords
+            score = 1.0  # Many matching keywords
 
-        # Threshold categorization mula sa Section 5 ng Thesis
+        # Threshold categorization from Section 5 of the thesis
         if score >= 0.70:
             status = "Aligned"
         elif score >= 0.40:
@@ -1252,6 +1351,7 @@ def validate_task():
         'taskBreakdown': results
     }), 200
 
+
 @app.route('/api/ai-recommendation', methods=['POST'])
 def ai_recommendation():
     data = request.get_json() or {}
@@ -1263,7 +1363,7 @@ def ai_recommendation():
         return jsonify({'success': False, 'error': 'Email is required.'}), 400
 
     try:
-        # 1. Kunin ang history mula sa Supabase para sa Historical Modifier ($H_f$)
+        # 1. Get history from Supabase for the Historical Modifier (H_f)
         sessions_res = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).limit(20).execute()
         user_history = sessions_res.data or []
 
@@ -1285,7 +1385,7 @@ def ai_recommendation():
                 return 1.0
             return max(0.5, rec["successes"] / rec["attempts"])
 
-        # 2. WSM Session Weight Calculation (Averaging weights across tasks)
+        # 2. WSM session weight calculation (averaging weights across tasks)
         matched_categories = []
         for t in tasks:
             t_lower = str(t).lower()
@@ -1295,7 +1395,7 @@ def ai_recommendation():
                     matched = cat
                     break
             matched_categories.append(matched)
-        
+
         if not matched_categories:
             matched_categories = ["Reading"]
 
@@ -1310,7 +1410,7 @@ def ai_recommendation():
             "cs": total_cs / num_tasks
         }
 
-        # 3. WSM Framework Scoring & Selection
+        # 3. WSM framework scoring & selection
         best_framework = "Pomodoro"
         highest_score = -1
         framework_details = {
@@ -1334,7 +1434,7 @@ def ai_recommendation():
 
         config = framework_details[best_framework]
 
-        # 4. Gamitin ang Gemini 1.5 Flash para sa user-facing explanation rationale
+        # 4. Use Gemini 1.5 Flash for the user-facing explanation/rationale
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-3.6-flash')
 
@@ -1360,13 +1460,288 @@ def ai_recommendation():
     except Exception as e:
         print("WSM AI Recommendation Error:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
-    
+
+
+# =============================================================================
+# REAL-TIME MULTIPLAYER (Socket.IO events + rooms)
+# =============================================================================
+
+# In-memory tracker of who's currently in each room, for real-time sync
+room_members = {}
+
+
+@socketio.on('join_room')
+def on_join_room(data):
+    room = data.get('room')
+    username = data.get('username')
+    avatar_config = data.get('avatar_config')
+    status = data.get('status', 'ONLINE')
+    level = data.get('level', 1)
+
+    join_room(room)
+
+    if room not in room_members:
+        room_members[room] = []
+
+    user_email = ""
+    db_avatar = avatar_config
+    total_focus_formatted = "0h 00m"  # Default focus time if there's no history yet
+
+    try:
+        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
+        if u_res.data:
+            user_email = u_res.data[0].get('email', '')
+            db_avatar = u_res.data[0].get('avatar_config')
+            level = u_res.data[0].get('level', level)
+
+            # Calculate the user's real total focus time from 'study_sessions'
+            sessions_res = supabase.table('study_sessions').select('duration_minutes').eq('email', user_email).execute()
+            if sessions_res.data:
+                total_minutes = sum(int(s.get('duration_minutes', 0)) for s in sessions_res.data)
+                hours = total_minutes // 60
+                mins = total_minutes % 60
+                total_focus_formatted = f"{hours}h {mins:02d}m"
+
+    except Exception as e:
+        print("Error fetching user info:", e)
+
+    is_host = False
+    room_cfg = None
+    try:
+        room_res = supabase.table('rooms').select('host').eq('name', room).execute()
+        if room_res.data:
+            host_username = room_res.data[0].get('host')
+            if host_username == username:
+                is_host = True
+
+            host_user_res = supabase.table('users').select('room_config').eq('username', host_username).execute()
+            if host_user_res.data:
+                room_cfg = host_user_res.data[0].get('room_config')
+    except Exception as e:
+        print("Error verifying host status:", e)
+
+    if isinstance(room_cfg, str):
+        try:
+            room_cfg = json.loads(room_cfg)
+        except:
+            pass
+
+    existing_user = next((m for m in room_members[room] if m['username'] == username), None)
+    if existing_user:
+        existing_user['status'] = status
+        if db_avatar:
+            existing_user['avatar_config'] = db_avatar
+        existing_user['level'] = level
+        existing_user['isHost'] = is_host
+        existing_user['email'] = user_email
+        existing_user['totalFocusTime'] = total_focus_formatted
+    else:
+        room_members[room].append({
+            'id': username,
+            'username': username,
+            'email': user_email,
+            'status': status,
+            'avatar_config': db_avatar,
+            'level': level,
+            'isHost': is_host,
+            'totalFocusTime': total_focus_formatted
+        })
+
+    emit('room_update', {
+        'members': room_members[room],
+        'room_config': room_cfg,
+        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+    }, room=room)
+
+
+@app.route('/api/rooms', methods=['GET'])
+def get_rooms():
+    try:
+        res = supabase.table('rooms').select('*').execute()
+        return jsonify({'success': True, 'rooms': res.data}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/rooms', methods=['POST'])
+def create_room():
+    data = request.get_json() or {}
+    host = data.get('host')
+    max_members = int(data.get('max_members', 4))
+
+    try:
+        # Enforce a 3-room limit only for group rooms (max_members > 1)
+        if max_members > 1:
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            existing = supabase.table('rooms').select('*').eq('host', host).execute()
+            today_rooms = [r for r in existing.data if r.get('created_at', '').startswith(today_str) and r.get('max_members', 4) > 1]
+
+            if len(today_rooms) >= 3:
+                return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
+
+        # Payload matching the current columns on the rooms table
+        room_payload = {
+            "name": data.get('name'),
+            "course": data.get('course', 'General Studies'),
+            "host": host,
+            "privacy": data.get('privacy', 'public'),
+            "code": data.get('code'),
+            "current_members": data.get('current_members', 1),
+            "max_members": max_members,
+            "task_type": data.get('task_type', 'individual'),
+            "is_started": data.get('is_started', False),
+            "technique": data.get('technique', 'Pomodoro'),
+            "focus_time": data.get('focus_time', 25),
+            "break_time": data.get('break_time', 5),
+            "tasks": data.get('tasks', [])
+        }
+
+        res = supabase.table('rooms').insert(room_payload).execute()
+        return jsonify({'success': True, 'room': res.data[0]}), 201
+
+    except Exception as e:
+        print("ROOM CREATION ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@socketio.on('request_join_private_room')
+def handle_private_join_request(data):
+    room_name = data.get('room')
+    # Broadcast the incoming request only to that specific room
+    emit('incoming_join_request', data, room=room_name)
+
+
+@socketio.on('sync_timer')
+def handle_sync_timer(data):
+    room = data.get('room')
+    emit('timer_update', data, room=room, include_self=False)
+
+
+@socketio.on('update_status')
+def on_update_status(data):
+    room = data.get('room')
+    username = data.get('username')
+    status = data.get('status')
+
+    if room in room_members:
+        for m in room_members[room]:
+            if m['username'] == username:
+                m['status'] = status
+        emit('room_update', {'members': room_members[room], 'logs': []}, room=room)
+
+
+@socketio.on('leave_room')
+def on_leave_room(data):
+    """Removes the user from the in-memory room list and syncs everyone else."""
+    room = data.get('room')
+    username = data.get('username')
+
+    leave_room(room)
+
+    if room in room_members:
+        room_members[room] = [m for m in room_members[room] if m['username'] != username]
+        emit('room_update', {
+            'members': room_members[room],
+            'logs': [{'id': 'leave_' + username, 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+        }, room=room)
+
+
+@socketio.on('send_room_message')
+def on_send_room_message(data):
+    """Broadcasts a chat message to everyone currently in the room."""
+    room = data.get('room')
+    # Broadcast to everyone in the room, including the sender
+    emit('receive_room_message', data, room=room)
+
+
+# --- Tracks pending join requests: { room_name: { guest_username: socket_id } } or maps rooms to hosts ---
+room_hosts = {}
+
+
+@socketio.on('request_join_room')
+def handle_request_join_room(data):
+    room_name = data.get('room')
+    guest_username = data.get('username')
+
+    # Broadcast specifically to that room, so only its members/host receive it
+    emit('incoming_join_request', {
+        'username': guest_username,
+        'room': room_name
+    }, room=room_name)
+
+
+@socketio.on('host_room_response')
+def handle_host_response(data):
+    room_name = data.get('room')
+    username = data.get('username')
+    approved = data.get('approved')
+
+    # Broadcast the decision back to the room / requesting user
+    emit('join_request_decision', {
+        'username': username,
+        'approved': approved,
+        'room': room_name
+    }, broadcast=True)
+
+
+@socketio.on('webrtc_offer')
+def handle_webrtc_offer(data):
+    # Forward the offer to the specific target peer
+    socketio.emit('webrtc_offer', data, room=data.get('target'))
+
+
+@socketio.on('webrtc_answer')
+def handle_webrtc_answer(data):
+    socketio.emit('webrtc_answer', data, room=data.get('target'))
+
+
+@socketio.on('webrtc_ice_candidate')
+def handle_ice_candidate(data):
+    socketio.emit('webrtc_ice_candidate', data, room=data.get('target'))
+
+
+@socketio.on('update_speaking_status')
+def handle_speaking_status(data):
+    room = data.get('room')
+    username = data.get('username')
+    is_speaking = data.get('isSpeaking')
+    # Broadcast to everyone else in the room except the one who triggered it
+    emit('member_speaking_update', {'username': username, 'isSpeaking': is_speaking}, room=room, include_self=False)
+
+
+@socketio.on('kick_room_member')
+def handle_kick_room_member(data):
+    room = data.get('room')
+    target_username = data.get('username')
+
+    # Broadcast to the whole room (or the specific user) that they were kicked
+    emit('kicked_from_room', {'username': target_username}, room=room)
+
+
+@socketio.on('start_shared_room')
+def handle_start_shared_room(data):
+    room_name = data.get('room')
+
+    # 1. Update the database to set is_started = True
+    try:
+        supabase.table('rooms').update({'is_started': True}).eq('name', room_name).execute()
+    except Exception as e:
+        print("Error updating room start state:", e)
+
+    # 2. Broadcast to everyone in the room that the session has started
+    socketio.emit('shared_room_started', {'room': room_name}, room=room_name)
+
+
+# =============================================================================
+# PROGRESS, LEVELS & REWARDS
+# =============================================================================
+
 @app.route('/api/update-coins', methods=['POST'])
 def update_coins_db():
     data = request.json
     email = data.get('email')
     coins = data.get('coins')
-    
+
     if not email or coins is None:
         return jsonify({"success": False, "message": "Email and coins are required"}), 400
 
@@ -1374,23 +1749,12 @@ def update_coins_db():
         response = supabase.table('users').update({
             "coins": coins
         }).eq('email', email).execute()
-        
+
         return jsonify({"success": True, "message": "Coins updated in database successfully!"}), 200
     except Exception as e:
         print("Error updating coins:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
-# --- GET ALL STUDY SESSIONS FOR STATISTICS ---
-@app.route('/api/get-all-sessions', methods=['GET'])
-def get_all_sessions():
-    email = request.args.get('email')
-    if not email:
-        return jsonify({"success": False, "message": "Email is required."}), 400
-    try:
-        response = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).execute()
-        return jsonify({"success": True, "sessions": response.data}), 200
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/update-progress', methods=['POST'])
 def update_progress():
@@ -1402,7 +1766,7 @@ def update_progress():
         return jsonify({"success": False, "message": "Email is required"}), 400
 
     try:
-        # 1. Kunin ang kasalukuyang data ng user mula sa Supabase
+        # 1. Get the user's current data from Supabase
         user_res = supabase.table('users').select('id, current_xp, level').eq('email', email).execute()
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
@@ -1411,36 +1775,20 @@ def update_progress():
         current_xp = current_user.get('current_xp', 0)
         new_xp = current_xp + earned_xp
 
-        # 2. LEVEL MATRIX CUMULATIVE XP THRESHOLDS (Mula sa iyong spec)
-        LEVEL_MATRIX = [
-            {"level": 1, "cumulativeXP": 0, "nextXP": 1701},
-            {"level": 5, "cumulativeXP": 1701, "nextXP": 11102},
-            {"level": 10, "cumulativeXP": 11102, "nextXP": 31993},
-            {"level": 15, "cumulativeXP": 31993, "nextXP": 67128},
-            {"level": 20, "cumulativeXP": 67128, "nextXP": 118800},
-            {"level": 25, "cumulativeXP": 118800, "nextXP": 189018},
-            {"level": 30, "cumulativeXP": 189018, "nextXP": 392183},
-            {"level": 40, "cumulativeXP": 392183, "nextXP": 689494},
-            {"level": 50, "cumulativeXP": 689494, "nextXP": 689494}
-        ]
+        # 2. Calculate the new level using the shared level helper
+        #    (FIX: this used to use a 9-point lookup table that could only
+        #    ever land on Level 1, 5, 10, 15, 20, 25, 30, 40 or 50 — now it
+        #    matches the accurate, continuous calculation used everywhere else)
+        new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
 
-        # 3. Kalkulahin ang bagong Level at hanapin ang tamang nextXP (max_xp)
-        new_level = 1
-        new_max_xp = 1701
-
-        for item in LEVEL_MATRIX:
-            if new_xp >= item["cumulativeXP"]:
-                new_level = item["level"]
-                new_max_xp = item["nextXP"]
-
-        # 4. I-update ang Supabase database
+        # 3. Update the Supabase database
         supabase.table('users').update({
             "current_xp": new_xp,
             "level": new_level,
             "max_xp": new_max_xp
         }).eq('email', email).execute()
 
-        # 5. Kung umabot na sa Level 20 pataas, i-update ang streak freeze max_slots
+        # 4. If Level 20+ was reached, unlock the 3rd streak-freeze slot
         if new_level >= 20:
             user_id = current_user.get('id')
             if user_id:
@@ -1459,6 +1807,7 @@ def update_progress():
         print("Error updating progress:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
+
 @app.route('/api/claim-reward', methods=['POST'])
 def claim_reward():
     data = request.json
@@ -1469,7 +1818,7 @@ def claim_reward():
         return jsonify({"success": False, "message": "Email and level are required"}), 400
 
     try:
-        # Kunin muna ang kasalukuyang inventory o claimed rewards ng user
+        # Get the user's current inventory of claimed rewards
         user_res = supabase.table('users').select('id, inventory').eq('email', email).execute()
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
@@ -1480,13 +1829,13 @@ def claim_reward():
                 current_inventory = json.loads(current_inventory)
             except:
                 current_inventory = []
-        
-        # Kung hindi pa naka-claim, idagdag sa inventory list
+
+        # If not claimed yet, add it to the inventory
         reward_key = f"level_{level}_reward"
         if reward_key not in current_inventory:
             current_inventory.append(reward_key)
 
-            # Kung Level 20 ang clinaim, i-update din ang streak freezes max slots to 3 base sa spec
+            # If Level 20 was claimed, also update streak freeze max slots to 3 per spec
             if level >= 20:
                 user_id = user_res.data[0].get('id')
                 if user_id:
@@ -1497,7 +1846,7 @@ def claim_reward():
                     except Exception as sf_err:
                         print("Note on streak freeze update:", sf_err)
 
-            # I-update ang database gamit ang list/json object para sa jsonb column
+            # Update the database with the list/json object for the jsonb column
             supabase.table('users').update({
                 "inventory": current_inventory
             }).eq('email', email).execute()
@@ -1507,6 +1856,7 @@ def claim_reward():
     except Exception as e:
         print("Error claiming reward:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
+
 
 @app.route('/api/claim-streak-reward', methods=['POST'])
 def claim_streak_reward():
@@ -1518,7 +1868,7 @@ def claim_streak_reward():
         return jsonify({"success": False, "message": "Email and days are required"}), 400
 
     try:
-        # 1. Kunin ang user data (inventory, coins, current_xp) mula sa database
+        # 1. Get the user's data (inventory, coins, current_xp) from the database
         user_res = supabase.table('users').select('inventory, coins, current_xp, max_xp, level').eq('email', email).execute()
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
@@ -1530,13 +1880,13 @@ def claim_streak_reward():
                 current_inventory = json.loads(current_inventory)
             except:
                 current_inventory = []
-        
+
         reward_key = f"streak_{days}_reward"
         if reward_key in current_inventory:
             return jsonify({"success": False, "message": "Reward already claimed."}), 400
 
-        # 2. Tukuyin ang kaukulang gantimpala batay sa araw (days)
-        # Halimbawa: 1 day = 5 coins, 3 days = 10 coins, 7 days = 20 coins, 14 days = 75 XP, 21 days = 100 XP
+        # 2. Determine the reward based on the number of days
+        # Example: 1 day = 5 coins, 3 days = 10 coins, 7 days = 20 coins, 14 days = 75 XP, 21 days = 100 XP
         coins_to_add = 0
         xp_to_add = 0
 
@@ -1557,7 +1907,7 @@ def claim_streak_reward():
         new_coins = current_coins + coins_to_add
         new_xp = current_xp + xp_to_add
 
-        # Idagdag ang reward key sa inventory
+        # Add the reward key to the inventory
         current_inventory.append(reward_key)
 
         update_payload = {
@@ -1566,33 +1916,18 @@ def claim_streak_reward():
             "current_xp": new_xp
         }
 
-        # Kung may XP na nadagdag, i-recalculate din ang level kung kinakailangan
+        # If XP was added, also recalculate the level using the shared level
+        # helper (FIX: replaces the old 9-point lookup table)
         if xp_to_add > 0:
-            LEVEL_MATRIX = [
-                {"level": 1, "cumulativeXP": 0, "nextXP": 1701},
-                {"level": 5, "cumulativeXP": 1701, "nextXP": 11102},
-                {"level": 10, "cumulativeXP": 11102, "nextXP": 31993},
-                {"level": 15, "cumulativeXP": 31993, "nextXP": 67128},
-                {"level": 20, "cumulativeXP": 67128, "nextXP": 118800},
-                {"level": 25, "cumulativeXP": 118800, "nextXP": 189018},
-                {"level": 30, "cumulativeXP": 189018, "nextXP": 392183},
-                {"level": 40, "cumulativeXP": 392183, "nextXP": 689494},
-                {"level": 50, "cumulativeXP": 689494, "nextXP": 689494}
-            ]
-            new_level = user.get('level', 1)
-            new_max_xp = user.get('max_xp', 1701)
-            for item in LEVEL_MATRIX:
-                if new_xp >= item["cumulativeXP"]:
-                    new_level = item["level"]
-                    new_max_xp = item["nextXP"]
+            new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
             update_payload["level"] = new_level
             update_payload["max_xp"] = new_max_xp
 
-        # 3. I-update ang Supabase database
+        # 3. Update the Supabase database
         supabase.table('users').update(update_payload).eq('email', email).execute()
 
         return jsonify({
-            "success": True, 
+            "success": True,
             "inventory": current_inventory,
             "coins": new_coins,
             "currentXP": new_xp
@@ -1602,24 +1937,36 @@ def claim_streak_reward():
         print("Error claiming streak reward:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/api/remove-friend', methods=['POST'])
-def remove_friend():
-    data = request.get_json()
-    user_email = data.get('userEmail')
-    friend_email = data.get('friendEmail')
 
-    if not user_email or not friend_email:
-        return jsonify({"success": False, "message": "Both emails are required."}), 400
-
+@app.route('/api/get-streak-freezes', methods=['GET'])
+def get_streak_freezes():
+    email = request.args.get('email')
+    if not email:
+        return jsonify({'success': False, 'message': 'Email is required.'}), 400
     try:
-        # Burahin ang friendship record kahit anong posisyon nila sa sender o receiver
-        supabase.table('friendships').delete().or_(
-            f"and(sender_email.eq.{user_email},receiver_email.eq.{friend_email}),and(sender_email.eq.{friend_email},receiver_email.eq.{user_email})"
-        ).execute()
+        user_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not user_res.data:
+            return jsonify({'success': False, 'message': 'User not found.'}), 404
+        user_id = user_res.data[0]['id']
 
-        return jsonify({"success": True, "message": "Friend removed successfully!"}), 200
+        sf_res = supabase.table('streak_freezes_inventory').select('*').eq('user_id', user_id).execute()
+        if not sf_res.data:
+            ensure_streak_freeze_row(user_id)  # backfills users who predate this feature
+            sf_res = supabase.table('streak_freezes_inventory').select('*').eq('user_id', user_id).execute()
+
+        record = sf_res.data[0]
+        return jsonify({
+            'success': True,
+            'freezesCount': record.get('freezes_count', 0),
+            'maxSlots': record.get('max_slots', 2)
+        }), 200
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# =============================================================================
+# USER TOOLS (saved AI-generated study tools per user)
+# =============================================================================
 
 @app.route('/api/save-user-tool', methods=['POST'])
 def save_user_tool():
@@ -1642,7 +1989,7 @@ def save_user_tool():
             except:
                 current_inventory = []
 
-        # I-update o idagdag ang tool sa inventory list
+        # Update or add the tool to the inventory list
         tool_id = new_tool.get('id')
         current_inventory = [t for t in current_inventory if isinstance(t, dict) and t.get('id') != tool_id]
         current_inventory.insert(0, new_tool)
@@ -1656,6 +2003,7 @@ def save_user_tool():
     except Exception as e:
         print("Error saving user tool:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
+
 
 @app.route('/api/get-user-tools', methods=['GET'])
 def get_user_tools():
@@ -1679,6 +2027,11 @@ def get_user_tools():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
+
+# =============================================================================
+# FEEDBACK
+# =============================================================================
+
 @app.route('/api/send-feedback', methods=['POST'])
 def send_feedback():
     data = request.json
@@ -1696,10 +2049,10 @@ def send_feedback():
         if not sender_email or not sender_password:
             return jsonify({"success": False, "message": "Email credentials are not configured in environment."}), 500
 
-        # Gumawa ng email message gamit ang MIMEMultipart (tulad ng forgot-password)
+        # Build the email message using MIMEMultipart (same as forgot-password)
         msg = MIMEMultipart()
         msg['From'] = sender_email
-        msg['To'] = "supportstudycircle@gmail.com"  # Ang email kung saan matatanggap ang feedback
+        msg['To'] = "supportstudycircle@gmail.com"  # Where feedback will be received
         msg['Subject'] = f"New Feedback Received: {rating} Experience - StudyCircle"
 
         email_body = f"""
@@ -1716,7 +2069,7 @@ You have received a new feedback and feature idea from a user:
         """
         msg.attach(MIMEText(email_body, 'plain'))
 
-        # Ipadala ang email sa pamamagitan ng Gmail SMTP (parehong setup sa forgot password)
+        # Send the email via Gmail SMTP (same setup as forgot password)
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender_email, sender_password)
@@ -1729,209 +2082,10 @@ You have received a new feedback and feature idea from a user:
         print("Error sending feedback email:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/api/rooms', methods=['POST'])
-def create_room():
-    data = request.get_json() or {}
-    host = data.get('host')
-    max_members = int(data.get('max_members', 4))
-    
-    try:
-        # Enforce 3-room limit only if it's a group room (max_members > 1)
-        if max_members > 1:
-            today_str = datetime.now().strftime('%Y-%m-%d')
-            existing = supabase.table('rooms').select('*').eq('host', host).execute()
-            today_rooms = [r for r in existing.data if r.get('created_at', '').startswith(today_str) and r.get('max_members', 4) > 1]
-            
-            if len(today_rooms) >= 3:
-                return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
 
-        # Tamang payload na tugma na sa bagong columns ng rooms table sa database
-        room_payload = {
-            "name": data.get('name'),
-            "course": data.get('course', 'General Studies'),
-            "host": host,
-            "privacy": data.get('privacy', 'public'),
-            "code": data.get('code'),
-            "current_members": data.get('current_members', 1),
-            "max_members": max_members,
-            "task_type": data.get('task_type', 'individual'),
-            "is_started": data.get('is_started', False),
-            "technique": data.get('technique', 'Pomodoro'),
-            "focus_time": data.get('focus_time', 25),
-            "break_time": data.get('break_time', 5),
-            "tasks": data.get('tasks', [])
-        }
-        
-        res = supabase.table('rooms').insert(room_payload).execute()
-        return jsonify({'success': True, 'room': res.data[0]}), 201
-        
-    except Exception as e:
-        print("ROOM CREATION ERROR:", str(e))
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-# Halimbawa ng in-memory room members tracker para sa real-time sync
-room_members = {}
-
-@socketio.on('join_room')
-def on_join_room(data):
-    room = data.get('room')
-    username = data.get('username')
-    avatar_config = data.get('avatar_config')
-    status = data.get('status', 'ONLINE')
-    level = data.get('level', 1)
-    
-    join_room(room)
-    
-    if room not in room_members:
-        room_members[room] = []
-    
-    # Issue 3 Fix: Get real user email and specific avatar config directly from DB
-    user_email = ""
-    db_avatar = avatar_config
-    try:
-        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
-        if u_res.data:
-            user_email = u_res.data[0].get('email', '')
-            db_avatar = u_res.data[0].get('avatar_config')
-            level = u_res.data[0].get('level', level)
-    except Exception as e:
-        print("Error fetching user info:", e)
-
-    # Issue 7 Fix: Verify exactly who the host is
-    is_host = False
-    try:
-        room_res = supabase.table('rooms').select('host').eq('name', room).execute()
-        if room_res.data and room_res.data[0].get('host') == username:
-            is_host = True
-    except Exception as e:
-        print("Error verifying host status:", e)
-
-    existing_user = next((m for m in room_members[room] if m['username'] == username), None)
-    if existing_user:
-        existing_user['status'] = status
-        if db_avatar:
-            existing_user['avatar_config'] = db_avatar
-        existing_user['level'] = level
-        existing_user['isHost'] = is_host
-        existing_user['email'] = user_email
-    else:
-        room_members[room].append({
-            'id': username,
-            'username': username,
-            'email': user_email,
-            'status': status,
-            'avatar_config': db_avatar,
-            'level': level,
-            'isHost': is_host
-        })
-    
-    emit('room_update', {
-        'members': room_members[room],
-        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
-    }, room=room)
-
-@socketio.on('update_status')
-def on_update_status(data):
-    room = data.get('room')
-    username = data.get('username')
-    status = data.get('status')
-    
-    if room in room_members:
-        for m in room_members[room]:
-            if m['username'] == username:
-                m['status'] = status
-        emit('room_update', {'members': room_members[room], 'logs': []}, room=room)
-
-@socketio.on('leave_room')
-def on_leave_room(data):
-    room = data.get('room')
-    username = data.get('username')
-    
-    leave_room(room)
-    
-    if room in room_members:
-        room_members[room] = [m for m in room_members[room] if m['username'] != username]
-        emit('room_update', {
-            'members': room_members[room],
-            'logs': [{'id': 'leave_' + username, 'user': username, 'action': 'left the room', 'time': 'Just now'}]
-        }, room=room)
-
-@socketio.on('send_room_message')
-def on_send_room_message(data):
-    room = data.get('room')
-    # I-broadcast sa lahat ng nasa room kasama ang nag-send
-    emit('receive_room_message', data, room=room)
-
-# --- TRACK PENDING JOIN REQUESTS ---
-# Stores { room_name: { guest_username: socket_id } } or maps rooms to hosts
-room_hosts = {}
-
-@socketio.on('request_join_room')
-def handle_request_join_room(data):
-    room_name = data.get('room')
-    guest_username = data.get('username')
-    
-    # Broadcast specifically to the room so only members/host of that room receive it
-    emit('incoming_join_request', {
-        'username': guest_username,
-        'room': room_name
-    }, room=room_name)
-
-@socketio.on('host_room_response')
-def handle_host_response(data):
-    room_name = data.get('room')
-    username = data.get('username') # Ito si 'hell'
-    approved = data.get('approved')
-    
-    # I-broadcast pabalik sa room o sa user na nag-request
-    emit('join_request_decision', {
-        'username': username,
-        'approved': approved,
-        'room': room_name
-    }, broadcast=True)
-
-@socketio.on('webrtc_offer')
-def handle_webrtc_offer(data):
-    # I-forward ang offer sa partikular na target peer
-    socketio.emit('webrtc_offer', data, room=data.get('target'))
-
-@socketio.on('webrtc_answer')
-def handle_webrtc_answer(data):
-    socketio.emit('webrtc_answer', data, room=data.get('target'))
-
-@socketio.on('webrtc_ice_candidate')
-def handle_ice_candidate(data):
-    socketio.emit('webrtc_ice_candidate', data, room=data.get('target'))
-
-@socketio.on('update_speaking_status')
-def handle_speaking_status(data):
-    room = data.get('room')
-    username = data.get('username')
-    is_speaking = data.get('isSpeaking')
-    # I-broadcast sa iba pang nasa loob ng room maliban sa nag-trigger
-    emit('member_speaking_update', {'username': username, 'isSpeaking': is_speaking}, room=room, include_self=False)    
-
-@socketio.on('kick_room_member')
-def handle_kick_room_member(data):
-    room = data.get('room')
-    target_username = data.get('username')
-    
-    # I-broadcast sa buong room (o sa partikular na user) na sila ay na-kick
-    emit('kicked_from_room', {'username': target_username}, room=room)
-
-@socketio.on('start_shared_room')
-def handle_start_shared_room(data):
-    room_name = data.get('room')
-    
-    # 1. I-update ang database para maging is_started = True
-    try:
-        supabase.table('rooms').update({'is_started': True}).eq('name', room_name).execute()
-    except Exception as e:
-        print("Error updating room start state:", e)
-
-    # 2. I-broadcast sa lahat ng nasa room na nagsimula na ang sesyon
-    socketio.emit('shared_room_started', {'room': room_name}, room=room_name)
-    
+# =============================================================================
+# APP ENTRY POINT
+# =============================================================================
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5000)
