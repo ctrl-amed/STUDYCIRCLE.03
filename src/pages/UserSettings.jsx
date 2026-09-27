@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
+const API_BASE = 'http://localhost:5000';
+
 export default function UserSettings() {
   const { playerData, setPlayerData } = usePlayer();
 
@@ -10,16 +12,50 @@ export default function UserSettings() {
     passwordHash: playerData?.passwordHash || 'Password123!',
     dailyReminderEnabled: true,
     dailyReminderTime: '08:00',
-    manualReminders: [
-      { id: 1, title: 'Midterms Study Session', datetime: '2026-06-15T14:30' },
-    ],
+    manualReminders: [],
   }));
+
+  const [remindersLoaded, setRemindersLoaded] = useState(false);
 
   useEffect(() => {
     if (playerData?.email) {
       setSettingsData((prev) => ({ ...prev, email: playerData.email }));
     }
   }, [playerData]);
+
+  // Load this account's reminder settings + manual reminders from the backend
+  useEffect(() => {
+    const email = playerData?.email;
+    if (!email) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/get-reminders?email=${encodeURIComponent(email)}`
+        );
+        const data = await response.json();
+        if (!cancelled && response.ok && data.success) {
+          setSettingsData((prev) => ({
+            ...prev,
+            dailyReminderEnabled: data.dailyReminderEnabled,
+            dailyReminderTime: data.dailyReminderTime || '08:00',
+            manualReminders: data.manualReminders || [],
+          }));
+          setReminderTimeInput(data.dailyReminderTime || '08:00');
+        }
+      } catch (err) {
+        console.error('Failed to load reminders:', err);
+      } finally {
+        if (!cancelled) setRemindersLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [playerData?.email]);
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState(null);
@@ -93,7 +129,7 @@ export default function UserSettings() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/update-profile', {
+      const response = await fetch(`${API_BASE}/api/update-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -142,7 +178,7 @@ export default function UserSettings() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/update-profile', {
+      const response = await fetch(`${API_BASE}/api/update-profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -245,7 +281,7 @@ export default function UserSettings() {
     if (hasError) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/change-password-direct', {
+      const response = await fetch(`${API_BASE}/api/change-password-direct`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -270,72 +306,126 @@ export default function UserSettings() {
     }
   };
 
-  // --- REMINDERS HANDLERS (Connected to Backend) ---
+  // --- REMINDERS HANDLERS (Connected to Backend, linked to this account) ---
   const toggleDailyReminder = async () => {
     const newEnabledState = !settingsData.dailyReminderEnabled;
-    
+
     setSettingsData((prev) => ({
       ...prev,
       dailyReminderEnabled: newEnabledState,
     }));
 
     try {
-      await fetch('http://localhost:5000/api/update-reminder', {
+      const response = await fetch(`${API_BASE}/api/update-reminder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: playerData?.email,
           enabled: newEnabledState,
-          time: settingsData.dailyReminderTime
-        })
+          time: settingsData.dailyReminderTime,
+        }),
       });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to save reminder setting');
+      }
       showSuccessToast('Daily reminder status updated!');
     } catch (error) {
       console.error('Error updating reminder status:', error);
+      // Roll back the optimistic UI change since the save failed
+      setSettingsData((prev) => ({
+        ...prev,
+        dailyReminderEnabled: !newEnabledState,
+      }));
     }
   };
 
   const handleSaveTime = async () => {
     if (!reminderTimeInput) return;
-    
-    setSettingsData((prev) => ({ ...prev, dailyReminderTime: reminderTimeInput }));
-    setShowTimePicker(false);
 
     try {
-      await fetch('http://localhost:5000/api/update-reminder', {
+      const response = await fetch(`${API_BASE}/api/update-reminder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: playerData?.email,
           enabled: settingsData.dailyReminderEnabled,
-          time: reminderTimeInput
-        })
+          time: reminderTimeInput,
+        }),
       });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to save reminder time');
+      }
+
+      setSettingsData((prev) => ({ ...prev, dailyReminderTime: reminderTimeInput }));
+      setShowTimePicker(false);
       showSuccessToast('Reminder time saved successfully!');
     } catch (error) {
       console.error('Error saving reminder time:', error);
+      showSuccessToast('Could not save reminder time. Try again.');
     }
   };
 
-  const handleAddManualReminder = () => {
-    if (!manualDatetimeInput) return;
-    setSettingsData((prev) => ({
-      ...prev,
-      manualReminders: [
-        ...prev.manualReminders,
-        { id: Date.now(), title: 'Custom Reminder', datetime: manualDatetimeInput },
-      ],
-    }));
-    setManualDatetimeInput('');
-    showSuccessToast('Manual reminder added!');
+  const handleAddManualReminder = async () => {
+    if (!manualDatetimeInput || !playerData?.email) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/add-manual-reminder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: playerData.email,
+          datetime: manualDatetimeInput,
+          title: 'Custom Reminder',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to add reminder');
+      }
+
+      const saved = data.reminder || {
+        id: Date.now(),
+        title: 'Custom Reminder',
+        datetime: manualDatetimeInput,
+      };
+
+      setSettingsData((prev) => ({
+        ...prev,
+        manualReminders: [...prev.manualReminders, saved],
+      }));
+      setManualDatetimeInput('');
+      showSuccessToast('Manual reminder added!');
+    } catch (error) {
+      console.error('Error adding manual reminder:', error);
+      showSuccessToast('Could not add reminder. Try again.');
+    }
   };
 
-  const handleRemoveManualReminder = (id) => {
-    setSettingsData((prev) => ({
-      ...prev,
-      manualReminders: prev.manualReminders.filter((r) => r.id !== id),
-    }));
-    showSuccessToast('Manual reminder removed!');
+  const handleRemoveManualReminder = async (id) => {
+    if (!playerData?.email) return;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/remove-manual-reminder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: playerData.email, id }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to remove reminder');
+      }
+
+      setSettingsData((prev) => ({
+        ...prev,
+        manualReminders: prev.manualReminders.filter((r) => r.id !== id),
+      }));
+      showSuccessToast('Manual reminder removed!');
+    } catch (error) {
+      console.error('Error removing manual reminder:', error);
+      showSuccessToast('Could not remove reminder. Try again.');
+    }
   };
 
   return (
@@ -467,7 +557,8 @@ export default function UserSettings() {
                 </div>
                 <button
                   onClick={toggleDailyReminder}
-                  className={`w-12 h-6 border-[2px] border-theme-dark rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 ${
+                  disabled={!remindersLoaded}
+                  className={`w-12 h-6 border-[2px] border-theme-dark rounded-full relative cursor-pointer transition-colors duration-200 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                     settingsData.dailyReminderEnabled ? 'bg-theme-primary' : 'bg-theme-dark/20'
                   }`}
                 >

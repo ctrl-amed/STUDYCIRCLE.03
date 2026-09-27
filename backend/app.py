@@ -1547,9 +1547,10 @@ def on_join_room(data):
             'totalFocusTime': total_focus_formatted
         })
 
-    emit('room_update', {
+        emit('room_update', {
         'members': room_members[room],
         'room_config': room_cfg,
+        'active_session': active_room_sessions.get(room),
         'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
     }, room=room)
 
@@ -1721,15 +1722,27 @@ def handle_kick_room_member(data):
 @socketio.on('start_shared_room')
 def handle_start_shared_room(data):
     room_name = data.get('room')
+    session_payload = data.get('session')
 
-    # 1. Update the database to set is_started = True
+    # 1. Update the database: mark started, and persist the session's
+    #    technique/focus/break/tasks so it survives a server restart
     try:
-        supabase.table('rooms').update({'is_started': True}).eq('name', room_name).execute()
+        update_fields = {'is_started': True}
+        if session_payload:
+            update_fields['technique'] = session_payload.get('technique') or session_payload.get('techniqueName')
+            update_fields['focus_time'] = session_payload.get('focusTime') or session_payload.get('durationMinutes')
+            update_fields['break_time'] = session_payload.get('breakTime')
+            update_fields['tasks'] = session_payload.get('tasks', [])
+        supabase.table('rooms').update(update_fields).eq('name', room_name).execute()
     except Exception as e:
         print("Error updating room start state:", e)
 
-    # 2. Broadcast to everyone in the room that the session has started
-    socketio.emit('shared_room_started', {'room': room_name}, room=room_name)
+    # 2. Keep the full payload in memory for anyone who joins mid-session
+    if session_payload:
+        active_room_sessions[room_name] = session_payload
+
+    # 3. Broadcast to everyone in the room that the session has started
+    socketio.emit('shared_room_started', {'room': room_name, 'session': session_payload}, room=room_name)
 
 
 # =============================================================================

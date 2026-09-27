@@ -485,7 +485,7 @@ export default function Auth() {
 
       if (!response.ok) {
         setSignupConsentPending(false);
-        
+
         if (data.field === 'email') {
           setSignupEmailErr(data.error);
         } else if (data.field === 'username') {
@@ -519,7 +519,7 @@ export default function Auth() {
       setSignupConsentPending(false);
 
       triggerToast('Account created successfully!');
-      
+
       startSimulatedLoad('Setting Up Profile...', 1500, () => {
         navigate('/dashboard');
       }, false);
@@ -530,7 +530,7 @@ export default function Auth() {
       setSignupTermsErr('Unable to connect to Flask server.');
     }
   };
-  
+
   const handleResetSubmit = async (e) => {
     e.preventDefault();
     const trimmedEmail = resetEmail.trim();
@@ -1276,7 +1276,7 @@ export default function Auth() {
 
         {/* TOASTS CONTAINER */}
         <div id="toast-container" className="fixed top-28 right-6 z-50 pointer-events-none flex flex-col gap-3">
-          {toasts.play && toasts.map((toast) => (
+          {toasts.map((toast) => (
             <div
               key={toast.id}
               className="bg-theme-surface border-4 border-theme-dark p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"

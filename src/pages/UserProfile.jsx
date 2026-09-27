@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
 
-// Mapping para sa mga badge ng bawat level reward batay sa spec
+// Maps each level-reward badge to its image, per spec
 const LEVEL_BADGES_MAP = {
   1: { img: "media/xp_starter.png", alt: "Badge Starter" },
-  5: { img: "media/badge_regular.png", alt: "Badge Regular" }, // o maaari ring gamitin ang media/xp_regular.png depende sa assets mo
+  5: { img: "media/badge_regular.png", alt: "Badge Regular" }, // or media/xp_regular.png, depending on your assets
   10: { img: "media/badge_advanced.png", alt: "Badge Advanced" },
   15: { img: "media/xp_commited.png", alt: "Badge Committed" },
   20: { img: "media/xp_dedicated.png", alt: "Badge Dedicated" },
@@ -23,7 +23,7 @@ export default function UserProfile() {
   const [roomsCreatedCount, setRoomsCreatedCount] = useState(0);
   const [averageSessionText, setAverageSessionText] = useState('0m');
 
-  // DYNAMIC AVATAR CONFIG (Gamit ang katulad na safe key para sa bawat user)
+  // DYNAMIC AVATAR CONFIG (uses a consistent safe key per user)
   const userEmailKey = userEmail ? userEmail.replace(/[^a-zA-Z0-9]/g, '_') : 'default';
 
   const [avatarConfig, setAvatarConfig] = useState(() => {
@@ -67,8 +67,10 @@ export default function UserProfile() {
       setAverageSessionText('0m');
     }
 
-    const savedRooms = parseInt(localStorage.getItem('total_rooms_created') || '0', 10);
-    setRoomsCreatedCount(savedRooms || playerData?.roomsCreated || 0);
+    // Rooms created now comes straight from the backend (users.rooms_created),
+    // returned on login/signup and kept current in PlayerContext — no more
+    // guessing from a localStorage counter that nothing ever incremented.
+    setRoomsCreatedCount(playerData?.roomsCreated ?? 0);
 
     if (userEmail) {
       try {
@@ -118,12 +120,12 @@ export default function UserProfile() {
   const totalCoins = getUserCoins();
   const xpPercent = Math.min(100, Math.max(0, ((playerData?.currentXP || 0) / (playerData?.maxXP || 100)) * 100));
 
-  // Kunin ang mga na-claim na badges mula sa playerData.inventory
+  // Get the badges the user has already claimed, from playerData.inventory
   const getUnlockedBadges = () => {
-    // 1. Subukang kunin mula sa playerData
+    // 1. Try to read it from playerData
     let inventory = playerData?.inventory || [];
 
-    // 2. Kung walang laman, subukang basahin sa active user localStorage session
+    // 2. If empty, try reading it from the active user's localStorage session
     if (inventory.length === 0 && userEmail) {
       try {
         const savedUserJson = localStorage.getItem(`user_${userEmail}`);
@@ -212,7 +214,7 @@ export default function UserProfile() {
         {/* ==================== RIGHT CARD: TWO ROW CONTAINER ==================== */}
         <div className="lg:col-span-8 flex flex-col gap-6 justify-between h-full">
           
-          {/* ROW 1: BADGES (DYNAMIC MULA SA DATABASE INVENTORY) */}
+          {/* ROW 1: BADGES (DYNAMIC, FROM DATABASE INVENTORY) */}
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] overflow-hidden shadow-md flex-1 flex flex-col justify-between">
             <div className="p-4 border-b-[3px] border-theme-dark flex justify-between items-center">
               <h3 className="font-pressstart text-xs text-theme-dark tracking-wide">BADGES & REWARDS</h3>

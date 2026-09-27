@@ -251,6 +251,11 @@ export default function CreateSession() {
     };
 
     localStorage.setItem('activeSession', JSON.stringify(newSession));
+
+    // Let the parent window know a session was created. UserHomepage decides
+    // whether to broadcast it to a shared room — CreateSession doesn't need
+    // to know anything about multiplayer state itself.
+    window.parent.postMessage({ type: 'SESSION_CREATED', session: newSession }, '*');
     window.parent.postMessage('CLOSE_CREATE_SESSION_MODAL', '*');
   };
 

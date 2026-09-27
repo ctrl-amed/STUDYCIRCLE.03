@@ -205,16 +205,10 @@ export function ActiveSessionWidget({
         <div className="flex flex-wrap items-center justify-between gap-3 pt-12 sm:pt-15">
           <button
             type="button"
-            onClick={() => {
-              if (isMultiplayer && isCurrentUserHost) {
-                onHostStartSession();
-              } else {
-                context?.openCreateSessionModal?.();
-              }
-            }}
+            onClick={() => context?.openCreateSessionModal?.()}
             className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center z-50 relative pointer-events-auto"
           >
-            {isMultiplayer && isCurrentUserHost ? 'START SHARED SESSION' : 'START SESSION'}
+            {isMultiplayer && isCurrentUserHost ? 'CREATE & START SHARED SESSION' : 'START SESSION'}
           </button>
 
           <div className="flex items-center gap-4 sm:gap-6">
