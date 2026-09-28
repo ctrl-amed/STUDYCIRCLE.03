@@ -1,5 +1,5 @@
 // src/pages/ITReports.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 
 export default function ITReports() {
@@ -32,594 +32,68 @@ export default function ITReports() {
   const [fadingTicketIds, setFadingTicketIds] = useState([]);
   const [showChatLogModal, setShowChatLogModal] = useState(false);
 
-  // Closed / Resolved Tickets State & Modal Filters
-  const [resolvedTicketsList, setResolvedTicketsList] = useState([
-    { id: 101, ticketId: 'MESSAGE #998811', type: 'message', submitter: 'AlphaUser', timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(), status: 'closed', action: 'Dismiss Report' },
-    { id: 102, ticketId: 'USER #554433', type: 'user', submitter: 'BetaTester', timestamp: new Date(Date.now() - 35 * 60 * 1000).toISOString(), status: 'resolved', action: 'Suspend User' },
-    { id: 103, ticketId: 'ROOM #112233', type: 'room', submitter: 'GammaOwner', timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), status: 'resolved', action: 'Close Room / Content' },
-  ]);
+  // Closed / Resolved Tickets State (Mock data removed; starts empty, populated from backend actions)
+  const [resolvedTicketsList, setResolvedTicketsList] = useState([]);
   const [showResolvedHistoryModal, setShowResolvedHistoryModal] = useState(false);
   const [modalStatusFilter, setModalStatusFilter] = useState('All status');
   const [modalDateFilter, setModalDateFilter] = useState('Any time');
 
-  // Updated Mock Tickets Data with detailed properties and expanded chat logs (5-10 messages each)
-  const [ticketsList, setTicketsList] = useState([
-    { 
-      id: 1, 
-      ticketId: 'MESSAGE #123456', 
-      type: 'message', 
-      submitter: 'PixelCoder99', 
-      timestamp: new Date(Date.now() - 3 * 60 * 1000).toISOString(), 
-      content: 'Inappropriate language used in public study thread.',
-      username: 'angeluuh_c',
-      userSince: '10/10/2021',
-      reportingHistory: '5 times reported',
-      reportedBy: 'alexisMarie123',
-      additionalNotes: 'User was cursing repeatedly despite warnings.',
-      chatLog: [
-        { timestamp: '[9:42]', sender: 'alexisMarie123', text: 'Hey guys, welcome to the study session.' },
-        { timestamp: '[9:44]', sender: 'pixel_coder', text: 'Glad to be here, ready for algorithms.' },
-        { timestamp: '[9:46]', sender: 'angeluuh_c', text: 'This review sheet is way too hard.', isFlagged: false },
-        { timestamp: '[9:48]', sender: 'angeluuh_c', text: 'Inappropriate language used in public study thread.', isFlagged: true },
-        { timestamp: '[9:49]', sender: 'alexisMarie123', text: 'Please keep the chat clean and respectful.' },
-        { timestamp: '[9:50]', sender: 'mod_sarah', text: 'Staff notification: maintain channel guidelines.' },
-        { timestamp: '[9:52]', sender: 'pixel_coder', text: 'Let focus back on the practice problems.' }
-      ],
-      reportReason: 'Abusive language'
-    },
-    { 
-      id: 2, 
-      ticketId: 'USER #654321', 
-      type: 'user', 
-      submitter: 'SarahConnor', 
-      timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString(), 
-      content: 'Harassment and spamming private messages.',
-      username: 'user_alpha99',
-      userSince: '03/15/2021',
-      reportingHistory: '3 times reported',
-      reportedBy: 'mod_sarah',
-      additionalNotes: 'Sent unsolicited spam links and harassing messages.',
-      reportReason: 'Harassment'
-    },
-    { 
-      id: 3, 
-      ticketId: 'ROOM #987654', 
-      type: 'room', 
-      submitter: 'AlexMorgan', 
-      timestamp: new Date(Date.now() - 2 * 60 * 1000).toISOString(), 
-      content: 'Room name contains explicit/offensive keywords.',
-      host: 'AlexMorgan',
-      dateCreated: '05/01/2022',
-      roomName: 'Chill Study Lounge',
-      reportedBy: 'moderator_sam',
-      additionalNotes: 'Explicit keywords detected in title.',
-      reportReason: 'Explicit room name'
-    },
-    { 
-      id: 4, 
-      ticketId: 'MESSAGE #112233', 
-      type: 'message', 
-      submitter: 'CodeNinja21', 
-      timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(), 
-      content: 'Spamming referral links in study chat.',
-      username: 'codeninja_21',
-      userSince: '05/12/2022',
-      reportingHistory: '2 times reported',
-      reportedBy: 'dev_guru',
-      additionalNotes: 'none',
-      chatLog: [
-        { timestamp: '[10:15]', sender: 'dev_guru', text: 'Good morning everyone!' },
-        { timestamp: '[10:16]', sender: 'codeninja_21', text: 'Check out this external link for free tokens!', isFlagged: true },
-        { timestamp: '[10:17]', sender: 'study_mod', text: 'Codeninja, no self-promo or referral links.' },
-        { timestamp: '[10:18]', sender: 'codeninja_21', text: 'Just trying to help people out.' },
-        { timestamp: '[10:19]', sender: 'dev_guru', text: 'Please read community rules regarding spam.' },
-        { timestamp: '[10:20]', sender: 'study_mod', text: 'Issuing warning for off-topic spamming.' }
-      ],
-      reportReason: 'Off-topic spamming'
-    },
-    { 
-      id: 5, 
-      ticketId: 'USER #445566', 
-      type: 'user', 
-      submitter: 'MathWhiz', 
-      timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), 
-      content: 'Impersonating platform moderators.',
-      username: 'fake_mod_01',
-      userSince: '01/10/2023',
-      reportingHistory: '4 times reported',
-      reportedBy: 'admin_team',
-      additionalNotes: 'Claiming to be staff in DM channels.',
-      reportReason: 'Sharing personal information'
-    },
-    { 
-      id: 6, 
-      ticketId: 'ROOM #778899', 
-      type: 'room', 
-      submitter: 'HistoryBuff', 
-      timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(), 
-      content: 'Hosting restricted / prohibited content stream.',
-      host: 'HistoryBuff',
-      dateCreated: '08/14/2021',
-      roomName: 'Forbidden Archive Stream',
-      reportedBy: 'watcher_99',
-      additionalNotes: 'Prohibited stream content active.',
-      reportReason: 'Promoting illegal'
-    },
-    { 
-      id: 7, 
-      ticketId: 'MESSAGE #998877', 
-      type: 'message', 
-      submitter: 'PhysicsGeek', 
-      timestamp: new Date(Date.now() - 8 * 60 * 1000).toISOString(), 
-      content: 'Off-topic disruptive shouting.', 
-      username: 'physics_geek', 
-      userSince: '01/15/2023', 
-      reportingHistory: 'none', 
-      reportedBy: 'lab_partner', 
-      additionalNotes: 'Disrupting channel.', 
-      chatLog: [
-        { timestamp: '[11:00]', sender: 'lab_partner', text: 'Who is working on lab experiment 3?' },
-        { timestamp: '[11:02]', sender: 'physics_geek', text: 'Off-topic disruptive shouting.', isFlagged: true },
-        { timestamp: '[11:03]', sender: 'lab_partner', text: 'There is no need to shout in all caps.' },
-        { timestamp: '[11:04]', sender: 'physics_geek', text: 'I am just excited about quantum mechanics!' },
-        { timestamp: '[11:05]', sender: 'mod_team', text: 'Please keep voice and text channels calm.' }
-      ], 
-      reportReason: 'Harassment' 
-    },
-    { 
-      id: 8, 
-      ticketId: 'USER #332211', 
-      type: 'user', 
-      submitter: 'LiteratureFan', 
-      timestamp: new Date(Date.now() - 300 * 60 * 1000).toISOString(), 
-      content: 'Trolling and inciting arguments.',
-      username: 'troll_master',
-      userSince: '09/01/2022',
-      reportingHistory: '1 time reported',
-      reportedBy: 'book_worm',
-      additionalNotes: 'none',
-      reportReason: 'Abusive language'
-    },
-    { 
-      id: 9, 
-      ticketId: 'ROOM #554433', 
-      type: 'room', 
-      submitter: 'MusicComposer', 
-      timestamp: new Date(Date.now() - 6 * 60 * 1000).toISOString(), 
-      content: 'Excessive disruptive noise.',
-      host: 'MusicComposer',
-      dateCreated: '11/02/2022',
-      roomName: 'Loud Jam Room',
-      reportedBy: 'audio_mod',
-      additionalNotes: 'none',
-      reportReason: 'Off-topic noise'
-    },
-    { 
-      id: 10, 
-      ticketId: 'MESSAGE #665544', 
-      type: 'message', 
-      submitter: 'WebDevPro', 
-      timestamp: new Date(Date.now() - 500 * 60 * 1000).toISOString(), 
-      content: 'Sharing malicious script snippets.', 
-      username: 'webdev_pro', 
-      userSince: '11/20/2020', 
-      reportingHistory: '3 times reported', 
-      reportedBy: 'security_lead', 
-      additionalNotes: 'Posted malicious script.', 
-      chatLog: [
-        { timestamp: '[12:30]', sender: 'security_lead', text: 'Testing deployment scripts.' },
-        { timestamp: '[12:32]', sender: 'webdev_pro', text: 'Sharing malicious script snippets.', isFlagged: true },
-        { timestamp: '[12:33]', sender: 'security_lead', text: 'Do not post unverified code snippets here!' },
-        { timestamp: '[12:34]', sender: 'webdev_pro', text: 'Relax, it is just a prank script.' },
-        { timestamp: '[12:35]', sender: 'admin_team', text: 'Content quarantined.' }
-      ], 
-      reportReason: 'Sharing personal information' 
-    },
-    { 
-      id: 11, 
-      ticketId: 'MESSAGE #554433', 
-      type: 'message', 
-      submitter: 'DataScientist', 
-      timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(), 
-      content: 'Offensive comments in Q&A.', 
-      username: 'data_sci', 
-      userSince: '03/04/2022', 
-      reportingHistory: 'none', 
-      reportedBy: 'analyst_99', 
-      additionalNotes: 'none', 
-      chatLog: [
-        { timestamp: '[13:10]', sender: 'analyst_99', text: 'Data sets are uploaded in the shared drive.' },
-        { timestamp: '[13:12]', sender: 'data_sci', text: 'Offensive comments in Q&A.', isFlagged: true },
-        { timestamp: '[13:13]', sender: 'analyst_99', text: 'That comment was uncalled for.' },
-        { timestamp: '[13:14]', sender: 'mod_team', text: 'Unprofessional conduct will not be tolerated.' }
-      ], 
-      reportReason: 'Hate speech' 
-    },
-    { 
-      id: 12, 
-      ticketId: 'USER #654322', 
-      type: 'user', 
-      submitter: 'CloudArchitect', 
-      timestamp: new Date(Date.now() - 600 * 60 * 1000).toISOString(), 
-      content: 'Harassing other study partners.',
-      username: 'cloud_troll',
-      userSince: '04/11/2022',
-      reportingHistory: '2 times reported',
-      reportedBy: 'dev_ops',
-      additionalNotes: 'Repeated harassment behavior.',
-      reportReason: 'Harassment'
-    },
-    { 
-      id: 13, 
-      ticketId: 'ROOM #987655', 
-      type: 'room', 
-      submitter: 'SecurityAnalyst', 
-      timestamp: new Date(Date.now() - 4 * 60 * 1000).toISOString(), 
-      content: 'Suspicious phishing links broadcasted.',
-      host: 'SecurityAnalyst',
-      dateCreated: '02/10/2023',
-      roomName: 'SecOps Briefing',
-      reportedBy: 'net_watcher',
-      additionalNotes: 'Phishing links shared in room banner.',
-      reportReason: 'Promoting illegal'
-    },
-    { 
-      id: 14, 
-      ticketId: 'MESSAGE #334455', 
-      type: 'message', 
-      submitter: 'GameDevGuru', 
-      timestamp: new Date(Date.now() - 700 * 60 * 1000).toISOString(), 
-      content: 'Spamming chat with self-promo.', 
-      username: 'gamedev_guru', 
-      userSince: '08/19/2021', 
-      reportingHistory: '1 time reported', 
-      reportedBy: 'player_one', 
-      additionalNotes: 'Self promo spam', 
-      chatLog: [
-        { timestamp: '[14:00]', sender: 'player_one', text: 'Anyone testing the new indie build?' },
-        { timestamp: '[14:02]', sender: 'gamedev_guru', text: 'Spamming chat with self-promo.', isFlagged: true },
-        { timestamp: '[14:03]', sender: 'player_one', text: 'Please post promo links in the showcase channel.' },
-        { timestamp: '[14:04]', sender: 'mod_alpha', text: 'Keep channels organized.' }
-      ], 
-      reportReason: 'Off-topic spamming' 
-    },
-    { 
-      id: 15, 
-      ticketId: 'USER #998811', 
-      type: 'user', 
-      submitter: 'UIUXDesigner', 
-      timestamp: new Date(Date.now() - 800 * 60 * 1000).toISOString(), 
-      content: 'Abusive behavior towards peer.',
-      username: 'toxic_designer',
-      userSince: '12/05/2021',
-      reportingHistory: '5 times reported',
-      reportedBy: 'lead_ux',
-      additionalNotes: 'Verbal abuse in workspace comments.',
-      reportReason: 'Abusive language'
-    },
-    { 
-      id: 16, 
-      ticketId: 'ROOM #223344', 
-      type: 'room', 
-      submitter: 'MobileDev', 
-      timestamp: new Date(Date.now() - 900 * 60 * 1000).toISOString(), 
-      content: 'Empty room used for bypassing bans.',
-      host: 'MobileDev',
-      dateCreated: '04/18/2022',
-      roomName: 'Dev Hangout',
-      reportedBy: 'mod_alpha',
-      additionalNotes: 'none',
-      reportReason: 'Repeated room violation'
-    },
-    { 
-      id: 17, 
-      ticketId: 'MESSAGE #556677', 
-      type: 'message', 
-      submitter: 'DevOpsEngineer', 
-      timestamp: new Date(Date.now() - 1000 * 60 * 1000).toISOString(), 
-      content: 'Inappropriate image upload.', 
-      username: 'devops_eng', 
-      userSince: '02/11/2023', 
-      reportingHistory: 'none', 
-      reportedBy: 'sys_admin', 
-      additionalNotes: 'none', 
-      chatLog: [
-        { timestamp: '[15:20]', sender: 'sys_admin', text: 'System maintenance scheduled tonight.' },
-        { timestamp: '[15:22]', sender: 'devops_eng', text: '[Inappropriate Image]', isFlagged: true },
-        { timestamp: '[15:23]', sender: 'sys_admin', text: 'Image removed by automated filter.' },
-        { timestamp: '[15:24]', sender: 'security_lead', text: 'Reviewing infraction policy.' }
-      ], 
-      reportReason: 'Adult content' 
-    },
-    { 
-      id: 18, 
-      ticketId: 'USER #889900', 
-      type: 'user', 
-      submitter: 'AITeacher', 
-      timestamp: new Date(Date.now() - 1100 * 60 * 1000).toISOString(), 
-      content: 'Bullying participants.',
-      username: 'ai_bully',
-      userSince: '07/19/2022',
-      reportingHistory: 'none',
-      reportedBy: 'student_rep',
-      additionalNotes: 'none',
-      reportReason: 'Harassment'
-    },
-    { 
-      id: 19, 
-      ticketId: 'ROOM #113355', 
-      type: 'room', 
-      submitter: 'RoboticsKid', 
-      timestamp: new Date(Date.now() - 7 * 60 * 1000).toISOString(), 
-      content: 'Unauthorized commercial advertising.',
-      host: 'RoboticsKid',
-      dateCreated: '09/12/2021',
-      roomName: 'Robot Showcase & Ads',
-      reportedBy: 'ad_police',
-      additionalNotes: 'Commercial advertising space.',
-      reportReason: 'Explicit room name'
-    },
-    { 
-      id: 20, 
-      ticketId: 'MESSAGE #224466', 
-      type: 'message', 
-      submitter: 'NetworkAdmin', 
-      timestamp: new Date(Date.now() - 1200 * 60 * 1000).toISOString(), 
-      content: 'Flooding text channel.', 
-      username: 'net_admin', 
-      userSince: '09/09/2019', 
-      reportingHistory: '4 times reported', 
-      reportedBy: 'user_active', 
-      additionalNotes: 'Flooding', 
-      chatLog: [
-        { timestamp: '[16:00]', sender: 'user_active', text: 'Network diagnostics looking good.' },
-        { timestamp: '[16:01]', sender: 'net_admin', text: 'Flooding text channel.', isFlagged: true },
-        { timestamp: '[16:02]', sender: 'user_active', text: 'Please stop spamming the feed.' },
-        { timestamp: '[16:03]', sender: 'mod_team', text: 'Rate limit applied to user.' }
-      ], 
-      reportReason: 'Off-topic spamming' 
-    },
-    { 
-      id: 21, 
-      ticketId: 'USER #335577', 
-      type: 'user', 
-      submitter: 'DatabaseGuru', 
-      timestamp: new Date(Date.now() - 1300 * 60 * 1000).toISOString(), 
-      content: 'Creating duplicate fake accounts.',
-      username: 'bot_creator_x',
-      userSince: '02/28/2023',
-      reportingHistory: '6 times reported',
-      reportedBy: 'system_bot',
-      additionalNotes: 'Automated fake account generation detected.',
-      reportReason: 'Off-topic spamming'
-    },
-    { 
-      id: 22, 
-      ticketId: 'ROOM #446688', 
-      type: 'room', 
-      submitter: 'PixelCoder99', 
-      timestamp: new Date(Date.now() - 9 * 60 * 1000).toISOString(), 
-      content: 'Disruptive room tags.',
-      host: 'PixelCoder99',
-      dateCreated: '01/05/2023',
-      roomName: 'Code & Chaos',
-      reportedBy: 'tag_checker',
-      additionalNotes: 'none',
-      reportReason: 'Off-topic noise'
-    },
-    { 
-      id: 23, 
-      ticketId: 'MESSAGE #557799', 
-      type: 'message', 
-      submitter: 'ShadowHacker', 
-      timestamp: new Date(Date.now() - 1400 * 60 * 1000).toISOString(), 
-      content: 'Threats directed at members.', 
-      username: 'shadow_h', 
-      userSince: '12/12/2022', 
-      reportingHistory: '6 times reported', 
-      reportedBy: 'victim_01', 
-      additionalNotes: 'Direct threats sent.', 
-      chatLog: [
-        { timestamp: '[17:10]', sender: 'victim_01', text: 'Can someone assist with debugging?' },
-        { timestamp: '[17:12]', sender: 'shadow_h', text: 'Threats directed at members.', isFlagged: true },
-        { timestamp: '[17:13]', sender: 'victim_01', text: 'Reporting this harassment immediately.' },
-        { timestamp: '[17:14]', sender: 'mod_team', text: 'Zero tolerance policy for threats.' }
-      ], 
-      reportReason: 'Harassment' 
-    },
-    { 
-      id: 24, 
-      ticketId: 'USER #668800', 
-      type: 'user', 
-      submitter: 'BadActor23', 
-      timestamp: new Date(Date.now() - 1500 * 60 * 1000).toISOString(), 
-      content: 'Spamming reports feature.',
-      username: 'report_spammer',
-      userSince: '10/01/2022',
-      reportingHistory: '2 times reported',
-      reportedBy: 'mod_queue',
-      additionalNotes: 'Abusing report ticket submissions.',
-      reportReason: 'Off-topic spamming'
-    },
-    { 
-      id: 25, 
-      ticketId: 'ROOM #779911', 
-      type: 'room', 
-      submitter: 'ChillStudent', 
-      timestamp: new Date(Date.now() - 1600 * 60 * 1000).toISOString(), 
-      content: 'Misleading room categorization.',
-      host: 'ChillStudent',
-      dateCreated: '06/20/2022',
-      roomName: 'Study Zone 101',
-      reportedBy: 'category_mod',
-      additionalNotes: 'Misleading tags.',
-      reportReason: 'Repeated room violation'
-    },
-    { 
-      id: 26, 
-      ticketId: 'MESSAGE #880022', 
-      type: 'message', 
-      submitter: 'AlgorithmMaps', 
-      timestamp: new Date(Date.now() - 1700 * 60 * 1000).toISOString(), 
-      content: 'Profanity in study notes link.', 
-      username: 'algo_maps', 
-      userSince: '04/05/2021', 
-      reportingHistory: 'none', 
-      reportedBy: 'student_99', 
-      additionalNotes: 'none', 
-      chatLog: [
-        { timestamp: '[18:00]', sender: 'student_99', text: 'Sharing study notes for chapter 4.' },
-        { timestamp: '[18:02]', sender: 'algo_maps', text: 'Profanity in study notes link.', isFlagged: true },
-        { timestamp: '[18:03]', sender: 'student_99', text: 'That link contains inappropriate words.' },
-        { timestamp: '[18:04]', sender: 'mod_team', text: 'Link deleted by moderation.' }
-      ], 
-      reportReason: 'Abusive language' 
-    },
-    { 
-      id: 27, 
-      ticketId: 'USER #991133', 
-      type: 'user', 
-      submitter: 'ByteCoder', 
-      timestamp: new Date(Date.now() - 1800 * 60 * 1000).toISOString(), 
-      content: 'Scamming users for credentials.',
-      username: 'phish_lord',
-      userSince: '05/05/2023',
-      reportingHistory: '8 times reported',
-      reportedBy: 'security_bot',
-      additionalNotes: 'Credential harvesting attempts in DMs.',
-      reportReason: 'Sharing personal information'
-    },
-    { 
-      id: 28, 
-      ticketId: 'ROOM #102244', 
-      type: 'room', 
-      submitter: 'RetroGamer', 
-      timestamp: new Date(Date.now() - 1900 * 60 * 1000).toISOString(), 
-      content: 'Improperly formatted room metadata.',
-      host: 'RetroGamer',
-      dateCreated: '03/22/2021',
-      roomName: 'Retro Arcade Club',
-      reportedBy: 'meta_admin',
-      additionalNotes: 'none',
-      reportReason: 'Explicit room name'
-    },
-    { 
-      id: 29, 
-      ticketId: 'MESSAGE #203355', 
-      type: 'message', 
-      submitter: 'BioHacker', 
-      timestamp: new Date(Date.now() - 2000 * 60 * 1000).toISOString(), 
-      content: 'Offensive language in public feed.', 
-      username: 'bio_hacker', 
-      userSince: '06/06/2022', 
-      reportingHistory: '2 times reported', 
-      reportedBy: 'mod_team', 
-      additionalNotes: 'Offensive language', 
-      chatLog: [
-        { timestamp: '[19:15]', sender: 'mod_team', text: 'Evening check-in for study rooms.' },
-        { timestamp: '[19:17]', sender: 'bio_hacker', text: 'Offensive language in public feed.', isFlagged: true },
-        { timestamp: '[19:18]', sender: 'student_99', text: 'Unacceptable language in a public channel.' },
-        { timestamp: '[19:20]', sender: 'mod_team', text: 'Official warning recorded.' }
-      ], 
-      reportReason: 'Abusive language' 
-    },
-    { 
-      id: 30, 
-      ticketId: 'USER #304466', 
-      type: 'user', 
-      submitter: 'ChemistryLab', 
-      timestamp: new Date(Date.now() - 2100 * 60 * 1000).toISOString(), 
-      content: 'Harassment in breakout session.',
-      username: 'chem_troll',
-      userSince: '09/14/2021',
-      reportingHistory: '1 time reported',
-      reportedBy: 'lab_lead',
-      additionalNotes: 'none',
-      reportReason: 'Harassment'
-    },
-    { 
-      id: 31, 
-      ticketId: 'ROOM #405577', 
-      type: 'room', 
-      submitter: 'HistoryBuff', 
-      timestamp: new Date(Date.now() - 2200 * 60 * 1000).toISOString(), 
-      content: 'Violation of community code.',
-      host: 'HistoryBuff',
-      dateCreated: '07/11/2020',
-      roomName: 'Debate Arena',
-      reportedBy: 'code_enforcer',
-      additionalNotes: 'Cyberbullying reported in room channels.',
-      reportReason: 'Cyberbullying space'
-    },
-    { 
-      id: 32, 
-      ticketId: 'MESSAGE #506688', 
-      type: 'message', 
-      submitter: 'MathWhiz', 
-      timestamp: new Date(Date.now() - 2300 * 60 * 1000).toISOString(), 
-      content: 'Spamming solution links.', 
-      username: 'math_whiz_alt', 
-      userSince: '07/07/2023', 
-      reportingHistory: 'none', 
-      reportedBy: 'peer_reviewer', 
-      additionalNotes: 'none', 
-      chatLog: [
-        { timestamp: '[20:10]', sender: 'peer_reviewer', text: 'Homework assignments due tonight.' },
-        { timestamp: '[20:12]', sender: 'math_whiz_alt', text: 'Spamming solution links.', isFlagged: true },
-        { timestamp: '[20:13]', sender: 'peer_reviewer', text: 'Please do not post direct answer keys.' },
-        { timestamp: '[20:15]', sender: 'mod_team', text: 'Please adhere to academic honesty guidelines.' }
-      ], 
-      reportReason: 'Off-topic spamming' 
-    },
-    { 
-      id: 33, 
-      ticketId: 'USER #607799', 
-      type: 'user', 
-      submitter: 'PhysicsGeek', 
-      timestamp: new Date(Date.now() - 2400 * 60 * 1000).toISOString(), 
-      content: 'Improper user conduct.',
-      username: 'quantum_bad',
-      userSince: '11/11/2022',
-      reportingHistory: 'none',
-      reportedBy: 'head_mod',
-      additionalNotes: 'none',
-      reportReason: 'Hate speech'
-    },
-    { 
-      id: 34, 
-      ticketId: 'ROOM #708800', 
-      type: 'room', 
-      submitter: 'LiteratureFan', 
-      timestamp: new Date(Date.now() - 2500 * 60 * 1000).toISOString(), 
-      content: 'Copyright infringement claims.',
-      host: 'LiteratureFan',
-      dateCreated: '10/15/2021',
-      roomName: 'Book Share Club',
-      reportedBy: 'copy_guard',
-      additionalNotes: 'Infringement claims on uploaded material.',
-      reportReason: 'Promoting illegal'
-    },
-    { 
-      id: 35, 
-      ticketId: 'MESSAGE #809911', 
-      type: 'message', 
-      submitter: 'MusicComposer', 
-      timestamp: new Date(Date.now() - 2600 * 60 * 1000).toISOString(), 
-      content: 'Disruptive audio feed notes.', 
-      username: 'music_comp', 
-      userSince: '10/30/2021', 
-      reportingHistory: '1 time reported', 
-      reportedBy: 'listener_one', 
-      additionalNotes: 'Disruptive feed notes', 
-      chatLog: [
-        { timestamp: '[21:00]', sender: 'listener_one', text: 'Great ambient music stream tonight.' },
-        { timestamp: '[21:02]', sender: 'music_comp', text: 'Disruptive audio feed notes.', isFlagged: true },
-        { timestamp: '[21:03]', sender: 'listener_one', text: 'The feedback noise is quite loud.' },
-        { timestamp: '[21:05]', sender: 'audio_mod', text: 'Sound levels checked and verified.' }
-      ], 
-      reportReason: 'Harassment' 
-    }
-  ]);
+  // Live Tickets State fetched from backend API
+  const [ticketsList, setTicketsList] = useState([]);
+  const [loadingTickets, setLoadingTickets] = useState(true);
+
+  // Fetch live reports from backend on mount & sync mapping with reporter_username
+// Fetch live reports from backend on mount & split into open vs resolved/closed lists
+  useEffect(() => {
+    fetch('http://localhost:5000/api/itadmin/reports')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          const openList = [];
+          const resolvedList = [];
+
+          data.reports.forEach((rep) => {
+            const formattedTicket = {
+              id: rep.id,
+              ticketId: `${rep.target_type ? rep.target_type.toUpperCase() : 'REPORT'} #${String(rep.id).slice(-6)}`,
+              type: rep.target_type || 'message',
+              submitter: rep.reporter_username || rep.reporter_email || 'Anonymous',
+              timestamp: rep.created_at || new Date().toISOString(),
+              content: rep.reason || 'No description provided.',
+              username: rep.target_details?.username || rep.reporter_username || 'User',
+              host: rep.target_details?.host || 'N/A',
+              dateCreated: rep.target_details?.dateCreated ? new Date(rep.target_details.dateCreated).toLocaleDateString() : 'N/A',
+              userSince: 'N/A',
+              reportingHistory: '1 time reported',
+              reportedBy: rep.reporter_username || rep.reporter_email || 'System',
+              additionalNotes: rep.additional_notes || 'none',
+              reportReason: rep.reason || 'General policy violation',
+              chatLog: rep.target_details?.chatLog || [],
+              status: rep.status || 'pending',
+              action: rep.action_taken || 'Resolved'
+            };
+
+            // Separate items based on their saved database status
+            if (rep.status === 'resolved' || rep.status === 'closed') {
+              resolvedList.push({
+                ...formattedTicket,
+                status: rep.status
+              });
+            } else {
+              openList.push(formattedTicket);
+            }
+          });
+
+          setTicketsList(openList);
+          setResolvedTicketsList(resolvedList);
+        }
+        setLoadingTickets(false);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch IT admin reports:', err);
+        setLoadingTickets(false);
+      });
+  }, []);
 
   // Handle Date Range Filter Dropdown Change
   const handleDateFilterChange = (e) => {
@@ -673,11 +147,14 @@ export default function ITReports() {
     }
   };
 
+// Combine open and resolved/closed tickets so metric cards count all reports regardless of status
+  const allReportsCombined = [...ticketsList, ...resolvedTicketsList];
+
   const metricsData = {
-    totalReports: { value: '142', changeNum: '↑ 14%', positive: true },
-    reportedMessages: { value: '89', changeNum: '↑ 9%', positive: true },
-    reportedUsers: { value: '38', changeNum: '↑ 5%', positive: true },
-    reportedRooms: { value: '15', changeNum: '↓ 3%', positive: false },
+    totalReports: { value: allReportsCombined.length.toString(), changeNum: '↑ 14%', positive: true },
+    reportedMessages: { value: allReportsCombined.filter(t => t.type === 'message').length.toString(), changeNum: '↑ 9%', positive: true },
+    reportedUsers: { value: allReportsCombined.filter(t => t.type === 'user').length.toString(), changeNum: '↑ 5%', positive: true },
+    reportedRooms: { value: allReportsCombined.filter(t => t.type === 'room').length.toString(), changeNum: '↓ 3%', positive: false },
   };
 
   const todayMax = new Date().toISOString().split('T')[0];
@@ -811,22 +288,59 @@ export default function ITReports() {
     setActiveModalStep('success');
   };
 
-  const handleCloseSuccessModal = () => {
+const handleCloseSuccessModal = () => {
     if (ticketToResolve) {
       const targetId = ticketToResolve.id;
-      setFadingTicketIds((prev) => [...prev, targetId]);
-
       const isDismiss = successActionTitle.includes('Dismiss');
       const statusValue = isDismiss ? 'closed' : 'resolved';
+
+      let finalDuration = null;
+      const isSuspendAction = successActionTitle.includes('Suspend');
+      const isMessageOrUser = ticketToResolve.type === 'message' || ticketToResolve.type === 'user';
+
+      if (isSuspendAction && isMessageOrUser) {
+        finalDuration = suspensionDuration === 'Custom' 
+          ? `Custom: ${customSuspensionDate}` 
+          : suspensionDuration;
+      }
+
+      // 1. Send update request to backend API
+      fetch(`http://localhost:5000/api/itadmin/reports/${targetId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: statusValue,
+          actionTaken: successActionTitle,
+          reason: actionReason,
+          notes: actionNotes,
+          actionNotes: actionNotes,
+          suspensionDuration: finalDuration
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.success) {
+            console.error('Failed to update report status on backend');
+          }
+        })
+        .catch((err) => {
+          console.error('Error updating report status:', err);
+        });
+
+      // 2. Animate and update local frontend states
+      setFadingTicketIds((prev) => [...prev, targetId]);
       
       const resolvedEntry = {
         id: Date.now(),
         ticketId: ticketToResolve.ticketId,
         type: ticketToResolve.type,
         submitter: ticketToResolve.submitter,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString(), // <--- Sets timestamp to the current moment it was resolved/closed
         status: statusValue,
         action: successActionTitle,
+        suspensionDuration: finalDuration
       };
 
       setTimeout(() => {
@@ -1074,7 +588,11 @@ export default function ITReports() {
 
             {/* Scrollable Container Area */}
             <div className="overflow-y-auto max-h-[630px] flex flex-col gap-3 pr-2 p-1 border-b-2 border-theme-dark/30">
-              {currentTickets.length > 0 ? (
+              {loadingTickets ? (
+                <div className="py-16 text-center font-pixel text-lg text-theme-dark/60">
+                  Loading reports from database...
+                </div>
+              ) : currentTickets.length > 0 ? (
                 currentTickets.map((ticket) => {
                   const isNew = isTicketNew(ticket.timestamp);
                   const isFading = fadingTicketIds.includes(ticket.id);
@@ -1304,7 +822,6 @@ export default function ITReports() {
               {/* Message Report Details Section */}
               {ticketToResolve.type === 'message' ? (
                 <div className="flex flex-col gap-3">
-                  {/* PFP & Grid Layout */}
                   <div className="flex items-start gap-4 bg-theme-muted/40 border border-theme-dark/20 rounded-[8px] p-3.5">
                     <div className="w-12 h-12 rounded-full bg-theme-primary text-white font-pressstart text-[14px] flex items-center justify-center shrink-0 border border-theme-dark">
                       {ticketToResolve.username ? ticketToResolve.username.charAt(0).toUpperCase() : 'U'}
@@ -1316,7 +833,7 @@ export default function ITReports() {
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">User since:</span>
-                        <span className="text-theme-dark">{ticketToResolve.userSince || '10/10/2021'}</span>
+                        <span className="text-theme-dark">{ticketToResolve.userSince || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">Reporting History:</span>
@@ -1329,10 +846,8 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Border Separator Line */}
                   <hr className="border-t-2 border-theme-dark/10 my-1" />
 
-                  {/* Additional Notes Section */}
                   <div className="flex flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Additional Notes:</span>
@@ -1349,7 +864,6 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Report Reason Section */}
                   <div className="flex flex-col gap-1.5">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Report Reason:</span>
                     <div className="bg-theme-muted border border-theme-dark/30 px-3 py-2 rounded-[8px] font-pressstart text-[9px] text-theme-primary w-fit uppercase select-none">
@@ -1359,7 +873,6 @@ export default function ITReports() {
                 </div>
               ) : ticketToResolve.type === 'room' ? (
                 <div className="flex flex-col gap-3">
-                  {/* PFP & Grid Layout */}
                   <div className="flex items-start gap-4 bg-theme-muted/40 border border-theme-dark/20 rounded-[8px] p-3.5">
                     <div className="w-12 h-12 rounded-full bg-theme-danger text-white font-pressstart text-[14px] flex items-center justify-center shrink-0 border border-theme-dark">
                       {ticketToResolve.roomName ? ticketToResolve.roomName.charAt(0).toUpperCase() : 'R'}
@@ -1367,11 +880,11 @@ export default function ITReports() {
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 flex-1 min-w-0 font-pixel text-[15px] sm:text-[20px] text-theme-dark">
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">Host:</span>
-                        <span className="text-theme-dark">{ticketToResolve.host || ticketToResolve.submitter}</span>
+                        <span className="text-theme-dark">{ticketToResolve.host || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">Date Created:</span>
-                        <span className="text-theme-dark">{ticketToResolve.dateCreated || '05/01/2022'}</span>
+                        <span className="text-theme-dark">{ticketToResolve.dateCreated || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">Room Name:</span>
@@ -1384,10 +897,8 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Border Separator Line */}
                   <hr className="border-t-2 border-theme-dark/10 my-1" />
 
-                  {/* Additional Notes Section */}
                   <div className="flex flex-col gap-1.5">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Additional Notes:</span>
                     <div className="bg-theme-surface border border-theme-dark/20 p-2.5 rounded-[8px] font-pixel text-[15px] sm:text-[20px] text-theme-dark min-h-[44px]">
@@ -1395,7 +906,6 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Report Reason Section */}
                   <div className="flex flex-col gap-1.5">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Report Reason:</span>
                     <div className="bg-theme-muted border border-theme-dark/30 px-3 py-2 rounded-[8px] font-pressstart text-[9px] text-theme-primary w-fit uppercase select-none">
@@ -1403,9 +913,8 @@ export default function ITReports() {
                     </div>
                   </div>
                 </div>
-              ) : ticketToResolve.type === 'user' ? (
+              ) : (
                 <div className="flex flex-col gap-3">
-                  {/* PFP & Grid Layout */}
                   <div className="flex items-start gap-4 bg-theme-muted/40 border border-theme-dark/20 rounded-[8px] p-3.5">
                     <div className="w-12 h-12 rounded-full bg-theme-primary text-white font-pressstart text-[14px] flex items-center justify-center shrink-0 border border-theme-dark">
                       {ticketToResolve.username ? ticketToResolve.username.charAt(0).toUpperCase() : 'U'}
@@ -1417,7 +926,7 @@ export default function ITReports() {
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">User since:</span>
-                        <span className="text-theme-dark">{ticketToResolve.userSince || '03/15/2021'}</span>
+                        <span className="text-theme-dark">{ticketToResolve.userSince || 'N/A'}</span>
                       </div>
                       <div>
                         <span className="text-theme-dark/60 block text-[15px] sm:text-[20px]">Reporting History:</span>
@@ -1430,10 +939,8 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Border Separator Line */}
                   <hr className="border-t-2 border-theme-dark/10 my-1" />
 
-                  {/* Additional Notes Section */}
                   <div className="flex flex-col gap-1.5">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Additional Notes:</span>
                     <div className="bg-theme-surface border border-theme-dark/20 p-2.5 rounded-[8px] font-pixel text-[15px] sm:text-[20px] text-theme-dark min-h-[44px]">
@@ -1441,7 +948,6 @@ export default function ITReports() {
                     </div>
                   </div>
 
-                  {/* Report Reason Section */}
                   <div className="flex flex-col gap-1.5">
                     <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">Report Reason:</span>
                     <div className="bg-theme-muted border border-theme-dark/30 px-3 py-2 rounded-[8px] font-pressstart text-[9px] text-theme-primary w-fit uppercase select-none">
@@ -1449,7 +955,7 @@ export default function ITReports() {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              )}
 
               {/* 3 Primary Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 justify-between pt-2">

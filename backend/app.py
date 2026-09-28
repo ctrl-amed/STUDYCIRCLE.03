@@ -2482,6 +2482,69 @@ def admin_suspend_user():
 
 from datetime import datetime, timedelta, timezone
 
+@app.route('/api/reports', methods=['POST'])
+def create_report():
+    data = request.json or {}
+    try:
+        response = supabase.table('reports').insert({
+            "reporter_username": data.get('reporter_username'), # Changed from reporter_email
+            "target_type": data.get('target_type'),       # 'room', 'user', or 'message'
+            "target_details": data.get('target_details'), # JSON details object
+            "reason": data.get('reason'),
+            "additional_notes": data.get('additional_notes', ''),
+            "status": "pending"
+        }).execute()
+        return jsonify({"success": True, "report": response.data[0]}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/itadmin/reports', methods=['GET'])
+def admin_get_reports():
+    try:
+        response = supabase.table('reports').select('*').order('created_at', desc=True).execute()
+        return jsonify({"success": True, "reports": response.data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/itadmin/reports/<report_id>', methods=['PATCH'])
+def admin_update_report(report_id):
+    data = request.json or {}
+    status = data.get('status') # 'resolved' or 'closed'
+    action_taken = data.get('actionTaken')
+    reason = data.get('reason')
+    notes = data.get('notes') or data.get('actionNotes') or data.get('additionalNotes')
+    
+    suspension_duration = data.get('suspensionDuration')
+
+    if not status:
+        return jsonify({"success": False, "error": "Status is required."}), 400
+
+    try:
+        # Fetch the report target type to validate server-side rules
+        rep_res = supabase.table('reports').select('target_type').eq('id', report_id).execute()
+        target_type = rep_res.data[0].get('target_type') if rep_res.data else None
+
+        # Enforce rule: Rooms, dismissals, and warnings must ALWAYS have a NULL suspension duration
+        is_suspend_action = action_taken and 'Suspend' in action_taken
+        is_message_or_user = target_type in ['message', 'user']
+
+        if target_type == 'room' or not (is_suspend_action and is_message_or_user):
+            suspension_duration = None
+
+        # Update Supabase record
+        response = supabase.table('reports').update({
+            "status": status,
+            "action_taken": action_taken,
+            "reason": reason,
+            "action_notes": notes,
+            "suspension_duration": suspension_duration  # <--- Evaluates to NULL if not a user/message suspension
+        }).eq('id', report_id).execute()
+
+        return jsonify({"success": True, "message": "Report updated successfully", "report": response.data}), 200
+    except Exception as e:
+        print("ERROR UPDATING REPORT:", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # =============================================================================
 # SUSPENSION HELPERS
 # =============================================================================

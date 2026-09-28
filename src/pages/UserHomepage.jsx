@@ -330,6 +330,51 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return '';
   };
 
+// Helper function to submit reports to the backend database
+  const handleSubmitReport = async (targetType, targetDetails, reason, notes, onSuccess, closeModal) => {
+    // Force grab the username from state, player object, or direct localStorage fallback
+    let usernameToUse = player?.username || playerData?.username;
+    
+    if (!usernameToUse) {
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        usernameToUse = storedUser.username;
+      } catch (e) {}
+    }
+
+    if (!usernameToUse) {
+      alert("Error: Username not found. Please log in again.");
+      return;
+    }
+
+    console.log("Submitting report with reporter_username:", usernameToUse); // Debug log
+
+    try {
+      const response = await fetch('http://localhost:5000/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporter_username: usernameToUse, // Send the correct username key
+          target_type: targetType,
+          target_details: targetDetails,
+          reason: reason,
+          additional_notes: notes
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        closeModal(false);
+        onSuccess(true);
+      } else {
+        alert("Failed to submit report: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error("Network error while submitting report:", err);
+      alert("Network error while submitting report.");
+    }
+  };
+
   // 1. Kunin ang session data mula sa activeSession o mula sa completedSessionData cache
   const savedSession = 
     timer.activeSession || 
@@ -367,7 +412,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const isCurrentUserHost = (currentHostMember && currentHostMember.username === player.username) || 
                           (roomData.hostId === player.username);
 
-    const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
+  const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
 
   useEffect(() => {
     const onMsg = (e) => {
@@ -387,12 +432,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return;
     }
 
-    // Read from the active timer or completedSessionData cache
     const currentActiveSession = 
       timer.activeSession || 
       JSON.parse(localStorage.getItem('completedSessionData') || localStorage.getItem('activeSession') || '{}');
     
-    // Ensure the correct workType, technique, and duration are chosen
     const finalActivity = 
       currentActiveSession.workType || 
       currentActiveSession.activity || 
@@ -447,7 +490,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
         window.dispatchEvent(new Event('player-data-updated'));
 
-        // Clear the completedSessionData cache after saving successfully
         localStorage.removeItem('activeSession');
         localStorage.removeItem('completedSessionData');
 
@@ -465,7 +507,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   };
 
-    const handleHostStartSession = (sessionPayload) => {
+  const handleHostStartSession = (sessionPayload) => {
     if (socketRef.current && isMultiplayer) {
       socketRef.current.emit('start_shared_room', {
         room: roomData.roomName,
@@ -563,7 +605,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const socketRef = useRef(null);
 
-  // 1. Tell Flask this user is online as soon as they open the homepage
   useEffect(() => {
     const userEmail = getUserEmail();
     if (!userEmail) return;
@@ -582,7 +623,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     };
   }, [player.email]);
 
-  // 2. Tell Flask when the student starts or stops a study session
   useEffect(() => {
     const userEmail = getUserEmail();
     if (!socketRef.current || !userEmail) return;
@@ -603,11 +643,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       if (!emailToUse) return;
 
       try {
-        const userRes = supabase.table('users').select('streak').eq('email', emailToUse).execute();
-        if (userRes.data && userRes.data.length > 0) {
-          setDbStreak(userRes.data[0].streak || 0);
-        }
-
         const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
         const data = await response.json();
 
@@ -645,7 +680,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         setRoomData((prev) => {
           const updated = { ...prev };
           if (data.members) {
-            // I-preserve ang isSpeaking status ng bawat miyembro tuwing may room_update
             updated.members = data.members.map(newM => {
               const existing = prev.members.find(oldM => oldM.username === newM.username);
               return {
@@ -677,8 +711,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         });
       });
 
-      // Listener para sa pag-start ng shared room session (para mag-update ang state sa members)
-            socketRef.current.on('shared_room_started', (data) => {
+      socketRef.current.on('shared_room_started', (data) => {
         setRoomData((prev) => ({ ...prev, isStarted: true }));
         if (data?.session) timer.startSyncedSession(data.session);
       });
@@ -688,9 +721,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         navigate('/dashboard');
       });
 
-      // Makinig kung ikaw ay na-kick ng host
       socketRef.current.on('kicked_from_room', (data) => {
-        // Kung ang username na natanggap mula sa server ay ikaw, saka lang lalabas ang modal
         if (!data || data.username === player.username) {
           localStorage.removeItem('activeRoomSession');
           setShowKickModal(true);
@@ -824,8 +855,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         privacy: parsed?.privacy || 'public',
         code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
-        taskType: parsed?.task_type || parsed?.taskType || 'individual', // <--- IDINAGDAG
-        isStarted: parsed?.is_started || parsed?.isStarted || false,     // <--- IDINAGDAG
+        taskType: parsed?.task_type || parsed?.taskType || 'individual',
+        isStarted: parsed?.is_started || parsed?.isStarted || false,
         roomConfig: finalRoomConfig,
         auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
@@ -883,7 +914,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   };
 
   const handleKickMember = (memberId, memberUsername) => {
-    // I-broadcast sa Socket.io server na na-kick ang user na ito
     if (socketRef.current && isMultiplayer) {
       socketRef.current.emit('kick_room_member', {
         room: roomData.roomName,
@@ -1181,7 +1211,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
-                      {/* NAMETAG & MIC STATUS SA ITAAS NG AVATAR */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/70 px-2 sm:px-3 py-1 rounded-[6px] whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1.5 z-30 border border-theme-dark/40">
                         {member.isHost && (
                           <svg className="w-2.5 h-2.5 text-[#FFD700] shrink-0" viewBox="0 0 24 24" fill="currentColor" title="Host">
@@ -1308,7 +1337,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               </button>
                             </div>
 
-                            {/* HOST-ONLY KICK BUTTON */}
                             {isCurrentUserHost && !isMe && (
                               <button
                                 onClick={(e) => {
@@ -1900,7 +1928,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         )}
       </div>
 
-      {/* FEEDBACK MODAL ('HOW WAS YOUR SESSION?') */}
+      {/* FEEDBACK MODAL */}
       {showFeedbackModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
@@ -2187,9 +2215,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportModal(false);
+                  const targetDetails = {
+                    roomName: roomData.roomName,
+                    host: roomData.hostId || (roomData.members.find(m => m.isHost)?.username) || 'Unknown',
+                    dateCreated: roomData.createdAt || new Date().toLocaleDateString() // <--- Add this
+                  };
+                  handleSubmitReport('room', targetDetails, reportReason, reportNotes, setShowReportSuccessModal, setShowReportModal);
                   setReportNotes('');
-                  setShowReportSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >
@@ -2341,9 +2373,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportUserModal(false);
+                  const targetDetails = {
+                    username: reportedUser?.username || 'Unknown',
+                    level: reportedUser?.level || 1
+                  };
+                  handleSubmitReport('user', targetDetails, reportUserReason, reportUserNotes, setShowReportUserSuccessModal, setShowReportUserModal);
                   setReportUserNotes('');
-                  setShowReportUserSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >
@@ -2497,9 +2532,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportMessageModal(false);
+                  const targetDetails = {
+                    username: reportedMessage?.sender || 'Unknown',
+                    content: reportedMessage?.text || '',
+                    time: reportedMessage?.time || ''
+                  };
+                  handleSubmitReport('message', targetDetails, reportMessageReason, reportMessageNotes, setShowReportMessageSuccessModal, setShowReportMessageModal);
                   setReportMessageNotes('');
-                  setShowReportMessageSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >
