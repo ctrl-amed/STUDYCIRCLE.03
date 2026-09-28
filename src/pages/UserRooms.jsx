@@ -72,83 +72,94 @@ export default function UserRooms() {
   const filterDropdownRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Fetch real rooms from Supabase database and session history from local storage with deduplication
+  // Keep the latest pending room in a ref so socket listeners never read a stale value
+  const pendingJoinRoomRef = useRef(null);
   useEffect(() => {
-    const fetchRealRooms = async () => {
-      try {
-        const response = await fetch('http://localhost:5000/api/rooms');
-        const data = await response.json();
-        if (data.success && data.rooms) {
-          const formattedRooms = data.rooms.map(r => ({
-            ...r,
-            privacy: (r.privacy || 'public').toLowerCase(),
-            breakTime: r.break_time || '0h 15m',
-            currentMembers: r.current_members || 1,
-            maxMembers: r.max_members || 4,
-            tasks: r.tasks || [],
-            taskType: r.taskType || (r.privacy === 'private' ? 'individual' : 'individual')
-          }));
-          setRoomsList(formattedRooms);
-        }
-      } catch (err) {
-        console.error("Failed to fetch rooms from database:", err);
-      }
-    };
+    pendingJoinRoomRef.current = pendingJoinRoom;
+  }, [pendingJoinRoom]);
 
+  // --- FETCH ROOMS (member counts are LIVE from the backend) ---
+  const fetchRealRooms = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/rooms');
+      const data = await response.json();
+      if (data.success && data.rooms) {
+        const formattedRooms = data.rooms.map((r) => ({
+          ...r,
+          privacy: (r.privacy || 'public').toLowerCase(),
+          breakTime: r.break_time || '0h 15m',
+          currentMembers: r.current_members ?? 0,
+          maxMembers: r.max_members || 4,
+          tasks: r.tasks || [],
+          taskType: r.task_type || 'individual',
+        }));
+        setRoomsList(formattedRooms);
+      }
+    } catch (err) {
+      console.error('Failed to fetch rooms from database:', err);
+    }
+  };
+
+  // Runs ONCE per user: loads rooms, history and opens a single socket connection
+  useEffect(() => {
     fetchRealRooms();
 
     // Load session history and remove duplicates using a Map based on 'finishedAt' or unique signature
     try {
       const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
       const uniqueHistory = Array.from(
-        new Map(savedHistory.map(item => [item.finishedAt || `${item.workType}-${item.focusTime}-${item.techniqueName}`, item])).values()
+        new Map(
+          savedHistory.map((item) => [
+            item.finishedAt || `${item.workType}-${item.focusTime}-${item.techniqueName}`,
+            item,
+          ])
+        ).values()
       );
       setSessionHistory(uniqueHistory);
     } catch (err) {
-      console.error("Failed to parse session history:", err);
+      console.error('Failed to parse session history:', err);
     }
 
-    socketRef.current = io('http://localhost:5000');
+    const socket = io('http://localhost:5000');
+    socketRef.current = socket;
 
-    socketRef.current.on('join_request_decision', (data) => {
-      if (data.username === myUsername) {
-        if (data.approved) {
-          setRequestState('ACCEPTED');
-        } else {
-          setRequestState('REJECTED');
-        }
-      }
+    // REALTIME: server tells us how many people are inside each room
+    socket.on('rooms_counts', (counts) => {
+      setRoomsList((prev) =>
+        prev.map((r) => ({ ...r, currentMembers: counts[r.name] ?? 0 }))
+      );
     });
 
+    // A room was created / changed, so refresh the list
+    socket.on('rooms_changed', fetchRealRooms);
+
     // Listen for incoming join requests if current user is the host
-    socketRef.current.on('incoming_join_request', (data) => {
+    socket.on('incoming_join_request', (data) => {
       if (data.host === myUsername) {
         setIncomingJoinRequest(data);
       }
     });
 
-    socketRef.current.on('join_request_decision', (data) => {
-      if (data.username === myUsername) {
-        if (data.approved) {
-          setRequestState('ACCEPTED');
-          setTimeout(() => {
-            setShowRequestModal(false);
-            if (pendingJoinRoom) {
-              enterRoomSession(pendingJoinRoom);
-            }
-          }, 1000);
-        } else {
-          setRequestState('REJECTED');
-        }
+    socket.on('join_request_decision', (data) => {
+      if (data.username !== myUsername) return;
+
+      if (data.approved) {
+        setRequestState('ACCEPTED');
+        setTimeout(() => {
+          setShowRequestModal(false);
+          if (pendingJoinRoomRef.current) {
+            enterRoomSession(pendingJoinRoomRef.current);
+          }
+        }, 1000);
+      } else {
+        setRequestState('REJECTED');
       }
     });
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
+      socket.disconnect();
     };
-  }, [roomsList, myUsername]);
+  }, [myUsername]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -180,26 +191,22 @@ export default function UserRooms() {
   };
 
   const getHostedRoomsCount = () => {
-    const todayStr = new Date().toISOString().split('T')[0]; // Halimbawa: "2026-09-24"
-    
+    const todayStr = new Date().toISOString().split('T')[0]; // Example: "2026-09-24"
+
     return roomsList.filter((r) => {
       if (r.host !== myUsername) return false;
-      
-      // Kunin ang petsa ng paggawa ng room (kung may created_at o date field sa database)
+
+      // Get the room's creation date (created_at field from the database)
       const roomDate = r.created_at ? r.created_at.split('T')[0] : '';
-      
-      // Bilangin lamang kung ang room ay ginawa ngayong araw
+
+      // Only count rooms created today
       return roomDate === todayStr;
     }).length;
   };
 
+  // NOTE: joining the socket room is done by UserHomepage (/dashboard).
+  // Doing it here too would double-count the member.
   const enterRoomSession = (room) => {
-    if (socketRef.current) {
-      socketRef.current.emit('join_room', {
-        room: room.name,
-        username: myUsername,
-      });
-    }
     localStorage.setItem('activeRoomSession', JSON.stringify(room));
     navigate('/dashboard', { state: { isMultiplayer: true, room } });
   };
@@ -226,7 +233,7 @@ export default function UserRooms() {
 
   const handleConfirmCreate = async () => {
     if (!newRoomName.trim() || !newRoomMaxMembers) {
-      alert("Please fill in the room name and select maximum members.");
+      alert('Please fill in the room name and select maximum members.');
       return;
     }
 
@@ -238,7 +245,7 @@ export default function UserRooms() {
 
     const effectiveTaskType = newRoomPrivacy === 'public' ? 'individual' : newRoomTaskType;
 
-    // Kunin ang kasalukuyang active session galing sa localStorage (kung saan pinili ni host ang technique at focus time)
+    // Get the current active session from localStorage (where the host picked the technique and focus time)
     const activeSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
 
     const payload = {
@@ -247,7 +254,7 @@ export default function UserRooms() {
       host: myUsername,
       privacy: newRoomPrivacy,
       code: newRoomPrivacy === 'private' ? generateRoomCode() : null,
-      current_members: 1,
+      current_members: 0, // the host is counted for real once they enter the room
       max_members: parseInt(newRoomMaxMembers, 10),
       task_type: effectiveTaskType,
       technique: activeSession.techniqueName || 'Pomodoro',
@@ -261,14 +268,15 @@ export default function UserRooms() {
       const response = await fetch('http://localhost:5000/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
-      
+
       if (data.success && data.room) {
         const createdRoom = {
           ...data.room,
-          currentMembers: data.room.current_members || 1,
+          privacy: (data.room.privacy || 'public').toLowerCase(),
+          currentMembers: 0,
           maxMembers: data.room.max_members || 4,
           taskType: data.room.task_type || effectiveTaskType,
           technique: data.room.technique || 'Pomodoro',
@@ -288,14 +296,14 @@ export default function UserRooms() {
 
         enterRoomSession(createdRoom);
       } else {
-        alert(data.error || "Failed to create room.");
+        alert(data.error || 'Failed to create room.');
       }
     } catch (err) {
-      console.error("Error creating room:", err);
-      alert("Network error. Make sure your Python backend is running.");
+      console.error('Error creating room:', err);
+      alert('Network error. Make sure your Python backend is running.');
     }
   };
-  
+
   const handleConfirmPrivateJoin = () => {
     const code = privateCodeInput.trim().toUpperCase();
     if (!code) {
@@ -309,6 +317,11 @@ export default function UserRooms() {
 
     if (!matchedRoom) {
       setPrivateCodeErr('Invalid room code. Please check and try again.');
+      return;
+    }
+
+    if (matchedRoom.currentMembers >= matchedRoom.maxMembers) {
+      setPrivateCodeErr('This room is already full.');
       return;
     }
 
@@ -334,7 +347,7 @@ export default function UserRooms() {
       socketRef.current.emit('host_room_response', {
         room: incomingJoinRequest.room,
         username: incomingJoinRequest.username,
-        approved: approved
+        approved: approved,
       });
     }
     setIncomingJoinRequest(null);
@@ -413,7 +426,8 @@ export default function UserRooms() {
       ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
       : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
 
-    const roomTaskType = room.taskType || (room.privacy === 'private' ? 'individual' : 'individual');
+    const roomTaskType = room.taskType || 'individual';
+    const isFull = room.currentMembers >= room.maxMembers;
 
     return (
       <div
@@ -441,26 +455,26 @@ export default function UserRooms() {
                   <span>Tasks: {roomTaskType}</span>
                 </span>
               </div>
-              <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
+              <div className={`flex items-center gap-1 font-pressstart text-[8px] ${isFull ? 'text-theme-danger' : 'text-theme-dark'}`}>
                 <span>
                   {room.currentMembers}/{room.maxMembers}
                 </span>
+                {isFull && <span>FULL</span>}
               </div>
             </div>
           </div>
         </div>
 
         <button
-          onClick={() => {
-            const activeSessionRoom = {
-              ...room,
-              currentMembers: Math.min(room.currentMembers + 1, room.maxMembers),
-            };
-            enterRoomSession(activeSessionRoom);
-          }}
-          className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+          disabled={isFull}
+          onClick={() => enterRoomSession(room)}
+          className={`font-pressstart text-[9px] sm:text-[10px] text-theme-white rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow w-full ${
+            isFull
+              ? 'bg-gray-400 opacity-60 cursor-not-allowed'
+              : 'bg-theme-primary cursor-pointer hover:bg-[#d66530]'
+          }`}
         >
-          JOIN ROOM
+          {isFull ? 'ROOM FULL' : 'JOIN ROOM'}
         </button>
       </div>
     );
@@ -904,11 +918,13 @@ export default function UserRooms() {
               {requestState === 'WAITING' && 'REQUEST SENT'}
               {requestState === 'ACCEPTED' && 'ACCEPTED!'}
               {requestState === 'REJECTED' && 'REJECTED'}
+              {requestState === 'EXPIRED' && 'REQUEST EXPIRED'}
             </h3>
             <p className="font-pressstart text-[10px] text-theme-dark leading-relaxed">
-              {requestState === 'WAITING' && `Waiting for approval from host (${pendingJoinRoom?.host || 'Host'})...`}
+              {requestState === 'WAITING' && `Waiting for approval from host (${pendingJoinRoom?.host || 'Host'})... ${requestTimer}s`}
               {requestState === 'ACCEPTED' && 'Host accepted your request! Joining room...'}
               {requestState === 'REJECTED' && 'Host rejected your request.'}
+              {requestState === 'EXPIRED' && 'The host did not respond in time.'}
             </p>
             {requestState === 'ACCEPTED' && (
               <button
@@ -966,7 +982,7 @@ export default function UserRooms() {
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl max-h-[85vh] overflow-y-auto">
             <h3 className="font-pressstart text-[12px] text-theme-primary uppercase text-center">SESSION STATISTICS</h3>
-            
+
             <div className="flex flex-col gap-2 font-pressstart text-[9px] text-theme-dark border-b border-theme-dark/20 pb-3">
               <p>Activity: <span className="text-theme-primary">{selectedStatsRoom.workType || 'Focus Session'}</span></p>
               <p>Technique: <span className="text-theme-primary">{selectedStatsRoom.techniqueName || 'Pomodoro'}</span></p>
@@ -979,10 +995,10 @@ export default function UserRooms() {
                 <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
                   {selectedStatsRoom.tasks.map((task, idx) => (
                     <div key={idx} className="flex items-center gap-2 p-2 bg-theme-muted/50 rounded-[6px] border border-theme-dark/20 font-pressstart text-[8px]">
-                      <span className={task.completed ? "text-green-600" : "text-amber-600"}>
-                        {task.completed ? "✔" : "⏳"}
+                      <span className={task.completed ? 'text-green-600' : 'text-amber-600'}>
+                        {task.completed ? '✔' : '⏳'}
                       </span>
-                      <span className={task.completed ? "line-through opacity-60 text-theme-dark" : "text-theme-dark"}>
+                      <span className={task.completed ? 'line-through opacity-60 text-theme-dark' : 'text-theme-dark'}>
                         {typeof task === 'string' ? task : task.text}
                       </span>
                     </div>

@@ -78,7 +78,7 @@ def calculate_level_from_total_xp(total_xp):
     One single function that turns "total XP" into "Level + XP needed for next
     level". Every endpoint that needs to know a user's level calls this same
     function, so a user's level can never disagree between different parts of
-    the app (this is FIX 3 from the review).
+    the app.
     """
     level = 1
     cumulative = 0
@@ -88,7 +88,6 @@ def calculate_level_from_total_xp(total_xp):
             level = l
         cumulative += cost
 
-    next_level_xp = 0
     running_total = 0
     for l in range(1, level + 1):
         running_total += int(100 * (l ** 1.5))
@@ -114,6 +113,96 @@ def ensure_streak_freeze_row(user_id):
             }).execute()
     except Exception as e:
         print("Could not create streak freeze row:", e)
+
+
+# =============================================================================
+# SUSPENSION HELPERS
+# =============================================================================
+
+# Philippine Standard Time definition (UTC+8)
+PHT = timezone(timedelta(hours=8))
+
+def calculate_suspension_expiration(duration_str, custom_datetime_str=None):
+    """
+    Calculates an exact ISO timestamp when suspension expires in UTC.
+    Interprets HTML datetime-local input as Philippine Time (UTC+8)
+    and stores it in standard UTC for reliable database comparisons.
+    """
+    now = datetime.now(timezone.utc)
+
+    if duration_str == 'Custom Date/Time' and custom_datetime_str:
+        try:
+            # <input type="datetime-local" /> produces "YYYY-MM-DDTHH:MM" without timezone.
+            # Treat as Philippine Time (UTC+8) and convert to UTC
+            dt = datetime.fromisoformat(custom_datetime_str)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=PHT)
+            return dt.astimezone(timezone.utc).isoformat()
+        except Exception as e:
+            print("Custom datetime parse error:", e)
+            return (now + timedelta(days=1)).isoformat()
+
+    durations = {
+        '24 Hours / 1 Day': timedelta(days=1),
+        '3 Days': timedelta(days=3),
+        '7 Days / 1 Week': timedelta(days=7),
+        '14 Days / 2 Weeks': timedelta(days=14),
+        '30 Days / 1 Month': timedelta(days=30),
+        '90 Days / 3 Months': timedelta(days=90),
+    }
+
+    if duration_str in durations:
+        return (now + durations[duration_str]).isoformat()
+    elif duration_str == 'Permanent / Indefinite':
+        return None  # Permanent / Indefinite
+
+    return (now + timedelta(days=1)).isoformat()
+
+
+def get_active_suspension(user_id):
+    """
+    Checks the 'suspensions' table for any active suspension for this user.
+    If a suspension has passed its expiration time, it automatically deactivates it.
+    Returns: suspension record dict if actively suspended, None if free to log in.
+    """
+    try:
+        res = supabase.table('suspensions') \
+            .select('*') \
+            .eq('user_id', user_id) \
+            .eq('is_active', True) \
+            .order('created_at', desc=True) \
+            .limit(1) \
+            .execute()
+
+        if not res.data:
+            return None
+
+        suspension = res.data[0]
+        suspended_until_str = suspension.get('suspended_until')
+
+        # If permanent (no end date), they remain suspended
+        if not suspended_until_str:
+            return suspension
+
+        # Ensure safe timezone-aware comparison
+        suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
+        if suspended_until.tzinfo is None:
+            suspended_until = suspended_until.replace(tzinfo=timezone.utc)
+
+        now = datetime.now(timezone.utc)
+
+        if now >= suspended_until:
+            # AUTO-LIFT: Mark suspension as inactive in the suspensions table
+            supabase.table('suspensions').update({'is_active': False}).eq('id', suspension['id']).execute()
+            # Update user status back to offline
+            supabase.table('users').update({'status': 'offline'}).eq('id', user_id).execute()
+            print(f"[AUTO-LIFT] Suspension expired for user ID {user_id}. Restored access.")
+            return None
+
+        return suspension
+    except Exception as e:
+        print("Error checking suspension table:", e)
+        return None
 
 
 # =============================================================================
@@ -203,7 +292,12 @@ def signup():
                 'currentXP': created_user.get('current_xp', 0),
                 'maxXP': created_user.get('max_xp', 10000),
                 'level': created_user.get('level', 1),
-                'inventory': inv_data or []
+                'inventory': inv_data or [],
+                # explicit nulls so a new account never inherits the previous
+                # account's avatar / room / owned items in the browser
+                'avatarConfig': None,
+                'roomConfig': None,
+                'unlockedItems': None
             }
         }), 201
     except Exception as e:
@@ -320,7 +414,13 @@ def google_signup():
                 'streak': created_user.get('streak', 0),
                 'bestStreak': created_user.get('best_streak') or 0,
                 'roomsCreated': created_user.get('rooms_created') or 0,
-                'inventory': raw_inv or []
+                'currentXP': created_user.get('current_xp', 0),
+                'maxXP': created_user.get('max_xp', 10000),
+                'level': created_user.get('level', 1),
+                'inventory': raw_inv or [],
+                'avatarConfig': None,
+                'roomConfig': None,
+                'unlockedItems': None
             }
         }), 201
 
@@ -350,7 +450,7 @@ def login():
         if active_susp:
             reason = active_susp.get('reason') or "Community Guidelines Violation"
             suspended_until = active_susp.get('suspended_until')
-            
+
             lift_display = active_susp.get('duration') or 'Until reviewed by IT administration'
             if suspended_until:
                 try:
@@ -508,8 +608,6 @@ def send_study_reminder():
 
         # TODO: Query your database for users who have reminders enabled
         # and whose reminder_time matches the current hour/minute.
-        # Example using SQLAlchemy:
-        # users_to_remind = User.query.filter_by(reminder_enabled=True, reminder_time=current_time_str).all()
         users_to_remind = []
 
         for user in users_to_remind:
@@ -668,8 +766,9 @@ def update_customization():
         if unlocked_items is not None:
             update_payload["unlocked_items"] = unlocked_items if isinstance(unlocked_items, list) else json.loads(unlocked_items)
 
-        res = supabase.table('users').update(update_payload).ilike('email', email.strip()).execute()
-        
+        # .eq (exact match) so "_" or "%" in an email can never match other users
+        res = supabase.table('users').update(update_payload).eq('email', email.strip()).execute()
+
         if not res.data:
             print(f"[CUSTOMIZATION ERROR] No user found with email: {email}")
             return jsonify({"success": False, "message": f"User {email} not found"}), 404
@@ -692,7 +791,7 @@ def update_coins_db():
     try:
         res = supabase.table('users').update({
             "coins": int(coins)
-        }).ilike('email', email.strip()).execute()
+        }).eq('email', email.strip()).execute()
 
         if not res.data:
             return jsonify({"success": False, "message": f"User {email} not found"}), 404
@@ -800,7 +899,7 @@ def get_friends_data():
         return jsonify({"success": True, "friends": friends, "requests": requests}), 200
 
     except Exception as e:
-        print(f"Error in get_friends_data: {str(e)}")  # Shown in the Flask terminal for easier debugging
+        print(f"Error in get_friends_data: {str(e)}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -997,7 +1096,7 @@ def complete_focus_session():
         if room_size > 6:
             return jsonify({"success": False, "error": f"Group room size exceeds strict limit: N = {room_size}. Max N = 6."}), 400
 
-        user_res = supabase.table('users').select('*').ilike('email', raw_email).execute()
+        user_res = supabase.table('users').select('*').eq('email', raw_email).execute()
         if not user_res.data:
             return jsonify({"success": False, "error": f"User record not found for {raw_email}"}), 404
 
@@ -1047,16 +1146,13 @@ def complete_focus_session():
         calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
         rounded_exp_gained = round(calculated_exp, 4)
 
-        # ---------------------------------------------------------------
-        # FIX: look at this user's session history once — it is used for
-        # BOTH the daily coin cap AND the streak check below, so we only
-        # query the database a single time instead of twice.
-        # ---------------------------------------------------------------
+        # Look at this user's session history once — used for BOTH the daily
+        # coin cap AND the streak check below.
         today = datetime.now().date()
         today_str = today.strftime('%Y-%m-%d')
         yesterday_str = (today - timedelta(days=1)).strftime('%Y-%m-%d')
 
-        history_res = supabase.table('study_sessions').select('created_at, coins_gained').ilike('email', raw_email).execute()
+        history_res = supabase.table('study_sessions').select('created_at, coins_gained').eq('email', raw_email).execute()
         history = history_res.data or []
 
         studied_today = False
@@ -1070,30 +1166,17 @@ def complete_focus_session():
             elif created_at.startswith(yesterday_str):
                 studied_yesterday = True
 
-        # --- FIX: enforce the 100-coin-per-day limit ---
+        # Enforce the 100-coin-per-day limit
         raw_coins_gained = max(1, int(round(duration_minutes * 0.2)))
         coins_gained = max(0, min(raw_coins_gained, 100 - coins_earned_today))
 
         new_xp = current_xp + rounded_exp_gained
         new_coins = current_coins + coins_gained
 
-        # --- Level calculation (1 to 50, continuous / sequential leveling) ---
-        new_level = 1
-        cum_exp = 0
-        for l in range(1, 51):
-            cost = int(100 * (l ** 1.5))
-            if new_xp >= cum_exp:
-                new_level = l
-            cum_exp += cost
+        # Level calculation (1 to 50, continuous / sequential leveling)
+        new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
 
-        next_level = new_level + 1
-        new_max_xp = 0
-        temp_cum = 0
-        for l in range(1, next_level):
-            temp_cum += int(100 * (l ** 1.5))
-        new_max_xp = temp_cum
-
-        # --- Streak logic, now freeze-aware ---
+        # Streak logic, freeze-aware
         freeze_used = False
         if studied_today:
             # Already logged a session today — keep the streak where it is
@@ -1119,7 +1202,7 @@ def complete_focus_session():
         # Best streak = the highest streak this account has ever reached
         new_best_streak = max(int(user.get('best_streak') or 0), new_streak)
 
-        # --- unlock the 3rd streak-freeze slot the moment someone hits Level 20 ---
+        # Unlock the 3rd streak-freeze slot the moment someone hits Level 20
         if new_level >= 20 and current_level < 20:
             try:
                 supabase.table('streak_freezes_inventory').update({"max_slots": 3}).eq('user_id', user_id).execute()
@@ -1572,7 +1655,7 @@ def ai_recommendation():
 
         config = framework_details[best_framework]
 
-        # 4. Use Gemini 1.5 Flash for the user-facing explanation/rationale
+        # 4. Use Gemini for the user-facing explanation/rationale
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         model = genai.GenerativeModel('gemini-3.6-flash')
 
@@ -1608,6 +1691,34 @@ def ai_recommendation():
 active_room_sessions = {}
 room_members = {}
 
+# maps socket id -> (room, username) so we can clean up when a tab closes
+sid_to_room = {}
+
+
+def get_live_count(room_name):
+    return len(room_members.get(room_name, []))
+
+
+def broadcast_room_counts(room_name=None):
+    """Pushes the live member count of every room to all connected clients,
+    and keeps rooms.current_members in the database in sync."""
+    counts = {name: len(m) for name, m in room_members.items()}
+    socketio.emit('rooms_counts', counts)
+    if room_name:
+        try:
+            supabase.table('rooms').update(
+                {'current_members': get_live_count(room_name)}
+            ).eq('name', room_name).execute()
+        except Exception as e:
+            print("Could not sync room count:", e)
+
+
+# Server just started, so nobody is inside any room yet
+try:
+    supabase.table('rooms').update({'current_members': 0}).neq('id', 0).execute()
+except Exception as e:
+    print("Could not reset room counts:", e)
+
 
 @socketio.on('join_room')
 def on_join_room(data):
@@ -1618,11 +1729,17 @@ def on_join_room(data):
     level = data.get('level', 1)
 
     try:
-        r = supabase.table('rooms').select('privacy, task_type, is_started, host').eq('name', room).execute()
+        r = supabase.table('rooms').select('privacy, task_type, is_started, host, max_members').eq('name', room).execute()
         if r.data:
             info = r.data[0]
-            shared = info.get('privacy') == 'private' and info.get('task_type') == 'shared'
             returning = any(m['username'] == username for m in room_members.get(room, []))
+
+            # Room full check
+            if not returning and get_live_count(room) >= int(info.get('max_members') or 4):
+                emit('room_join_rejected', {'reason': 'This room is already full.'})
+                return
+
+            shared = info.get('privacy') == 'private' and info.get('task_type') == 'shared'
             if shared and info.get('is_started') and info.get('host') != username and not returning:
                 emit('room_join_rejected', {'reason': 'This shared session has already started.'})
                 return
@@ -1630,6 +1747,7 @@ def on_join_room(data):
         print("Join check error:", e)
 
     join_room(room)
+    sid_to_room[request.sid] = (room, username)
 
     if room not in room_members:
         room_members[room] = []
@@ -1699,18 +1817,25 @@ def on_join_room(data):
         })
 
     emit('room_update', {
-            'members': room_members[room],
-            'room_config': room_cfg,
-            'active_session': active_room_sessions.get(room),
-            'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
-        }, room=room)    
+        'members': room_members[room],
+        'room_config': room_cfg,
+        'active_session': active_room_sessions.get(room),
+        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+    }, room=room)
+
+    # tell every client (Rooms page, IT admin) the new live count
+    broadcast_room_counts(room)
 
 
 @app.route('/api/rooms', methods=['GET'])
 def get_rooms():
     try:
         res = supabase.table('rooms').select('*').execute()
-        return jsonify({'success': True, 'rooms': res.data}), 200
+        rooms = res.data or []
+        for r in rooms:
+            r['current_members'] = get_live_count(r['name'])
+            r['is_active'] = r['current_members'] > 0
+        return jsonify({'success': True, 'rooms': rooms}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -1738,7 +1863,7 @@ def create_room():
             "host": host,
             "privacy": data.get('privacy', 'public'),
             "code": data.get('code'),
-            "current_members": data.get('current_members', 1),
+            "current_members": 0,  # nobody has actually joined yet, the host joins via socket
             "max_members": max_members,
             "task_type": data.get('task_type', 'individual'),
             "is_started": data.get('is_started', False),
@@ -1760,6 +1885,9 @@ def create_room():
                 }).eq('username', host).execute()
         except Exception as counter_err:
             print("Could not increment rooms_created:", counter_err)
+
+        # let every Rooms page / admin page refresh its list
+        socketio.emit('rooms_changed')
 
         return jsonify({'success': True, 'room': res.data[0]}), 201
 
@@ -1801,13 +1929,15 @@ def on_leave_room(data):
     username = data.get('username')
 
     leave_room(room)
+    sid_to_room.pop(request.sid, None)
 
     if room in room_members:
         room_members[room] = [m for m in room_members[room] if m['username'] != username]
         emit('room_update', {
             'members': room_members[room],
-            'logs': [{'id': 'leave_' + username, 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+            'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
         }, room=room)
+        broadcast_room_counts(room)
 
 
 @socketio.on('send_room_message')
@@ -1935,9 +2065,6 @@ def update_progress():
         new_xp = current_xp + earned_xp
 
         # 2. Calculate the new level using the shared level helper
-        #    (FIX: this used to use a 9-point lookup table that could only
-        #    ever land on Level 1, 5, 10, 15, 20, 25, 30, 40 or 50 — now it
-        #    matches the accurate, continuous calculation used everywhere else)
         new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
 
         # 3. Update the Supabase database
@@ -2045,7 +2172,7 @@ def claim_streak_reward():
             return jsonify({"success": False, "message": "Reward already claimed."}), 400
 
         # 2. Determine the reward based on the number of days
-        # Example: 1 day = 5 coins, 3 days = 10 coins, 7 days = 20 coins, 14 days = 75 XP, 21 days = 100 XP
+        # 1 day = 5 coins, 3 days = 10 coins, 7 days = 20 coins, 14 days = 75 XP, 21 days = 100 XP
         coins_to_add = 0
         xp_to_add = 0
 
@@ -2075,8 +2202,7 @@ def claim_streak_reward():
             "current_xp": new_xp
         }
 
-        # If XP was added, also recalculate the level using the shared level
-        # helper (FIX: replaces the old 9-point lookup table)
+        # If XP was added, also recalculate the level using the shared level helper
         if xp_to_add > 0:
             new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
             update_payload["level"] = new_level
@@ -2253,14 +2379,14 @@ def get_current_presence_summary():
     """Calculates active online and currently studying counts."""
     active_emails = set()
     studying_emails = set()
-    
+
     for info in online_users.values():
         em = (info.get('email') or '').lower()
         if em:
             active_emails.add(em)
             if info.get('status') == 'STUDYING':
                 studying_emails.add(em)
-                
+
     return {
         "active_users_count": len(active_emails),
         "currently_studying_count": len(studying_emails),
@@ -2311,6 +2437,21 @@ def handle_user_end_session(data):
 
 @socketio.on('disconnect')
 def handle_disconnect():
+    # --- 1. Remove the user from their study room if the tab was closed ---
+    info = sid_to_room.pop(request.sid, None)
+    if info:
+        room, username = info
+        # only remove if this user has no other live socket in the same room
+        still_in_room = any(v == info for v in sid_to_room.values())
+        if not still_in_room and room in room_members:
+            room_members[room] = [m for m in room_members[room] if m['username'] != username]
+            socketio.emit('room_update', {
+                'members': room_members[room],
+                'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+            }, room=room)
+            broadcast_room_counts(room)
+
+    # --- 2. Presence tracking for the IT admin dashboard ---
     if request.sid in online_users:
         user_info = online_users.pop(request.sid)
         email = user_info.get('email')
@@ -2366,7 +2507,7 @@ def admin_get_users():
 
         # Grab live memory presence
         presence = get_current_presence_summary()
-        online_map = presence['online_map'] # { "email@umak.edu.ph": "ONLINE" | "STUDYING" }
+        online_map = presence['online_map']  # { "email@umak.edu.ph": "ONLINE" | "STUDYING" }
 
         formatted_users = []
         for u in users:
@@ -2374,11 +2515,7 @@ def admin_get_users():
             user_email = (u.get('email') or '').strip().lower()
             is_active_susp = u_id in active_susp_by_user
 
-            # Real-time state priority:
-            # 1. Suspended
-            # 2. Studying
-            # 3. Active (Online)
-            # 4. Inactive (Offline)
+            # Real-time state priority: Suspended > Studying > Active > Inactive
             live_state = online_map.get(user_email)
             if is_active_susp:
                 status_display = 'Suspended'
@@ -2426,10 +2563,41 @@ def admin_get_users():
                 'reportedUsers': suspended_count
             }
         }), 200
-    
+
     except Exception as e:
         print("ADMIN GET USERS ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/itadmin/rooms', methods=['GET'])
+def admin_get_rooms():
+    """Manage Rooms page: live member counts + Active / Inactive metrics.
+    Active   = room currently has at least 1 person inside.
+    Inactive = room has nobody inside."""
+    try:
+        res = supabase.table('rooms').select('*').order('created_at', desc=True).execute()
+        rooms = res.data or []
+
+        for r in rooms:
+            r['current_members'] = get_live_count(r['name'])
+            r['is_active'] = r['current_members'] > 0
+            r['status_display'] = 'Active' if r['is_active'] else 'Inactive'
+
+        active = sum(1 for r in rooms if r['is_active'])
+
+        return jsonify({
+            'success': True,
+            'rooms': rooms,
+            'metrics': {
+                'totalRooms': len(rooms),
+                'activeRooms': active,
+                'inactiveRooms': len(rooms) - active
+            }
+        }), 200
+    except Exception as e:
+        print("ADMIN GET ROOMS ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @app.route('/api/itadmin/suspend-user', methods=['POST'])
 def admin_suspend_user():
@@ -2479,98 +2647,6 @@ def admin_suspend_user():
     except Exception as e:
         print("ADMIN SUSPEND ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
-
-from datetime import datetime, timedelta, timezone
-
-# =============================================================================
-# SUSPENSION HELPERS
-# =============================================================================
-
-# Philippine Standard Time definition (UTC+8)
-PHT = timezone(timedelta(hours=8))
-
-def calculate_suspension_expiration(duration_str, custom_datetime_str=None):
-    """
-    Calculates an exact ISO timestamp when suspension expires in UTC.
-    Interprets HTML datetime-local input as Philippine Time (UTC+8)
-    and stores it in standard UTC for reliable database comparisons.
-    """
-    now = datetime.now(timezone.utc)
-    
-    if duration_str == 'Custom Date/Time' and custom_datetime_str:
-        try:
-            # <input type="datetime-local" /> produces "YYYY-MM-DDTHH:MM" without timezone.
-            # Treat as Philippine Time (UTC+8) and convert to UTC
-            dt = datetime.fromisoformat(custom_datetime_str)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=PHT)
-            return dt.astimezone(timezone.utc).isoformat()
-        except Exception as e:
-            print("Custom datetime parse error:", e)
-            return (now + timedelta(days=1)).isoformat()
-
-    durations = {
-        '24 Hours / 1 Day': timedelta(days=1),
-        '3 Days': timedelta(days=3),
-        '7 Days / 1 Week': timedelta(days=7),
-        '14 Days / 2 Weeks': timedelta(days=14),
-        '30 Days / 1 Month': timedelta(days=30),
-        '90 Days / 3 Months': timedelta(days=90),
-    }
-
-    if duration_str in durations:
-        return (now + durations[duration_str]).isoformat()
-    elif duration_str == 'Permanent / Indefinite':
-        return None  # Permanent / Indefinite
-    
-    return (now + timedelta(days=1)).isoformat()
-
-
-def get_active_suspension(user_id):
-    """
-    Checks the 'suspensions' table for any active suspension for this user.
-    If a suspension has passed its expiration time, it automatically deactivates it.
-    Returns: suspension record dict if actively suspended, None if free to log in.
-    """
-    try:
-        res = supabase.table('suspensions') \
-            .select('*') \
-            .eq('user_id', user_id) \
-            .eq('is_active', True) \
-            .order('created_at', desc=True) \
-            .limit(1) \
-            .execute()
-
-        if not res.data:
-            return None
-
-        suspension = res.data[0]
-        suspended_until_str = suspension.get('suspended_until')
-
-        # If permanent (no end date), they remain suspended
-        if not suspended_until_str:
-            return suspension
-
-        # Ensure safe timezone-aware comparison
-        suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
-        if suspended_until.tzinfo is None:
-            suspended_until = suspended_until.replace(tzinfo=timezone.utc)
-
-        now = datetime.now(timezone.utc)
-
-        if now >= suspended_until:
-            # AUTO-LIFT: Mark suspension as inactive in the suspensions table
-            supabase.table('suspensions').update({'is_active': False}).eq('id', suspension['id']).execute()
-            # Update user status back to offline
-            supabase.table('users').update({'status': 'offline'}).eq('id', user_id).execute()
-            print(f"[AUTO-LIFT] Suspension expired for user ID {user_id}. Restored access.")
-            return None
-
-        return suspension
-    except Exception as e:
-        print("Error checking suspension table:", e)
-        return None
-
 
 
 # =============================================================================
