@@ -65,7 +65,49 @@ export default function ITUsers() {
   };
 
   useEffect(() => {
+    // 1. Initial REST fetch
     fetchITUsersData();
+
+    // 2. Connect to Flask socket
+    const socket = io('http://localhost:5000');
+
+    socket.on('admin_presence_update', (presence) => {
+      const { active_users_count, currently_studying_count, online_map } = presence;
+
+      // Update the 4 top metric cards
+      setMetricsData((prev) => ({
+        ...prev,
+        activeUsers: { ...prev.activeUsers, value: active_users_count.toLocaleString() },
+        currentlyStudying: { ...prev.currentlyStudying, value: currently_studying_count.toLocaleString() }
+      }));
+
+      // Update table rows in real time
+      setUsersList((prevUsers) =>
+        prevUsers.map((user) => {
+          if (user.isSuspended) return user;
+
+          const emailKey = (user.email || '').trim().toLowerCase();
+          const liveState = online_map[emailKey];
+
+          let newStatus = 'Inactive';
+          if (liveState === 'STUDYING') {
+            newStatus = 'Studying';
+          } else if (liveState === 'ONLINE') {
+            newStatus = 'Active';
+          }
+
+          return {
+            ...user,
+            status: newStatus,
+            lastActive: liveState ? 'Now' : user.lastActive
+          };
+        })
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   // Handle Date Range Filter Dropdown Change
@@ -219,11 +261,13 @@ export default function ITUsers() {
 
   // Helper for status badge styling
   const renderUserStatusBadge = (status = '') => {
-    let dotColor = 'bg-theme-safe';
+    let dotColor = 'bg-theme-safe'; // Green for Active
     if (status.toLowerCase() === 'inactive') {
-      dotColor = 'bg-theme-dark/40';
+      dotColor = 'bg-theme-dark/40'; // Gray
     } else if (status.toLowerCase() === 'suspended') {
-      dotColor = 'bg-theme-danger';
+      dotColor = 'bg-theme-danger'; // Red
+    } else if (status.toLowerCase() === 'studying') {
+      dotColor = 'bg-[#F2994A] animate-pulse'; // Amber pulse for Studying
     }
 
     return (

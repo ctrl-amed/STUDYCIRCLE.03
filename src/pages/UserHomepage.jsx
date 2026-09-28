@@ -563,6 +563,37 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const socketRef = useRef(null);
 
+  // 1. Tell Flask this user is online as soon as they open the homepage
+  useEffect(() => {
+    const userEmail = getUserEmail();
+    if (!userEmail) return;
+
+    if (!socketRef.current) {
+      socketRef.current = io('http://localhost:5000');
+    }
+
+    socketRef.current.emit('user_connected', { email: userEmail });
+
+    return () => {
+      if (!isMultiplayer && socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
+    };
+  }, [player.email]);
+
+  // 2. Tell Flask when the student starts or stops a study session
+  useEffect(() => {
+    const userEmail = getUserEmail();
+    if (!socketRef.current || !userEmail) return;
+
+    if (timer.activeSession && timer.isFocusPhase && timer.isTimerRunning) {
+      socketRef.current.emit('user_start_session', { email: userEmail });
+    } else {
+      socketRef.current.emit('user_end_session', { email: userEmail });
+    }
+  }, [timer.activeSession, timer.isFocusPhase, timer.isTimerRunning]);
+
   const [todayFocusFormatted, setTodayFocusFormatted] = useState('0h 0m');
   const [dbStreak, setDbStreak] = useState(playerData?.streakDays ?? 0);
 

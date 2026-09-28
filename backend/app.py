@@ -2151,6 +2151,82 @@ You have received a new feedback and feature idea from a user:
 # IT ADMIN MODULE
 # =============================================================================
 
+# In-memory presence tracker: { socket_id: {"email": str, "status": "ONLINE" | "STUDYING"} }
+online_users = {}
+
+def get_current_presence_summary():
+    """Calculates active online and currently studying counts."""
+    active_emails = set()
+    studying_emails = set()
+    
+    for info in online_users.values():
+        em = (info.get('email') or '').lower()
+        if em:
+            active_emails.add(em)
+            if info.get('status') == 'STUDYING':
+                studying_emails.add(em)
+                
+    return {
+        "active_users_count": len(active_emails),
+        "currently_studying_count": len(studying_emails),
+        "online_map": {info['email'].lower(): info['status'] for info in online_users.values() if info.get('email')}
+    }
+
+def broadcast_presence_to_admins():
+    """Broadcasts real-time counts and user states to IT Admin clients."""
+    summary = get_current_presence_summary()
+    socketio.emit('admin_presence_update', summary)
+
+@socketio.on('user_connected')
+def handle_user_connected(data):
+    email = (data.get('email') or '').strip().lower()
+    if email:
+        online_users[request.sid] = {'email': email, 'status': 'ONLINE'}
+        try:
+            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
+        except Exception:
+            pass
+        broadcast_presence_to_admins()
+
+@socketio.on('user_start_session')
+def handle_user_start_session(data):
+    email = (data.get('email') or '').strip().lower()
+    if not email and request.sid in online_users:
+        email = online_users[request.sid]['email']
+    if email:
+        online_users[request.sid] = {'email': email, 'status': 'STUDYING'}
+        try:
+            supabase.table('users').update({'status': 'studying'}).eq('email', email).execute()
+        except Exception:
+            pass
+        broadcast_presence_to_admins()
+
+@socketio.on('user_end_session')
+def handle_user_end_session(data):
+    email = (data.get('email') or '').strip().lower()
+    if not email and request.sid in online_users:
+        email = online_users[request.sid]['email']
+    if email:
+        online_users[request.sid] = {'email': email, 'status': 'ONLINE'}
+        try:
+            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
+        except Exception:
+            pass
+        broadcast_presence_to_admins()
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if request.sid in online_users:
+        user_info = online_users.pop(request.sid)
+        email = user_info.get('email')
+        still_open = any(u.get('email') == email for u in online_users.values())
+        if not still_open and email:
+            try:
+                supabase.table('users').update({'status': 'offline'}).eq('email', email).execute()
+            except Exception:
+                pass
+        broadcast_presence_to_admins()
+
 @app.route('/api/itadmin/users', methods=['GET'])
 def admin_get_users():
     try:
