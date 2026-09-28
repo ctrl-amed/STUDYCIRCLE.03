@@ -338,12 +338,13 @@ export default function UserCustomizer() {
     showToast('Changes saved!');
   };
 
-  const saveCustomizationWithCoins = async (updatedCoins) => {
+  const saveCustomizationWithCoins = async (updatedCoins, customUnlockedList) => {
+    const listToSave = customUnlockedList || unlockedItems;
+
     localStorage.setItem(storageKey('user_avatar_config', userEmail), JSON.stringify(avatarConfig));
     localStorage.setItem(storageKey('user_furniture_config', userEmail), JSON.stringify(roomConfig));
-    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(unlockedItems));
+    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(listToSave));
 
-    // Also update the cached user object in localStorage so coins are correct after a refresh
     if (userEmail) {
       const userStorageKey = `user_${userEmail}`;
       const savedUserData = localStorage.getItem(userStorageKey);
@@ -351,6 +352,9 @@ export default function UserCustomizer() {
         try {
           const parsedUser = JSON.parse(savedUserData);
           parsedUser.coins = updatedCoins;
+          parsedUser.avatarConfig = avatarConfig;
+          parsedUser.roomConfig = roomConfig;
+          parsedUser.unlockedItems = listToSave;
           localStorage.setItem(userStorageKey, JSON.stringify(parsedUser));
         } catch (e) {
           console.error("Error updating local user storage:", e);
@@ -363,6 +367,7 @@ export default function UserCustomizer() {
 
     if (userEmail) {
       try {
+        // 1. Save unlocked items, avatar and room config
         await fetch('http://localhost:5000/api/update-customization', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -370,10 +375,11 @@ export default function UserCustomizer() {
             email: userEmail,
             avatarConfig: avatarConfig,
             roomConfig: roomConfig,
-            unlockedItems: unlockedItems
+            unlockedItems: listToSave // Passes the newly bought items directly
           }),
         });
 
+        // 2. Save deducted coins
         await fetch('http://localhost:5000/api/update-coins', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -397,12 +403,13 @@ export default function UserCustomizer() {
     updateCoins(newCoinBalance);
 
     const newlyUnlockedIds = pendingUnownedItems.map((item) => item.id);
-    const updatedUnlockedList = [...unlockedItems, ...newlyUnlockedIds];
+    const updatedUnlockedList = Array.from(new Set([...unlockedItems, ...newlyUnlockedIds]));
 
+    // Update state
     setUnlockedItems(updatedUnlockedList);
-    localStorage.setItem(storageKey('user_unlocked_assets', userEmail), JSON.stringify(updatedUnlockedList));
 
-    await saveCustomizationWithCoins(newCoinBalance);
+    // Pass updatedUnlockedList directly to ensure the API receives the new items
+    await saveCustomizationWithCoins(newCoinBalance, updatedUnlockedList);
     setShowCheckoutModal(false);
   };
 

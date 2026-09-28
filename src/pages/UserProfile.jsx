@@ -15,117 +15,88 @@ const LEVEL_BADGES_MAP = {
   50: { img: "media/xp_mastery.png", alt: "Badge Mastery" },
 };
 
+const DEFAULT_AVATAR = { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
+
 export default function UserProfile() {
   const { playerData } = usePlayer();
-  const userEmail = playerData?.email || sessionStorage.getItem('active_user_email') || localStorage.getItem('active_user_email');
 
+  // localStorage first: playerData.email can still be the "hero@acorn.study"
+  // placeholder right after login, which would load the wrong account's data.
+  const userEmail =
+    localStorage.getItem('active_user_email') ||
+    sessionStorage.getItem('active_user_email') ||
+    playerData?.email;
+
+  // The account's real row from the database (see /api/get-profile in app.py)
+  const [profile, setProfile] = useState(null);
   const [focusTime, setFocusTime] = useState({ hours: 0, minutes: 0 });
-  const [roomsCreatedCount, setRoomsCreatedCount] = useState(0);
   const [averageSessionText, setAverageSessionText] = useState('0m');
 
-  // DYNAMIC AVATAR CONFIG (uses a consistent safe key per user)
-  const userEmailKey = userEmail ? userEmail.replace(/[^a-zA-Z0-9]/g, '_') : 'default';
+  // Avatar comes from the account (database), never from a shared localStorage key
+  const [avatarConfig, setAvatarConfig] = useState(playerData?.avatarConfig || DEFAULT_AVATAR);
 
-  const [avatarConfig, setAvatarConfig] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`user_avatar_config_${userEmailKey}`);
-      if (saved) return JSON.parse(saved);
-
-      const generalSaved = localStorage.getItem('user_avatar_config');
-      if (generalSaved) return JSON.parse(generalSaved);
-
-      return playerData?.avatarConfig || { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    } catch {
-      return { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    }
-  });
-
+  // Live updates from the avatar editor
   useEffect(() => {
     const handleAvatarUpdate = (e) => {
       if (e.detail) setAvatarConfig(e.detail);
     };
     window.addEventListener('avatar-updated', handleAvatarUpdate);
     return () => window.removeEventListener('avatar-updated', handleAvatarUpdate);
-  }, [userEmailKey]);
+  }, []);
 
-  // Load real user stats from localStorage / database history
-  const loadProfileStats = async () => {
-    const totalFocusSec = parseInt(localStorage.getItem('total_focus_seconds') || '0', 10);
-    const hours = Math.floor(totalFocusSec / 3600);
-    const minutes = Math.floor((totalFocusSec % 3600) / 60);
-    setFocusTime({ hours, minutes });
+  // Load everything for THIS account from the database
+  useEffect(() => {
+    if (!userEmail) return;
+    let cancelled = false;
 
-    const history = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
-    if (history.length > 0) {
-      let totalMin = 0;
-      history.forEach(item => {
-        totalMin += parseInt(item.duration || 25, 10);
-      });
-      const avgMins = Math.round(totalMin / history.length);
-      setAverageSessionText(`${avgMins}m`);
-    } else {
-      setAverageSessionText('0m');
-    }
+    (async () => {
+      const q = encodeURIComponent(userEmail);
 
-    // Rooms created now comes straight from the backend (users.rooms_created),
-    // returned on login/signup and kept current in PlayerContext — no more
-    // guessing from a localStorage counter that nothing ever incremented.
-    setRoomsCreatedCount(playerData?.roomsCreated ?? 0);
-
-    if (userEmail) {
+      // 1. Profile row: avatar, rooms created, best streak, level, coins, inventory...
       try {
-        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${encodeURIComponent(userEmail)}`);
-        const data = await response.json();
-        if (data.success && data.sessions) {
-          const sessions = data.sessions;
-          let dbTotalSec = 0;
-          sessions.forEach(s => {
-            dbTotalSec += parseInt(s.duration_minutes || 0, 10) * 60;
-          });
-          const dbHours = Math.floor(dbTotalSec / 3600);
-          const dbMinutes = Math.floor((dbTotalSec % 3600) / 60);
-          setFocusTime({ hours: dbHours, minutes: dbMinutes });
-
-          if (sessions.length > 0) {
-            const avgDbMins = Math.round((dbTotalSec / 60) / sessions.length);
-            setAverageSessionText(`${avgDbMins}m`);
-          }
+        const res = await fetch(`http://localhost:5000/api/get-profile?email=${q}`);
+        const data = await res.json();
+        if (!cancelled && data.success && data.profile) {
+          setProfile(data.profile);
+          const cfg = data.profile.avatarConfig;
+          setAvatarConfig(cfg && Object.keys(cfg).length ? cfg : DEFAULT_AVATAR);
         }
       } catch (err) {
-        console.error("Error fetching profile session stats:", err);
+        console.error('Error fetching profile:', err);
       }
-    }
-  };
 
-  useEffect(() => {
-    loadProfileStats();
-  }, [playerData, userEmail]);
-
-  const getUserCoins = () => {
-    if (playerData?.coins !== undefined && playerData?.coins !== null) {
-      return playerData.coins;
-    }
-    if (userEmail) {
+      // 2. Study sessions: total focus time + average session
       try {
-        const savedUser = localStorage.getItem(`user_${userEmail}`);
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          if (parsed.coins !== undefined) return parsed.coins;
+        const res = await fetch(`http://localhost:5000/api/get-all-sessions?email=${q}`);
+        const data = await res.json();
+        if (!cancelled && data.success && data.sessions) {
+          const sessions = data.sessions;
+          const totalMin = sessions.reduce((sum, s) => sum + parseInt(s.duration_minutes || 0, 10), 0);
+          setFocusTime({ hours: Math.floor(totalMin / 60), minutes: totalMin % 60 });
+          setAverageSessionText(sessions.length ? `${Math.round(totalMin / sessions.length)}m` : '0m');
         }
-      } catch (e) {}
-    }
-    return 100;
-  };
+      } catch (err) {
+        console.error('Error fetching profile session stats:', err);
+      }
+    })();
 
-  const totalCoins = getUserCoins();
-  const xpPercent = Math.min(100, Math.max(0, ((playerData?.currentXP || 0) / (playerData?.maxXP || 100)) * 100));
+    return () => { cancelled = true; };
+  }, [userEmail]);
 
-  // Get the badges the user has already claimed, from playerData.inventory
+  // Database profile wins; playerData is only the fallback while it loads
+  const player = profile ? { ...playerData, ...profile } : playerData;
+
+  const roomsCreatedCount = player?.roomsCreated ?? 0;
+  // Best streak = highest streak the account ever reached (never lower than the current streak)
+  const bestStreak = Math.max(player?.bestStreak ?? 0, player?.streak ?? 0);
+  const totalCoins = player?.coins ?? 0;
+  const xpPercent = Math.min(100, Math.max(0, ((player?.currentXP || 0) / (player?.maxXP || 100)) * 100));
+
+  // Get the badges the user has already claimed, from the account's inventory
   const getUnlockedBadges = () => {
-    // 1. Try to read it from playerData
-    let inventory = playerData?.inventory || [];
+    let inventory = player?.inventory || [];
 
-    // 2. If empty, try reading it from the active user's localStorage session
+    // Fallback: this account's saved session in localStorage
     if (inventory.length === 0 && userEmail) {
       try {
         const savedUserJson = localStorage.getItem(`user_${userEmail}`);
@@ -185,7 +156,7 @@ export default function UserProfile() {
             {/* LEVEL BADGE AT BOTTOM RIGHT OVERLAY */}
             <div className="absolute bottom-1 right-1 bg-theme-primary border-[2px] border-theme-dark px-2 py-0.5 text-center flex items-center justify-center rounded-[6px] shadow-md z-10">
               <span className="font-pressstart text-[10px] text-theme-dark font-bold">
-                {playerData?.level ?? 1}
+                {player?.level ?? 1}
               </span>
             </div>
           </div>
@@ -193,7 +164,7 @@ export default function UserProfile() {
           {/* USERNAME */}
           <div className="text-center flex flex-col gap-1">
             <h2 className="font-pressstart text-base sm:text-lg text-theme-dark">
-              {playerData?.username || 'ACORN_HERO'}
+              {player?.username || 'ACORN_HERO'}
             </h2>
           </div>
 
@@ -206,7 +177,7 @@ export default function UserProfile() {
               />
             </div>
             <span className="font-pressstart text-[9px] text-theme-dark">
-              {(playerData?.currentXP ?? 0).toLocaleString()}/{(playerData?.maxXP ?? 100).toLocaleString()} XP
+              {(player?.currentXP ?? 0).toLocaleString()}/{(player?.maxXP ?? 100).toLocaleString()} XP
             </span>
           </div>
         </div>
@@ -292,7 +263,7 @@ export default function UserProfile() {
                 </span>
               </div>
 
-              {/* CARD D: BEST STREAK */}
+              {/* CARD D: BEST STREAK (highest streak the account has ever reached) */}
               <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-3 flex flex-col items-center justify-between text-center gap-2 min-h-[110px]">
                 <svg className="w-6 h-6 text-theme-primary" viewBox="0 0 24 24">
                   <path d="M0 0h24v24H0z" fill="none" />
@@ -300,7 +271,7 @@ export default function UserProfile() {
                 </svg>
                 <span className="font-pixel text-[15px] sm:text-[24px] leading-4 text-theme-dark/70">Best Streak</span>
                 <span className="font-pressstart text-base sm:text-lg text-theme-dark">
-                  {playerData?.bestStreak ?? 0}
+                  {bestStreak}
                 </span>
               </div>
 

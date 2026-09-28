@@ -3,7 +3,16 @@ import { usePlayer } from '../context/PlayerContext';
 
 export default function UserStatistics() {
   const { playerData } = usePlayer();
-  const userEmail = playerData?.email || sessionStorage.getItem('active_user_email') || localStorage.getItem('active_user_email');
+
+  // localStorage first: playerData.email can still be the "hero@acorn.study"
+  // placeholder right after login, which would load the wrong account's data.
+  const userEmail =
+    localStorage.getItem('active_user_email') ||
+    sessionStorage.getItem('active_user_email') ||
+    playerData?.email;
+
+  // The account's real row from the database (see /api/get-profile in app.py)
+  const [profile, setProfile] = useState(null);
 
   const [focusTime, setFocusTime] = useState({ hours: 0, minutes: 0 });
   const [totalSessionsCount, setTotalSessionsCount] = useState(0);
@@ -19,6 +28,20 @@ export default function UserStatistics() {
     { day: 'Sat', count: 0 },
     { day: 'Sun', count: 0 },
   ]);
+
+  // Fetch streaks from the database profile (current streak + best streak)
+  const fetchProfileStreaks = async () => {
+    if (!userEmail) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(userEmail)}`);
+      const data = await response.json();
+      if (data.success && data.profile) {
+        setProfile(data.profile);
+      }
+    } catch (err) {
+      console.error("Error fetching profile streaks:", err);
+    }
+  };
 
   // Fetch real statistics from Supabase database
   const fetchDatabaseStats = async () => {
@@ -143,8 +166,14 @@ export default function UserStatistics() {
   };
 
   useEffect(() => {
+    fetchProfileStreaks();
     fetchDatabaseStats();
   }, [userEmail, playerData]);
+
+  // Database profile wins; playerData is only the fallback while it loads
+  const currentStreak = profile?.streak ?? playerData?.streakDays ?? 0;
+  // Best streak = highest streak the account ever reached (never lower than the current streak)
+  const bestStreak = Math.max(profile?.bestStreak ?? 0, playerData?.bestStreak ?? 0, currentStreak);
 
   const maxProductiveCount = Math.max(...productiveDays.map((d) => d.count), 1);
   const currentDayIndex = (new Date().getDay() + 6) % 7;
@@ -174,7 +203,7 @@ export default function UserStatistics() {
             </div>
             <div className="flex flex-col min-w-0 overflow-hidden">
               <span className="font-pressstart text-lg sm:text-2xl text-theme-dark font-bold leading-none truncate">
-                {playerData?.streakDays ?? 0} Days
+                {currentStreak} Days
               </span>
               <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
                 Current Streak
@@ -193,7 +222,7 @@ export default function UserStatistics() {
             </div>
             <div className="flex flex-col min-w-0 overflow-hidden">
               <span className="font-pressstart text-lg sm:text-2xl text-theme-dark font-bold leading-none truncate">
-                {playerData?.bestStreak ?? 0} Days
+                {bestStreak} Days
               </span>
               <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/70 uppercase tracking-tight mt-1 leading-tight truncate">
                 Best Streak

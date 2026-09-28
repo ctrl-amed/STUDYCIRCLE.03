@@ -53,17 +53,32 @@ mail = Mail(app)
 
 
 # =============================================================================
-# SHARED LEVEL CALCULATION HELPER
-# One single function that turns "total XP" into "Level + XP needed for next
-# level". Every endpoint that needs to know a user's level calls this same
-# function, so a user's level can never disagree between different parts of
-# the app (this is FIX 3 from the review).
+# SHARED HELPERS
 # =============================================================================
+
+def parse_json_field(value, default=None):
+    """
+    jsonb columns can come back as a dict/list OR as a JSON string (because
+    update_customization stores them with json.dumps). This handles both.
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return default
+    return value
+
 
 def calculate_level_from_total_xp(total_xp):
     """
     Works out a user's Level (1-50) and the XP needed for their next level,
     based on total accumulated XP.
+    One single function that turns "total XP" into "Level + XP needed for next
+    level". Every endpoint that needs to know a user's level calls this same
+    function, so a user's level can never disagree between different parts of
+    the app (this is FIX 3 from the review).
     """
     level = 1
     cumulative = 0
@@ -183,6 +198,8 @@ def signup():
                 'studentId': created_user.get('student_id', student_id),
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
+                'bestStreak': created_user.get('best_streak') or 0,
+                'roomsCreated': created_user.get('rooms_created') or 0,
                 'currentXP': created_user.get('current_xp', 0),
                 'maxXP': created_user.get('max_xp', 10000),
                 'level': created_user.get('level', 1),
@@ -247,13 +264,15 @@ def google_signup():
                     'studentId': user.get('student_id'),
                     'coins': user.get('coins', 100),
                     'streak': user.get('streak', 0),
+                    'bestStreak': user.get('best_streak') or 0,
+                    'roomsCreated': user.get('rooms_created') or 0,
                     'currentXP': user.get('current_xp', 0),
                     'maxXP': user.get('max_xp', 10000),
                     'level': user.get('level', 1),
                     'inventory': raw_inv or [],
-                    'avatarConfig': json.loads(user['avatar_config']) if user.get('avatar_config') else None,
-                    'roomConfig': json.loads(user['room_config']) if user.get('room_config') else None,
-                    'unlockedItems': json.loads(user['unlocked_items']) if user.get('unlocked_items') else None
+                    'avatarConfig': parse_json_field(user.get('avatar_config')),
+                    'roomConfig': parse_json_field(user.get('room_config')),
+                    'unlockedItems': parse_json_field(user.get('unlocked_items'))
                 }
             }), 200
 
@@ -299,6 +318,8 @@ def google_signup():
                 'studentId': created_user.get('student_id', student_id),
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
+                'bestStreak': created_user.get('best_streak') or 0,
+                'roomsCreated': created_user.get('rooms_created') or 0,
                 'inventory': raw_inv or []
             }
         }), 201
@@ -362,10 +383,15 @@ def login():
                 'studentId': user.get('student_id'),
                 'coins': user.get('coins', 100),
                 'streak': user.get('streak', 0),
+                'bestStreak': user.get('best_streak') or 0,
+                'roomsCreated': user.get('rooms_created') or 0,
                 'currentXP': user.get('current_xp', 0),
                 'maxXP': user.get('max_xp', 10000),
                 'level': user.get('level', 1),
-                'inventory': raw_inv or []
+                'inventory': raw_inv or [],
+                'avatarConfig': parse_json_field(user.get('avatar_config')),
+                'roomConfig': parse_json_field(user.get('room_config')),
+                'unlockedItems': parse_json_field(user.get('unlocked_items'))
             }
         }), 200
     except Exception as e:
@@ -581,9 +607,49 @@ def update_profile():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/get-profile', methods=['GET'])
+def get_profile():
+    """Returns the real database row for the Profile page (avatar, rooms created, best streak, etc.)."""
+    email = (request.args.get('email') or '').strip()
+    if not email:
+        return jsonify({'success': False, 'message': 'Email is required.'}), 400
+    try:
+        res = supabase.table('users').select(
+            'username, email, level, current_xp, max_xp, coins, streak, best_streak, rooms_created, avatar_config, inventory'
+        ).eq('email', email).execute()
+        if not res.data:
+            return jsonify({'success': False, 'message': 'User not found.'}), 404
+
+        u = res.data[0]
+        streak = int(u.get('streak') or 0)
+        stored_best = int(u.get('best_streak') or 0)
+        best = max(stored_best, streak)
+        if best > stored_best:  # self-heal old accounts
+            supabase.table('users').update({'best_streak': best}).eq('email', email).execute()
+
+        return jsonify({
+            'success': True,
+            'profile': {
+                'username': u.get('username'),
+                'email': u.get('email'),
+                'level': u.get('level') or 1,
+                'currentXP': u.get('current_xp') or 0,
+                'maxXP': u.get('max_xp') or 100,
+                'coins': u.get('coins') or 0,
+                'streak': streak,
+                'bestStreak': best,
+                'roomsCreated': int(u.get('rooms_created') or 0),
+                'avatarConfig': parse_json_field(u.get('avatar_config')),
+                'inventory': parse_json_field(u.get('inventory'), []),
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/update-customization', methods=['POST'])
 def update_customization():
-    data = request.json
+    data = request.json or {}
     email = data.get('email')
     avatar_config = data.get('avatarConfig')
     room_config = data.get('roomConfig')
@@ -593,15 +659,47 @@ def update_customization():
         return jsonify({"success": False, "message": "Email is required"}), 400
 
     try:
-        # Persist the customization to Supabase, keyed by the user's email
-        supabase.table('users').update({
-            "avatar_config": json.dumps(avatar_config) if avatar_config else None,
-            "room_config": json.dumps(room_config) if room_config else None,
-            "unlocked_items": json.dumps(unlocked_items) if unlocked_items else None
-        }).eq('email', email).execute()
+        # Pass direct Python dict/list objects to Supabase for jsonb columns
+        update_payload = {}
+        if avatar_config is not None:
+            update_payload["avatar_config"] = avatar_config if isinstance(avatar_config, dict) else json.loads(avatar_config)
+        if room_config is not None:
+            update_payload["room_config"] = room_config if isinstance(room_config, dict) else json.loads(room_config)
+        if unlocked_items is not None:
+            update_payload["unlocked_items"] = unlocked_items if isinstance(unlocked_items, list) else json.loads(unlocked_items)
+
+        res = supabase.table('users').update(update_payload).ilike('email', email.strip()).execute()
+        
+        if not res.data:
+            print(f"[CUSTOMIZATION ERROR] No user found with email: {email}")
+            return jsonify({"success": False, "message": f"User {email} not found"}), 404
 
         return jsonify({"success": True, "message": "Customization saved to database successfully!"}), 200
     except Exception as e:
+        print("[CUSTOMIZATION EXCEPTION]:", str(e))
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/update-coins', methods=['POST'])
+def update_coins_db():
+    data = request.json or {}
+    email = data.get('email')
+    coins = data.get('coins')
+
+    if not email or coins is None:
+        return jsonify({"success": False, "message": "Email and coins are required"}), 400
+
+    try:
+        res = supabase.table('users').update({
+            "coins": int(coins)
+        }).ilike('email', email.strip()).execute()
+
+        if not res.data:
+            return jsonify({"success": False, "message": f"User {email} not found"}), 404
+
+        return jsonify({"success": True, "message": "Coins updated in database successfully!"}), 200
+    except Exception as e:
+        print("[UPDATE COINS EXCEPTION]:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -1018,6 +1116,9 @@ def complete_focus_session():
                 # No freeze available — the streak resets
                 new_streak = 1
 
+        # Best streak = the highest streak this account has ever reached
+        new_best_streak = max(int(user.get('best_streak') or 0), new_streak)
+
         # --- unlock the 3rd streak-freeze slot the moment someone hits Level 20 ---
         if new_level >= 20 and current_level < 20:
             try:
@@ -1031,7 +1132,8 @@ def complete_focus_session():
             "coins": new_coins,
             "level": new_level,
             "max_xp": new_max_xp,
-            "streak": new_streak
+            "streak": new_streak,
+            "best_streak": new_best_streak
         }).eq('id', user_id).execute()
 
         # 2. Insert into study_sessions table, including feedback fields
@@ -1061,6 +1163,7 @@ def complete_focus_session():
             "level": new_level,
             "maxXP": new_max_xp,
             "streak": new_streak,
+            "bestStreak": new_best_streak,
             "streakFreezeUsed": freeze_used,
             "didLevelUp": new_level > current_level
         }), 200
@@ -1646,6 +1749,18 @@ def create_room():
         }
 
         res = supabase.table('rooms').insert(room_payload).execute()
+
+        # Count this room on the host's profile (users.rooms_created).
+        # Wrapped separately so a counter hiccup never fails the room creation itself.
+        try:
+            u = supabase.table('users').select('rooms_created').eq('username', host).execute()
+            if u.data:
+                supabase.table('users').update({
+                    'rooms_created': int(u.data[0].get('rooms_created') or 0) + 1
+                }).eq('username', host).execute()
+        except Exception as counter_err:
+            print("Could not increment rooms_created:", counter_err)
+
         return jsonify({'success': True, 'room': res.data[0]}), 201
 
     except Exception as e:
@@ -1799,26 +1914,6 @@ def handle_start_shared_room(data):
 # =============================================================================
 # PROGRESS, LEVELS & REWARDS
 # =============================================================================
-
-@app.route('/api/update-coins', methods=['POST'])
-def update_coins_db():
-    data = request.json
-    email = data.get('email')
-    coins = data.get('coins')
-
-    if not email or coins is None:
-        return jsonify({"success": False, "message": "Email and coins are required"}), 400
-
-    try:
-        response = supabase.table('users').update({
-            "coins": coins
-        }).eq('email', email).execute()
-
-        return jsonify({"success": True, "message": "Coins updated in database successfully!"}), 200
-    except Exception as e:
-        print("Error updating coins:", str(e))
-        return jsonify({"success": False, "message": str(e)}), 500
-
 
 @app.route('/api/update-progress', methods=['POST'])
 def update_progress():
@@ -2476,91 +2571,7 @@ def get_active_suspension(user_id):
         print("Error checking suspension table:", e)
         return None
 
-# =============================================================================
-# DEFINE ONLINE USERS
-# =============================================================================
 
-# In-memory presence tracker: { socket_id: {"email": str, "status": "ONLINE" | "STUDYING"} }
-online_users = {}
-
-def get_current_presence_summary():
-    """Calculates active online and currently studying counts."""
-    active_emails = set()
-    studying_emails = set()
-    
-    for info in online_users.values():
-        em = (info.get('email') or '').lower()
-        if em:
-            active_emails.add(em)
-            if info.get('status') == 'STUDYING':
-                studying_emails.add(em)
-                
-    return {
-        "active_users_count": len(active_emails),
-        "currently_studying_count": len(studying_emails),
-        "online_map": {info['email'].lower(): info['status'] for info in online_users.values() if info.get('email')}
-    }
-
-def broadcast_presence_to_admins():
-    """Broadcasts real-time counts and user states to IT Admin clients."""
-    summary = get_current_presence_summary()
-    socketio.emit('admin_presence_update', summary)
-
-@socketio.on('user_connected')
-def handle_user_connected(data):
-    email = (data.get('email') or '').strip().lower()
-    if email:
-        online_users[request.sid] = {
-            'email': email,
-            'status': 'ONLINE'
-        }
-        # Update public.users database status to online
-        try:
-            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
-        except Exception:
-            pass
-            
-        broadcast_presence_to_admins()
-
-@socketio.on('user_start_session')
-def handle_user_start_session(data):
-    if request.sid in online_users:
-        online_users[request.sid]['status'] = 'STUDYING'
-        email = online_users[request.sid]['email']
-        try:
-            supabase.table('users').update({'status': 'studying'}).eq('email', email).execute()
-        except Exception:
-            pass
-            
-        broadcast_presence_to_admins()
-
-@socketio.on('user_end_session')
-def handle_user_end_session(data):
-    if request.sid in online_users:
-        online_users[request.sid]['status'] = 'ONLINE'
-        email = online_users[request.sid]['email']
-        try:
-            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
-        except Exception:
-            pass
-            
-        broadcast_presence_to_admins()
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    if request.sid in online_users:
-        user_info = online_users.pop(request.sid)
-        email = user_info.get('email')
-        
-        # Check if the user has other tabs open
-        still_open = any(u.get('email') == email for u in online_users.values())
-        if not still_open and email:
-            try:
-                supabase.table('users').update({'status': 'offline'}).eq('email', email).execute()
-            except Exception:
-                pass
-                
-        broadcast_presence_to_admins()
 
 # =============================================================================
 # APP ENTRY POINT
