@@ -1502,6 +1502,7 @@ def ai_recommendation():
 # =============================================================================
 
 # In-memory tracker of who's currently in each room, for real-time sync
+active_room_sessions = {}
 room_members = {}
 
 
@@ -1512,6 +1513,18 @@ def on_join_room(data):
     avatar_config = data.get('avatar_config')
     status = data.get('status', 'ONLINE')
     level = data.get('level', 1)
+
+    try:
+        r = supabase.table('rooms').select('privacy, task_type, is_started, host').eq('name', room).execute()
+        if r.data:
+            info = r.data[0]
+            shared = info.get('privacy') == 'private' and info.get('task_type') == 'shared'
+            returning = any(m['username'] == username for m in room_members.get(room, []))
+            if shared and info.get('is_started') and info.get('host') != username and not returning:
+                emit('room_join_rejected', {'reason': 'This shared session has already started.'})
+                return
+    except Exception as e:
+        print("Join check error:", e)
 
     join_room(room)
 
@@ -1582,12 +1595,12 @@ def on_join_room(data):
             'totalFocusTime': total_focus_formatted
         })
 
-        emit('room_update', {
-        'members': room_members[room],
-        'room_config': room_cfg,
-        'active_session': active_room_sessions.get(room),
-        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
-    }, room=room)
+    emit('room_update', {
+            'members': room_members[room],
+            'room_config': room_cfg,
+            'active_session': active_room_sessions.get(room),
+            'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+        }, room=room)    
 
 
 @app.route('/api/rooms', methods=['GET'])
@@ -1757,27 +1770,30 @@ def handle_kick_room_member(data):
 @socketio.on('start_shared_room')
 def handle_start_shared_room(data):
     room_name = data.get('room')
-    session_payload = data.get('session')
-
-    # 1. Update the database: mark started, and persist the session's
-    #    technique/focus/break/tasks so it survives a server restart
+    session = data.get('session')
     try:
-        update_fields = {'is_started': True}
-        if session_payload:
-            update_fields['technique'] = session_payload.get('technique') or session_payload.get('techniqueName')
-            update_fields['focus_time'] = session_payload.get('focusTime') or session_payload.get('durationMinutes')
-            update_fields['break_time'] = session_payload.get('breakTime')
-            update_fields['tasks'] = session_payload.get('tasks', [])
-        supabase.table('rooms').update(update_fields).eq('name', room_name).execute()
+        r = supabase.table('rooms').select('host').eq('name', room_name).execute()
+        if not r.data or r.data[0].get('host') != data.get('username'):
+            emit('room_join_rejected', {'reason': 'Only the host can start the session.'})
+            return
     except Exception as e:
-        print("Error updating room start state:", e)
-
-    # 2. Keep the full payload in memory for anyone who joins mid-session
-    if session_payload:
-        active_room_sessions[room_name] = session_payload
-
-    # 3. Broadcast to everyone in the room that the session has started
-    socketio.emit('shared_room_started', {'room': room_name, 'session': session_payload}, room=room_name)
+        print("Host check error:", e)
+        return
+    if session:
+        session = dict(session)
+        session['startedAt'] = datetime.now(timezone.utc).isoformat()
+        active_room_sessions[room_name] = session
+    try:
+        upd = {'is_started': True}
+        if session:
+            upd['technique'] = session.get('techniqueName')
+            upd['focus_time'] = session.get('focusTime')
+            upd['break_time'] = session.get('breakTime')
+            upd['tasks'] = session.get('tasks', [])
+        supabase.table('rooms').update(upd).eq('name', room_name).execute()
+    except Exception as e:
+        print("Room update error:", e)
+    socketio.emit('shared_room_started', {'room': room_name, 'session': session}, room=room_name)
 
 
 # =============================================================================
@@ -2177,12 +2193,32 @@ def admin_get_users():
                     if u_id not in active_susp_by_user:
                         active_susp_by_user[u_id] = s
 
+        # Grab live memory presence
+        presence = get_current_presence_summary()
+        online_map = presence['online_map'] # { "email@umak.edu.ph": "ONLINE" | "STUDYING" }
+
         formatted_users = []
         for u in users:
             u_id = u.get('id')
             user_email = (u.get('email') or '').strip().lower()
             is_active_susp = u_id in active_susp_by_user
 
+            # Real-time state priority:
+            # 1. Suspended
+            # 2. Studying
+            # 3. Active (Online)
+            # 4. Inactive (Offline)
+            live_state = online_map.get(user_email)
+            if is_active_susp:
+                status_display = 'Suspended'
+            elif live_state == 'STUDYING':
+                status_display = 'Studying'
+            elif live_state == 'ONLINE':
+                status_display = 'Active'
+            else:
+                status_display = 'Inactive'
+
+            # Days since account creation
             created_time = u.get('created_at')
             days_ago = 0
             if created_time:
@@ -2196,16 +2232,17 @@ def admin_get_users():
                 'id': u_id,
                 'username': u.get('username') or 'User',
                 'email': u.get('email'),
-                'status': 'Suspended' if is_active_susp else ('Active' if (u.get('status') or '').lower() in ['active', 'online', 'studying'] else 'Inactive'),
+                'status': status_display,
                 'totalSessions': sessions_count_by_email.get(user_email, 0),
-                'lastActive': 'Today' if days_ago == 0 else f"{days_ago}d ago",
-                'daysAgo': days_ago,
-                'flags': flags_count_by_user.get(u_id, 0),  # Persistent lifetime count
+                'lastActive': 'Today' if (days_ago == 0 or live_state) else f"{days_ago}d ago",
+                'daysAgo': 0 if live_state else days_ago,
+                'flags': flags_count_by_user.get(u_id, 0),
                 'isSuspended': is_active_susp
             })
 
         total_users = len(formatted_users)
-        active_count = sum(1 for u in formatted_users if u['status'] == 'Active')
+        active_count = presence['active_users_count']
+        studying_count = presence['currently_studying_count']
         suspended_count = sum(1 for u in formatted_users if u['status'] == 'Suspended')
 
         return jsonify({
@@ -2214,10 +2251,11 @@ def admin_get_users():
             'metrics': {
                 'totalUsers': total_users,
                 'activeUsers': active_count,
-                'currentlyStudying': 0,
+                'currentlyStudying': studying_count,
                 'reportedUsers': suspended_count
             }
         }), 200
+    
     except Exception as e:
         print("ADMIN GET USERS ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -2361,7 +2399,93 @@ def get_active_suspension(user_id):
     except Exception as e:
         print("Error checking suspension table:", e)
         return None
+
+# =============================================================================
+# DEFINE ONLINE USERS
+# =============================================================================
+
+# In-memory presence tracker: { socket_id: {"email": str, "status": "ONLINE" | "STUDYING"} }
+online_users = {}
+
+def get_current_presence_summary():
+    """Calculates active online and currently studying counts."""
+    active_emails = set()
+    studying_emails = set()
     
+    for info in online_users.values():
+        em = (info.get('email') or '').lower()
+        if em:
+            active_emails.add(em)
+            if info.get('status') == 'STUDYING':
+                studying_emails.add(em)
+                
+    return {
+        "active_users_count": len(active_emails),
+        "currently_studying_count": len(studying_emails),
+        "online_map": {info['email'].lower(): info['status'] for info in online_users.values() if info.get('email')}
+    }
+
+def broadcast_presence_to_admins():
+    """Broadcasts real-time counts and user states to IT Admin clients."""
+    summary = get_current_presence_summary()
+    socketio.emit('admin_presence_update', summary)
+
+@socketio.on('user_connected')
+def handle_user_connected(data):
+    email = (data.get('email') or '').strip().lower()
+    if email:
+        online_users[request.sid] = {
+            'email': email,
+            'status': 'ONLINE'
+        }
+        # Update public.users database status to online
+        try:
+            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
+        except Exception:
+            pass
+            
+        broadcast_presence_to_admins()
+
+@socketio.on('user_start_session')
+def handle_user_start_session(data):
+    if request.sid in online_users:
+        online_users[request.sid]['status'] = 'STUDYING'
+        email = online_users[request.sid]['email']
+        try:
+            supabase.table('users').update({'status': 'studying'}).eq('email', email).execute()
+        except Exception:
+            pass
+            
+        broadcast_presence_to_admins()
+
+@socketio.on('user_end_session')
+def handle_user_end_session(data):
+    if request.sid in online_users:
+        online_users[request.sid]['status'] = 'ONLINE'
+        email = online_users[request.sid]['email']
+        try:
+            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
+        except Exception:
+            pass
+            
+        broadcast_presence_to_admins()
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    if request.sid in online_users:
+        user_info = online_users.pop(request.sid)
+        email = user_info.get('email')
+        
+        # Check if the user has other tabs open
+        still_open = any(u.get('email') == email for u in online_users.values())
+        if not still_open and email:
+            try:
+                supabase.table('users').update({'status': 'offline'}).eq('email', email).execute()
+            except Exception:
+                pass
+                
+        broadcast_presence_to_admins()
+
 # =============================================================================
 # APP ENTRY POINT
 # =============================================================================

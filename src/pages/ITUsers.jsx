@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 
 export default function ITUsers() {
   // Search and Filter State (Default dateRange set to 'All time')

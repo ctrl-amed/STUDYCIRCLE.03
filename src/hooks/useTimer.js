@@ -283,54 +283,25 @@ export function useTimer() {
   }, [isTimerRunning, isIdle, triggerNudgeModal]);
 
   // 2. BOUNDARY-QUEUED IDLE VERIFICATION LOGIC
-  useEffect(() => {
-    if (!isTimerRunning || !activeSession || !isFocusPhase) {
-      setIsIdle(false);
-      return;
-    }
-
+    useEffect(() => {
+    if (!isTimerRunning || !activeSession || !isFocusPhase) { setIsIdle(false); return; }
     const config = getTechniqueConfig();
-    const sessionElapsedMs = Date.now() - (sessionStartTimeRef.current || Date.now());
-
-    if (sessionElapsedMs < config.gracePeriodMs) {
-      return;
-    }
-
-    if (isCooldownActive || nudgeCount >= config.maxCap) {
-      return;
-    }
-
+    if (isCooldownActive || nudgeCount >= config.maxCap) return;
     let idleTimer;
-
-    const handleUserActivity = () => {
-      if (isIdle) {
-        triggerNudgeModal();
-      }
-
+    const startIdleTimer = () => {
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        setIsIdle(true);
-      }, 120000); // 2 minutes of actual inactivity before triggering nudge
+      const graceLeft = Math.max(0, config.gracePeriodMs - (Date.now() - (sessionStartTimeRef.current || Date.now())));
+      idleTimer = setTimeout(() => { setIsIdle(true); triggerNudgeModal(); }, Math.max(120000, graceLeft));
     };
-
-    window.addEventListener('mousemove', handleUserActivity);
-    window.addEventListener('keydown', handleUserActivity);
-
+    startIdleTimer();
+    window.addEventListener('mousemove', startIdleTimer);
+    window.addEventListener('keydown', startIdleTimer);
     return () => {
       clearTimeout(idleTimer);
-      window.removeEventListener('mousemove', handleUserActivity);
-      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('mousemove', startIdleTimer);
+      window.removeEventListener('keydown', startIdleTimer);
     };
-  }, [
-    isTimerRunning,
-    activeSession,
-    isFocusPhase,
-    isIdle,
-    isCooldownActive,
-    nudgeCount,
-    getTechniqueConfig,
-    triggerNudgeModal,
-  ]);
+  }, [isTimerRunning, activeSession, isFocusPhase, isCooldownActive, nudgeCount, getTechniqueConfig, triggerNudgeModal]);
 
   // Handler when user clicks "YES, I'M HERE" before timer reaches 0
   const handleConfirmNudge = useCallback(() => {
@@ -606,6 +577,31 @@ export function useTimer() {
   };
 
   const toggleFullscreen = () => setIsWidgetFullscreen((prev) => !prev);
+
+    const startSyncedSession = useCallback((s) => {
+    if (!s) return;
+    const focusMins = parseNum(s.focusTime || s.durationMinutes || s.duration, 25);
+    const breakMins = parseNum(s.breakTime, 5);
+    const startedAtMs = s.startedAt ? new Date(s.startedAt).getTime() : Date.now();
+    const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+    const synced = {
+      ...s,
+      workType: s.workType || s.activity || 'Focus Session',
+      techniqueName: s.techniqueName || s.technique || 'Pomodoro',
+      focusTime: focusMins,
+      breakTime: breakMins,
+    };
+    localStorage.setItem('activeSession', JSON.stringify(synced));
+    setActiveSession(synced);
+    setTotalSessions(parseNum(s.sessionCount, 1));
+    setRemainingTimeSec(Math.max(1, focusMins * 60 - elapsed));
+    setIsFocusPhase(true);
+    setCurrentSessionCount(0);
+    setIsTimerRunning(true);
+    sessionStartTimeRef.current = startedAtMs;
+    setNudgeCount(0); setIsIdle(false); setShowNudgeModal(false); setIsCooldownActive(false);
+    setTasksList((s.tasks || []).map((t) => (typeof t === 'string' ? { text: t, completed: false } : t)));
+  }, []);
 
   return {
     activeSession,

@@ -367,6 +367,18 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const isCurrentUserHost = (currentHostMember && currentHostMember.username === player.username) || 
                           (roomData.hostId === player.username);
 
+    const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
+
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e?.data?.type === 'SESSION_CREATED' && e.data.session && isMultiplayer && isSharedRoom && isCurrentUserHost) {
+        handleHostStartSession(e.data.session);
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [isMultiplayer, isSharedRoom, isCurrentUserHost, roomData.roomName, player.username]);                        
+
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
 
@@ -453,9 +465,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   };
 
-  const handleHostStartSession = () => {
+    const handleHostStartSession = (sessionPayload) => {
     if (socketRef.current && isMultiplayer) {
-      socketRef.current.emit('start_shared_room', { room: roomData.roomName });
+      socketRef.current.emit('start_shared_room', {
+        room: roomData.roomName,
+        username: player.username,
+        session: sessionPayload,
+      });
     }
   };
 
@@ -631,8 +647,14 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       });
 
       // Listener para sa pag-start ng shared room session (para mag-update ang state sa members)
-      socketRef.current.on('shared_room_started', () => {
+            socketRef.current.on('shared_room_started', (data) => {
         setRoomData((prev) => ({ ...prev, isStarted: true }));
+        if (data?.session) timer.startSyncedSession(data.session);
+      });
+      socketRef.current.on('room_join_rejected', (data) => {
+        alert(data?.reason || "You can't join this room.");
+        localStorage.removeItem('activeRoomSession');
+        navigate('/dashboard');
       });
 
       // Makinig kung ikaw ay na-kick ng host
