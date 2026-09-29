@@ -2141,6 +2141,15 @@ def ai_recommendation():
 
 # =============================================================================
 # REAL-TIME MULTIPLAYER (Socket.IO events + rooms)
+#
+# Room lifecycle:
+#   active   = at least one person is inside
+#   inactive = nobody inside (still visible to players)
+#   closed   = hidden from players. A room closes when:
+#                - public / private-individual: empty for 5 minutes
+#                - private-shared: the host's synced session finished, after a
+#                  short grace period (SHARED_CLOSE_GRACE_SECONDS) so players can leave
+#                  (a shared room that stays empty for 5 minutes also closes)
 # =============================================================================
 
 # In-memory tracker of who's currently in each room, for real-time sync
@@ -2156,6 +2165,9 @@ sid_to_room = {}
 
 INACTIVE_ROOM_MINUTES = 5
 EMPTY_ROOM_GRACE_SECONDS = INACTIVE_ROOM_MINUTES * 60
+
+SHARED_CLOSE_GRACE_SECONDS = 30
+room_close_at = {}  # private-shared room -> time.time() when it will be closed
 
 
 def now_iso():
@@ -2176,18 +2188,8 @@ def get_live_count(room_name):
 
 
 def is_room_active(room):
-    """Active = someone inside, OR empty for less than INACTIVE_ROOM_MINUTES."""
-    name = room.get('name')
-    if get_live_count(name) > 0:
-        return True
-    last = room_empty_since.get(name)
-    if last is None:
-        try:
-            dt = datetime.fromisoformat(str(room.get('created_at')).replace('Z', '+00:00'))
-            last = dt.timestamp()
-        except Exception:
-            last = 0
-    return (time.time() - last) < EMPTY_ROOM_GRACE_SECONDS
+    """Active = someone is inside. Inactive = empty but not closed yet."""
+    return get_live_count(room.get('name')) > 0
 
 
 def note_if_room_empty(room):
@@ -2225,6 +2227,98 @@ def broadcast_room_counts(room_name=None):
             print("Could not sync room count:", e)
 
 
+# ---- Room closing ----------------------------------------------------------
+
+def room_empty_for(room_row):
+    """Seconds this room has had nobody inside."""
+    name = room_row.get('name')
+    since = room_empty_since.get(name)
+    if since is None:  # nobody ever joined: count from creation
+        try:
+            since = datetime.fromisoformat(str(room_row.get('created_at')).replace('Z', '+00:00')).timestamp()
+        except Exception:
+            since = time.time()  # can't tell, so don't close
+    return time.time() - since
+
+
+def close_room(room_name, reason):
+    """Marks the room closed (hidden from players) and tells everyone inside."""
+    try:
+        supabase.table('rooms').update({
+            'is_closed': True,
+            'status': 'closed',
+            'closed_reason': reason,
+            'closed_at': now_iso(),
+            'current_members': 0,
+        }).eq('name', room_name).execute()
+    except Exception as e:
+        print("Could not close room:", e)
+        return
+
+    socketio.emit('room_closed', {'room': room_name, 'reason': reason}, room=room_name)
+
+    for store in (room_members, active_room_sessions, timer_states,
+                  session_participants, room_empty_since, room_close_at):
+        store.pop(room_name, None)
+
+    socketio.emit('rooms_changed')
+    print(f"[ROOM CLOSED] {room_name}: {reason}")
+
+
+def sweep_rooms():
+    res = supabase.table('rooms').select('name, created_at, status').eq('is_closed', False).execute()
+    now = time.time()
+    for r in (res.data or []):
+        if r.get('status') in ('suspended', 'closed'):
+            continue
+        name = r['name']
+        live = get_live_count(name)
+
+        # Private-shared room whose session already finished
+        if name in room_close_at:
+            if live == 0 or now >= room_close_at[name]:
+                close_room(name, 'The session has ended, so this room is now closed.')
+            continue
+
+        if live > 0:
+            continue
+
+        # Public / private-individual (and abandoned shared rooms): empty for 5 min -> closed
+        if room_empty_for(r) >= EMPTY_ROOM_GRACE_SECONDS:
+            close_room(name, 'This room was closed after 5 minutes without anyone inside.')
+
+
+def room_lifecycle_loop():
+    while True:
+        socketio.sleep(10)
+        try:
+            sweep_rooms()
+        except Exception as e:
+            print("Room sweep error:", e)
+
+
+# Started lazily on the first request/connection. With debug=True this file runs
+# twice (a watcher process and the real server); only the real server knows who is
+# inside a room, so only it may sweep. The watcher never receives requests.
+_lifecycle_started = False
+
+def ensure_room_lifecycle_worker():
+    global _lifecycle_started
+    if not _lifecycle_started:
+        _lifecycle_started = True
+        socketio.start_background_task(room_lifecycle_loop)
+
+
+@app.before_request
+def _start_workers_on_request():
+    ensure_room_lifecycle_worker()
+
+
+@socketio.on('connect')
+def _start_workers_on_connect():
+    ensure_room_lifecycle_worker()
+
+
 # Server just started, so nobody is inside any room yet
 try:
     supabase.table('rooms').update({'current_members': 0}).neq('id', 0).execute()
@@ -2247,7 +2341,10 @@ def on_join_room(data):
         if r.data:
             info = r.data[0]
             if is_room_closed(info):
-                emit('room_join_rejected', {'reason': 'This room has been suspended.'})
+                emit('room_join_rejected', {
+                    'reason': 'This room has been suspended.' if info.get('status') == 'suspended'
+                              else 'This room has been closed.'
+                })
                 return
             returning = any(m['username'] == username for m in room_members.get(room, []))
             was_in_session = username in session_participants.get(room, set())
@@ -2356,7 +2453,7 @@ def on_join_room(data):
 def get_rooms():
     try:
         res = supabase.table('rooms').select('*').execute()
-        rooms = [r for r in (res.data or []) if not is_room_closed(r)]   # suspended = hidden
+        rooms = [r for r in (res.data or []) if not is_room_closed(r)]   # closed / suspended = hidden
         for r in rooms:
             r['current_members'] = get_live_count(r['name'])
             r['is_active'] = is_room_active(r)
@@ -2620,6 +2717,34 @@ def handle_host_timer_update(data):
 
     timer_states[room] = state
     emit('timer_state', {'timer': state, 'serverNow': now_iso()}, room=room, include_self=False)
+
+
+@socketio.on('shared_session_finished')
+def handle_shared_session_finished(data):
+    """Host says the whole synced session is done: give everyone a short grace
+    period to leave, then the sweeper closes the room."""
+    room = data.get('room')
+    username = data.get('username')
+    try:
+        r = supabase.table('rooms').select('host, privacy, task_type').eq('name', room).execute()
+        info = r.data[0] if r.data else None
+        if not info or info.get('host') != username:
+            return
+        if not (info.get('privacy') == 'private' and info.get('task_type') == 'shared'):
+            return
+    except Exception as e:
+        print("Finish check error:", e)
+        return
+
+    if room in room_close_at:
+        return  # already scheduled
+
+    room_close_at[room] = time.time() + SHARED_CLOSE_GRACE_SECONDS
+    socketio.emit('room_closing', {
+        'room': room,
+        'seconds': SHARED_CLOSE_GRACE_SECONDS,
+        'reason': 'Everyone has finished the session. This room will close soon, so you can leave now.',
+    }, room=room)
 
 
 # =============================================================================
@@ -3235,19 +3360,29 @@ def admin_get_users():
 @app.route('/api/itadmin/rooms', methods=['GET'])
 @require_admin()
 def admin_get_rooms():
-    """Manage Rooms page: live member counts + Active / Inactive metrics.
-    Active   = room currently has at least 1 person inside.
-    Inactive = room has nobody inside."""
+    """Manage Rooms page: live member counts + Active / Inactive / Closed metrics.
+    Active    = room currently has at least 1 person inside.
+    Inactive  = room has nobody inside (not closed yet).
+    Closed    = closed automatically (5 min empty / session finished).
+    Suspended = closed by an administrator."""
     try:
         res = supabase.table('rooms').select('*').order('created_at', desc=True).execute()
         rooms = res.data or []
 
         for r in rooms:
             r['current_members'] = get_live_count(r['name'])
-            r['is_active'] = is_room_active(r) and not is_room_closed(r)
-            r['status_display'] = 'Suspended' if is_room_closed(r) else ('Active' if r['is_active'] else 'Inactive')
+            closed = is_room_closed(r)
+            r['is_active'] = (not closed) and is_room_active(r)
+            if r.get('status') == 'suspended':
+                r['status_display'] = 'Suspended'
+            elif closed:
+                r['status_display'] = 'Closed'
+            else:
+                r['status_display'] = 'Active' if r['is_active'] else 'Inactive'
 
-        active = sum(1 for r in rooms if r['is_active'])
+        active = sum(1 for r in rooms if r['status_display'] == 'Active')
+        inactive = sum(1 for r in rooms if r['status_display'] == 'Inactive')
+        closed_count = sum(1 for r in rooms if r['status_display'] == 'Closed')
 
         return jsonify({
             'success': True,
@@ -3255,7 +3390,8 @@ def admin_get_rooms():
             'metrics': {
                 'totalRooms': len(rooms),
                 'activeRooms': active,
-                'inactiveRooms': len(rooms) - active
+                'inactiveRooms': inactive,
+                'closedRooms': closed_count
             }
         }), 200
     except Exception as e:
@@ -3420,35 +3556,251 @@ def admin_suspend_user():
             'message': f"Suspension logged for {target_email}",
             'suspended_until': expiration_iso
         }), 200
+    except Exception as e:
+        print("ADMIN SUSPEND ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
 
-        # 1. Deactivate any prior active suspensions for this user
-        supabase.table('suspensions').update({'is_active': False}).eq('user_id', user_id).execute()
 
-        # 2. Insert new record in the dedicated suspensions table
-        #    (admin name comes from the login token, not the frontend)
-        supabase.table('suspensions').insert({
-            'user_id': user_id,
-            'email': target_email,
-            'reason': reason,
-            'duration': duration,
-            'internal_notes': notes,
-            'suspended_until': expiration_iso,
-            'is_active': True,
-            'admin_username': request.admin['username']
-        }).execute()
+# =============================================================================
+# IT ADMIN DASHBOARD  ->  GET /api/itadmin/dashboard
+#
+# Query params:
+#   range = Today | Yesterday | Last 7 days | Last 30 days | Custom
+#   start / end = YYYY-MM-DD (only when range=Custom, both inclusive, Philippine time)
+# =============================================================================
+from bisect import bisect_right
 
-        # Keep user status updated
-        supabase.table('users').update({
-            'status': 'Suspended'
-        }).eq('id', user_id).execute()
+
+def _fetch_all(build, page=1000, cap=20000):
+    """Supabase returns at most 1000 rows per request, so page through them."""
+    rows, offset = [], 0
+    while offset < cap:
+        chunk = build().range(offset, offset + page - 1).execute().data or []
+        rows.extend(chunk)
+        if len(chunk) < page:
+            break
+        offset += page
+    return rows
+
+
+def _iso_utc(dt):
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def _count_between(table, col, start=None, end=None):
+    q = supabase.table(table).select('id', count='exact')
+    if start is not None:
+        q = q.gte(col, _iso_utc(start))
+    if end is not None:
+        q = q.lt(col, _iso_utc(end))
+    return q.limit(1).execute().count or 0
+
+
+def _pct_change(cur, prev):
+    if not prev:
+        return None          # nothing to compare against -> frontend shows "—"
+    return round((cur - prev) / prev * 100)
+
+
+def _resolve_range(range_key, start_str, end_str):
+    """Returns (start, end) as Philippine-time datetimes. end is exclusive."""
+    now = datetime.now(PHT)
+    today0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if range_key == 'Yesterday':
+        return today0 - timedelta(days=1), today0
+    if range_key == 'Last 7 days':
+        return today0 - timedelta(days=6), today0 + timedelta(days=1)
+    if range_key == 'Last 30 days':
+        return today0 - timedelta(days=29), today0 + timedelta(days=1)
+    if range_key == 'Custom':
+        s = datetime.strptime(start_str, '%Y-%m-%d').replace(tzinfo=PHT)
+        e = datetime.strptime(end_str, '%Y-%m-%d').replace(tzinfo=PHT) + timedelta(days=1)
+        if e <= s:
+            raise ValueError('End date must not be before start date.')
+        return s, e
+    return today0, today0 + timedelta(days=1)      # Today
+
+
+def _build_buckets(start, end):
+    """Chart x-axis: 3-hour slots for one day, daily up to 14 days, else 4 equal slices."""
+    total_days = round((end - start).total_seconds() / 86400)
+    buckets = []                                    # (bucket_start, label)
+
+    if total_days <= 1:
+        for i in range(8):
+            s = start + timedelta(hours=3 * i)
+            buckets.append((s, s.strftime('%I %p').lstrip('0')))
+    elif total_days <= 14:
+        fmt = '%a' if total_days <= 7 else '%b %d'
+        for i in range(total_days):
+            s = start + timedelta(days=i)
+            buckets.append((s, s.strftime(fmt)))
+    else:
+        span = (end - start).total_seconds()
+        for i in range(4):
+            s = start + timedelta(seconds=span * i / 4)
+            buckets.append((s, s.strftime('%b %d')))
+    return buckets
+
+
+def _alert_title(target_type, details):
+    if target_type == 'room':
+        return details.get('roomName') or details.get('host') or 'Room report'
+    return (details.get('username') or details.get('reportedUsername')
+            or details.get('sender') or 'User report')
+
+
+def _live_status(raw):
+    s = str(raw or '').lower()
+    if 'break' in s:
+        return 'Break'
+    if 'left' in s:
+        return 'Left Room'
+    return 'Studying'
+
+
+@app.route('/api/itadmin/dashboard', methods=['GET'])
+@require_admin()
+def admin_dashboard():
+    try:
+        range_key = request.args.get('range', 'Today')
+        try:
+            start, end = _resolve_range(range_key, request.args.get('start'), request.args.get('end'))
+        except (ValueError, TypeError) as ve:
+            return jsonify({'success': False, 'error': f'Invalid date range: {ve}'}), 400
+
+        length = end - start
+        prev_start, prev_end = start - length, start
+        now_pht = datetime.now(PHT)
+        includes_now = start <= now_pht < end
+
+        # ---------------- Metric cards ----------------
+        users_cur = _count_between('users', 'created_at', end=end)
+        users_prev = _count_between('users', 'created_at', end=start)
+
+        # Rooms: created in the period, plus rooms that have people inside right now
+        rooms_in_period = supabase.table('rooms').select('name') \
+            .gte('created_at', _iso_utc(start)).lt('created_at', _iso_utc(end)).execute().data or []
+        room_names = {r['name'] for r in rooms_in_period}
+        if includes_now:
+            room_names |= {n for n, m in room_members.items() if m}
+        rooms_prev = _count_between('rooms', 'created_at', prev_start, prev_end)
+
+        sessions = _fetch_all(lambda: supabase.table('study_sessions')
+                              .select('email, created_at, task_status')
+                              .gte('created_at', _iso_utc(start))
+                              .lt('created_at', _iso_utc(end))
+                              .order('created_at'))
+        sessions_prev = _count_between('study_sessions', 'created_at', prev_start, prev_end)
+
+        reports_cur = _count_between('reports', 'created_at', start, end)
+        reports_prev = _count_between('reports', 'created_at', prev_start, prev_end)
+
+        metrics = {
+            'totalUsers':         {'value': users_cur,          'changePct': _pct_change(users_cur, users_prev)},
+            'activeRooms':        {'value': len(room_names),    'changePct': _pct_change(len(room_names), rooms_prev)},
+            'studySessions':      {'value': len(sessions),      'changePct': _pct_change(len(sessions), sessions_prev)},
+            'reportedActivities': {'value': reports_cur,        'changePct': _pct_change(reports_cur, reports_prev)},
+        }
+
+        # ---------------- Line chart ----------------
+        buckets = _build_buckets(start, end)
+        starts = [b[0] for b in buckets]
+        total = [0] * len(buckets)
+        completed = [0] * len(buckets)
+        users_seen = [set() for _ in buckets]
+
+        for s in sessions:
+            dt = _to_pht(s.get('created_at'))
+            if not dt:
+                continue
+            idx = bisect_right(starts, dt) - 1
+            if idx < 0:
+                continue
+            total[idx] += 1
+            if (s.get('task_status') or '').strip().lower() == 'completed':
+                completed[idx] += 1
+            if s.get('email'):
+                users_seen[idx].add(s['email'].strip().lower())
+
+        chart = {
+            'labels': [b[1] for b in buckets],
+            'total': total,
+            'completed': completed,
+            'active': [len(u) for u in users_seen],       # distinct users per slot
+        }
+
+        # ---------------- Recent alerts (latest reports) ----------------
+        rep_rows = supabase.table('reports') \
+            .select('id, ticket_id, target_type, target_details, reason, status, created_at') \
+            .order('created_at', desc=True).limit(50).execute().data or []
+
+        alerts = []
+        for r in rep_rows:
+            details = parse_json_field(r.get('target_details'), {}) or {}
+            alerts.append({
+                'id': r['id'],
+                'ticketId': r.get('ticket_id'),
+                'type': r.get('target_type'),                 # 'room' | 'user' | 'message'
+                'title': _alert_title(r.get('target_type'), details),
+                'reason': r.get('reason') or '',
+                'status': r.get('status'),
+                'createdAt': r.get('created_at'),
+            })
+
+        # ---------------- User activity (live + recent) ----------------
+        activity = []
+
+        # Live: people currently inside a study room
+        for room_name, members in room_members.items():
+            for m in members:
+                activity.append({
+                    'id': f"live-{room_name}-{m['username']}",
+                    'user': m['username'],
+                    'room': room_name,
+                    'status': _live_status(m.get('status')),
+                    'createdAt': None,
+                    'live': True,
+                })
+
+        # Recent: latest finished sessions
+        recent = supabase.table('study_sessions') \
+            .select('id, email, activity_name, task_status, created_at, room_id') \
+            .order('created_at', desc=True).limit(30).execute().data or []
+
+        emails = list({(s.get('email') or '').strip() for s in recent if s.get('email')})
+        room_ids = list({s['room_id'] for s in recent if s.get('room_id') is not None})
+        name_by_email, room_by_id = {}, {}
+        if emails:
+            u = supabase.table('users').select('email, username').in_('email', emails).execute().data or []
+            name_by_email = {x['email'].strip().lower(): x['username'] for x in u}
+        if room_ids:
+            rr = supabase.table('rooms').select('id, name').in_('id', room_ids).execute().data or []
+            room_by_id = {x['id']: x['name'] for x in rr}
+
+        for s in recent:
+            em = (s.get('email') or '').strip().lower()
+            activity.append({
+                'id': f"sess-{s['id']}",
+                'user': name_by_email.get(em) or (em.split('@')[0] if em else 'User'),
+                'room': room_by_id.get(s.get('room_id')) or s.get('activity_name') or 'Focus Session',
+                'status': s.get('task_status') or 'Completed',
+                'createdAt': s.get('created_at'),
+                'live': False,
+            })
 
         return jsonify({
             'success': True,
-            'message': f"Suspension logged for {target_email}",
-            'suspended_until': expiration_iso
+            'range': range_key,
+            'metrics': metrics,
+            'chart': chart,
+            'alerts': alerts,
+            'activity': activity,
         }), 200
+
     except Exception as e:
-        print("ADMIN SUSPEND ERROR:", str(e))
+        print("ADMIN DASHBOARD ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

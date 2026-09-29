@@ -36,6 +36,9 @@ const fmtDate = (iso) =>
       })
     : 'N/A';
 
+// "Suspended" = closed by an administrator, "Closed" = closed automatically
+const isClosedStatus = (status) => ['suspended', 'closed'].includes(String(status).toLowerCase());
+
 export default function ITRooms() {
   // Search and Filter State (Default dateRange set to 'All time')
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,7 +80,7 @@ export default function ITRooms() {
   const fetchRooms = async (showLoader = false) => {
     if (showLoader) setIsLoadingRooms(true);
     try {
-      const res = await fetch(`${API}/api/itadmin/rooms?${rangeQuery(dateRangeRef.current)}`);
+      const res = await adminFetch(`${API}/api/itadmin/rooms?${rangeQuery(dateRangeRef.current)}`);
       const data = await res.json();
       if (data.success) {
         setRoomsList(
@@ -85,10 +88,12 @@ export default function ITRooms() {
             id: r.id,
             roomName: r.name,
             host: r.host,
-            status: r.status_display, // Active | Inactive | Suspended (closed)
+            status: r.status_display, // Active | Inactive | Closed | Suspended
+            closedReason: r.closed_reason || '',
             privacy: r.privacy === 'private' ? 'Private' : 'Public',
             dateCreated: fmtDate(r.created_at),
-            capacity: r.max_members ?? 4,
+            currentMembers: r.current_members ?? 0,
+            maxMembers: r.max_members ?? 4,
           }))
         );
         setServerMetrics(data.metrics);
@@ -109,18 +114,18 @@ export default function ITRooms() {
   useEffect(() => {
     const socket = io(API);
 
-    // live member counts -> flip Active/Inactive without a refetch
+    // live member counts -> flip Active/Inactive and the x/y capacity without a refetch
     socket.on('rooms_counts', (counts) => {
       setRoomsList((prev) =>
-        prev.map((r) =>
-          r.status === 'Suspended'
-            ? r
-            : { ...r, status: (counts[r.roomName] || 0) > 0 ? 'Active' : 'Inactive' }
-        )
+        prev.map((r) => {
+          if (isClosedStatus(r.status)) return r;
+          const n = counts[r.roomName] || 0;
+          return { ...r, currentMembers: n, status: n > 0 ? 'Active' : 'Inactive' };
+        })
       );
     });
 
-    // room created / closed / new report about a room
+    // room created / auto-closed / closed by an admin / new report about a room
     socket.on('rooms_changed', () => fetchRooms());
     socket.on('admin_refresh', ({ scope }) => {
       if (scope === 'rooms' || scope === 'reports') fetchRooms();
@@ -173,11 +178,11 @@ export default function ITRooms() {
   const getTimeframeLabel = () => {
     switch (dateRange) {
       case 'Yesterday':
-        return 'vs. yesterday';
+        return 'vs. day before';
       case 'Last 7 days':
-        return 'vs. last week';
+        return 'vs. previous 7 days';
       case 'Last 30 days':
-        return 'vs. last month';
+        return 'vs. previous 30 days';
       default:
         if (dateRange.includes('to')) {
           return 'vs. previous period';
@@ -202,9 +207,9 @@ export default function ITRooms() {
 
   // Filtering rooms based on search query and status (date range is applied by the backend)
   const filteredRooms = roomsList.filter((room) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      room.roomName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      room.host.toLowerCase().includes(searchQuery.toLowerCase());
+      room.roomName.toLowerCase().includes(q) || room.host.toLowerCase().includes(q);
 
     const matchesStatus =
       statusFilter === 'All Status' || room.status.toLowerCase() === statusFilter.toLowerCase();
@@ -230,23 +235,26 @@ export default function ITRooms() {
     if (!roomToClose || isClosing) return;
     setIsClosing(true);
     try {
-      const res = await fetch(`${API}/api/itadmin/rooms/${roomToClose.id}/close`, {
+      const res = await adminFetch(`${API}/api/itadmin/rooms/${roomToClose.id}/close`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: closeReason, notes: internalNotes }),
       });
       const data = await res.json();
 
       if (data.success) {
         setRoomsList((prev) =>
-          prev.map((r) => (r.id === roomToClose.id ? { ...r, status: 'Suspended' } : r))
+          prev.map((r) =>
+            r.id === roomToClose.id
+              ? { ...r, status: 'Suspended', closedReason: closeReason, currentMembers: 0 }
+              : r
+          )
         );
         setCloseSuccessData({
           roomName: roomToClose.roomName,
           host: roomToClose.host,
         });
       } else {
-        alert(data.message || 'Failed to close room.');
+        alert(data.error || data.message || 'Failed to close room.');
       }
     } catch (e) {
       console.error(e);
@@ -257,16 +265,20 @@ export default function ITRooms() {
   };
 
   // Helper for status badge styling
-  const renderRoomStatusBadge = (status) => {
+  const renderRoomStatusBadge = (room) => {
+    const status = room.status;
     let dotColor = 'bg-theme-safe';
-    if (status.toLowerCase() === 'inactive') {
+    const s = status.toLowerCase();
+    if (s === 'inactive') {
       dotColor = 'bg-theme-dark/40';
-    } else if (status.toLowerCase() === 'suspended') {
+    } else if (s === 'suspended') {
       dotColor = 'bg-theme-danger';
+    } else if (s === 'closed') {
+      dotColor = 'bg-theme-dark';
     }
 
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2" title={room.closedReason || undefined}>
         <span className={`w-2.5 h-2.5 rounded-full ${dotColor} inline-block shrink-0`} />
         <span className="font-pixel text-[15px] sm:text-[20px] text-theme-dark">{status}</span>
       </div>
@@ -275,10 +287,10 @@ export default function ITRooms() {
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
-      
+
       {/* ROW 1: COMBINED SEARCH BAR AND DROPDOWNS IN A SINGLE RESPONSIVE ROW */}
       <div className="w-full flex flex-col md:flex-row items-center gap-3">
-        
+
         {/* Search Bar Container */}
         <div className="w-full md:flex-1 flex items-center gap-3 bg-theme-surface border-2 border-theme-dark px-4 py-1 rounded-[12px] shadow-md">
           <svg className="w-6 h-6 text-theme-dark/60 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -292,14 +304,14 @@ export default function ITRooms() {
               setSearchQuery(e.target.value);
               setCurrentPage(1); // reset to page 1 on search
             }}
-            placeholder="Search room by room..."
+            placeholder="Search by room name or host..."
             className="font-pixel text-[16px] sm:text-[20px] text-theme-dark bg-transparent outline-none w-full"
           />
         </div>
 
         {/* Filters Group (Status & Date Dropdowns with Uniform Width) */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          
+
           {/* Status Dropdown */}
           <select
             value={statusFilter}
@@ -312,6 +324,7 @@ export default function ITRooms() {
             <option value="All Status">All Status</option>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
+            <option value="Closed">Closed</option>
             <option value="Suspended">Suspended</option>
           </select>
 
@@ -335,7 +348,7 @@ export default function ITRooms() {
 
       {/* ROW 2: 4 METRIC CARDS OVERVIEW */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+
         {/* CARD 1: Total Rooms */}
         <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-5 shadow-md flex items-start gap-4 relative">
           <div className="w-12 h-12 rounded-full bg-theme-muted border border-theme-dark flex items-center justify-center shrink-0 text-theme-primary self-start">
@@ -369,16 +382,6 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">ACTIVE ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.activeRooms.value}</h3>
-            {showTrend(metricsData.activeRooms) && (
-              <div className="flex items-center gap-1.5 mt-3 justify-end">
-                <span className={`font-pressstart text-[9px] ${metricsData.activeRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
-                  {metricsData.activeRooms.changeNum}
-                </span>
-                <span className="font-pressstart text-[7px] text-theme-dark">
-                  {getTimeframeLabel()}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -393,16 +396,6 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">INACTIVE ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.inactiveRooms.value}</h3>
-            {showTrend(metricsData.inactiveRooms) && (
-              <div className="flex items-center gap-1.5 mt-3 justify-end">
-                <span className={`font-pressstart text-[9px] ${metricsData.inactiveRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
-                  {metricsData.inactiveRooms.changeNum}
-                </span>
-                <span className="font-pressstart text-[7px] text-theme-dark">
-                  {getTimeframeLabel()}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -433,7 +426,7 @@ export default function ITRooms() {
 
       {/* ROOM MANAGEMENT DATA TABLE & LEDGER CONTAINER */}
       <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-md flex flex-col justify-between gap-6">
-        
+
         {/* Table Wrapper */}
         <div className="overflow-x-auto w-full rounded-[12px]">
           <table className="w-full text-center border-collapse min-w-[750px]">
@@ -461,7 +454,7 @@ export default function ITRooms() {
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-left">{room.roomName}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark truncate max-w-[200px] text-left">{room.host}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-left">
-                      <div className="inline-flex w-full">{renderRoomStatusBadge(room.status)}</div>
+                      <div className="inline-flex w-full">{renderRoomStatusBadge(room)}</div>
                     </td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">
                       <span className="font-pixel text-[15px] sm:text-[20px] px-2 py-1">
@@ -469,10 +462,12 @@ export default function ITRooms() {
                       </span>
                     </td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">{room.dateCreated}</td>
-                    <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center font-pressstart text-[11px]">{room.capacity}</td>
+                    <td className="py-3.5 px-3 text-theme-dark text-center font-pressstart text-[11px]">
+                      {room.currentMembers}/{room.maxMembers}
+                    </td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">
                       <div className="flex justify-center w-full">
-                        {room.status.toLowerCase() !== 'suspended' ? (
+                        {!isClosedStatus(room.status) ? (
                           <button
                             type="button"
                             onClick={() => {
@@ -555,7 +550,7 @@ export default function ITRooms() {
       {showCloseModal && roomToClose && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-lg w-full shadow-xl flex flex-col">
-            
+
             {!closeSuccessData ? (
               <>
                 {/* Modal Header with Warning Icon */}
@@ -573,10 +568,13 @@ export default function ITRooms() {
                 <p className="font-pixel text-[18px] sm:text-[24px] text-theme-dark mt-3">
                   Target Room: <span className="text-theme-primary">{roomToClose.roomName}</span> (Host: {roomToClose.host})
                 </p>
+                <p className="font-pixel text-[14px] sm:text-[18px] text-theme-dark/70">
+                  Everyone inside will be removed right away, and the host will be emailed.
+                </p>
 
                 {/* Form Fields Container */}
                 <div className="flex flex-col gap-3 mt-3">
-                  
+
                   {/* Reason Dropdown */}
                   <div className="flex flex-col gap-1">
                     <label className="font-pixel text-[18px] sm:text-[24px] text-theme-dark">Reason:</label>

@@ -259,6 +259,29 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   // Kick Modal State
   const [showKickModal, setShowKickModal] = useState(false);
 
+  // Room closing / closed (auto-close after a finished shared session, empty room, or IT admin closure)
+  const [roomClosing, setRoomClosing] = useState(null);         // { reason, endsAt }
+  const [roomClosedInfo, setRoomClosedInfo] = useState(null);   // { reason }
+  const [closingCountdown, setClosingCountdown] = useState(0);
+  const roomContextRef = useRef(null); // room details captured when a session finishes
+
+  const leaveClosedRoom = () => {
+    localStorage.removeItem('activeRoomSession');
+    setRoomClosing(null);
+    setRoomClosedInfo(null);
+    setIsMultiplayer(false);
+    navigate('/dashboard');
+  };
+
+  useEffect(() => {
+    if (!roomClosing) return undefined;
+    const tick = () =>
+      setClosingCountdown(Math.max(0, Math.ceil((roomClosing.endsAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [roomClosing]);
+
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isShuffle, setIsShuffle] = useState(false);
@@ -476,6 +499,23 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
 
+  // Host tells the server the whole synced session is done, so the room can close after a short grace period.
+  // The room details are remembered first: the room may close before the player presses CLAIM.
+  useEffect(() => {
+    if (!timer.showRewardModal) return;
+
+    roomContextRef.current = isMultiplayer
+      ? { isMultiplayer: true, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1 }
+      : null;
+
+    if (isMultiplayer && isSharedRoom && isCurrentUserHost && socketRef.current) {
+      socketRef.current.emit('shared_session_finished', {
+        room: roomData.roomName,
+        username: player.username,
+      });
+    }
+  }, [timer.showRewardModal]);
+
   useEffect(() => {
     const onMsg = (e) => {
       if (e?.data?.type === 'SESSION_CREATED' && e.data.session && isMultiplayer && isSharedRoom && isCurrentUserHost) {
@@ -537,6 +577,11 @@ useEffect(() => {
     const tasksToSend = getSessionTasks();
     const completedTasksCount = tasksToSend.filter(t => t.completed || t.status === 'completed').length;
 
+    // Keep the group XP bonus even if the room already closed (isMultiplayer is false by then)
+    const ctx = isMultiplayer
+      ? { isMultiplayer, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1 }
+      : (roomContextRef.current || { isMultiplayer: false, isHost: false, roomSize: 1 });
+
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
         method: 'POST',
@@ -549,9 +594,9 @@ useEffect(() => {
           totalTasks: tasksToSend.length,
           tasksList: tasksToSend,
           activity: finalActivity,
-          isMultiplayer: isMultiplayer,
-          isHost: isCurrentUserHost,
-          roomSize: roomData.members.length || 1,
+          isMultiplayer: ctx.isMultiplayer,
+          isHost: ctx.isHost,
+          roomSize: ctx.roomSize,
           taskStatus: taskStatus,
           productivityLevel: productivityLevel,
           accomplishedText: accomplishedText
@@ -560,6 +605,8 @@ useEffect(() => {
 
       const data = await response.json();
       if (data.success) {
+        roomContextRef.current = null;
+
         const storedUser = JSON.parse(localStorage.getItem(`user_${userEmail}`) || '{}');
         storedUser.coins = data.coins;
         storedUser.currentXP = data.currentXP;
@@ -817,12 +864,19 @@ useEffect(() => {
       });
       });
 
+      // the shared session finished: the room will close after a short grace period
+      socketRef.current.on('room_closing', (data) => {
+        setRoomClosing({
+          reason: data?.reason || 'This room is about to close.',
+          endsAt: Date.now() + (data?.seconds ?? 30) * 1000,
+        });
+      });
+
+      // the room is gone (auto-closed, or closed by IT administration)
       socketRef.current.on('room_closed', (data) => {
-      alert(data?.reason || 'This room has been suspended.');
-      localStorage.removeItem('activeRoomSession');
-      setIsMultiplayer(false);
-      navigate('/dashboard');
-    });
+        setRoomClosing(null);
+        setRoomClosedInfo({ reason: data?.reason || 'This room has been closed.' });
+      });
 
       socketRef.current.on('shared_room_started', (data) => {
         applySyncedSession(data?.session, data?.timer, data?.serverNow);
@@ -2658,7 +2712,8 @@ const timeAgo = (ts) => {
                   const targetDetails = {
                     username: reportedMessage?.sender || 'Unknown',
                     content: reportedMessage?.text || '',
-                    time: reportedMessage?.time || ''
+                    time: reportedMessage?.time || '',
+                    room: roomData.roomName   // lets IT open the chat log for this message
                   };
                   handleSubmitReport('message', targetDetails, reportMessageReason, reportMessageNotes, setShowReportMessageSuccessModal, setShowReportMessageModal);
                   setReportMessageNotes('');
@@ -3054,6 +3109,44 @@ const timeAgo = (ts) => {
               className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
             >
               OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ROOM CLOSING (grace period after a shared session finished) */}
+      {roomClosing && !roomClosedInfo && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">⏳</div>
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">ROOM CLOSING</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">{roomClosing.reason}</p>
+            <div className="bg-theme-muted border-2 border-theme-dark px-4 py-2 rounded-[8px] w-full flex items-center justify-center gap-2 dark:bg-zinc-800">
+              <span className="font-pressstart text-[10px] text-theme-dark/70">Closing in:</span>
+              <span className="font-pressstart text-[14px] text-theme-danger">{closingCountdown}s</span>
+            </div>
+            <button
+              onClick={leaveClosedRoom}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              LEAVE ROOM
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ROOM CLOSED (auto-closed, or closed by IT administration) */}
+      {roomClosedInfo && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">🚪</div>
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM CLOSED</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">{roomClosedInfo.reason}</p>
+            <button
+              onClick={leaveClosedRoom}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              GO TO HOMEPAGE
             </button>
           </div>
         </div>

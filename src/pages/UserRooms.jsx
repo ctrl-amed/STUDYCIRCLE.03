@@ -399,9 +399,7 @@ export default function UserRooms() {
 
   // Suspended rooms are hidden everywhere. Inactive rooms are hidden from ALL ROOMS only.
   const visibleRooms = roomsList.filter((r) => !r.isClosed);
-  const filteredAllRooms = filterRooms(
-    visibleRooms.filter((r) => r.privacy === 'public' && r.isActive)
-  );
+const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'public'));
   const filteredMyRooms = filterRooms(visibleRooms.filter((r) => r.host === myUsername));
 
   const filteredHistory = sessionHistory.filter((item) => {
@@ -487,11 +485,6 @@ export default function UserRooms() {
                 <span className="inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] border-theme-dark/40 bg-theme-muted px-2 py-0.5 rounded uppercase text-theme-dark">
                   <span>Tasks: {roomTaskType}</span>
                 </span>
-                {!room.isActive && (
-                  <span className="inline-flex items-center font-pressstart text-[7px] border-[1.5px] border-theme-dark/40 bg-gray-200 px-2 py-0.5 rounded uppercase text-theme-dark/70">
-                    Inactive
-                  </span>
-                )}
               </div>
               <div className={`flex items-center gap-1 font-pressstart text-[8px] ${isFull ? 'text-theme-danger' : 'text-theme-dark'}`}>
                 <span>
