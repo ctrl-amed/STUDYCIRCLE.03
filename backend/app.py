@@ -42,12 +42,13 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "YOUR_SUPABASE_ANON_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Email configuration (replace with your actual mail server credentials)
+# Mail setup using environment variables
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'your_email@gmail.com'
-app.config['MAIL_PASSWORD'] = 'your_email_app_password'
-app.config['DEFAULT_MAIL_SENDER'] = 'StudyCircle <your_email@gmail.com>'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['DEFAULT_MAIL_SENDER'] = os.getenv('DEFAULT_MAIL_SENDER', f"StudyCircle <{os.getenv('MAIL_USERNAME')}>")
 
 mail = Mail(app)
 
@@ -114,6 +115,72 @@ def ensure_streak_freeze_row(user_id):
     except Exception as e:
         print("Could not create streak freeze row:", e)
 
+# =============================================================================
+# REPORTS
+# =============================================================================
+
+@app.route('/api/reports', methods=['POST'])
+def create_report():
+    data = request.json or {}
+    try:
+        response = supabase.table('reports').insert({
+            "reporter_username": data.get('reporter_username'), # Changed from reporter_email
+            "target_type": data.get('target_type'),       # 'room', 'user', or 'message'
+            "target_details": data.get('target_details'), # JSON details object
+            "reason": data.get('reason'),
+            "additional_notes": data.get('additional_notes', ''),
+            "status": "pending"
+        }).execute()
+        return jsonify({"success": True, "report": response.data[0]}), 201
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/itadmin/reports', methods=['GET'])
+def admin_get_reports():
+    try:
+        response = supabase.table('reports').select('*').order('created_at', desc=True).execute()
+        return jsonify({"success": True, "reports": response.data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/itadmin/reports/<report_id>', methods=['PATCH'])
+def admin_update_report(report_id):
+    data = request.json or {}
+    status = data.get('status') # 'resolved' or 'closed'
+    action_taken = data.get('actionTaken')
+    reason = data.get('reason')
+    notes = data.get('notes') or data.get('actionNotes') or data.get('additionalNotes')
+    
+    suspension_duration = data.get('suspensionDuration')
+
+    if not status:
+        return jsonify({"success": False, "error": "Status is required."}), 400
+
+    try:
+        # Fetch the report target type to validate server-side rules
+        rep_res = supabase.table('reports').select('target_type').eq('id', report_id).execute()
+        target_type = rep_res.data[0].get('target_type') if rep_res.data else None
+
+        # Enforce rule: Rooms, dismissals, and warnings must ALWAYS have a NULL suspension duration
+        is_suspend_action = action_taken and 'Suspend' in action_taken
+        is_message_or_user = target_type in ['message', 'user']
+
+        if target_type == 'room' or not (is_suspend_action and is_message_or_user):
+            suspension_duration = None
+
+        # Update Supabase record
+        response = supabase.table('reports').update({
+            "status": status,
+            "action_taken": action_taken,
+            "reason": reason,
+            "action_notes": notes,
+            "suspension_duration": suspension_duration  # <--- Evaluates to NULL if not a user/message suspension
+        }).eq('id', report_id).execute()
+
+        return jsonify({"success": True, "message": "Report updated successfully", "report": response.data}), 200
+    except Exception as e:
+        print("ERROR UPDATING REPORT:", str(e))
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # =============================================================================
 # SUSPENSION HELPERS
@@ -268,6 +335,7 @@ def signup():
             "streak": 0,
             "inventory": [],
             "status": "offline",
+            "max_xp": 100,
         }).execute()
 
         created_user = response.data[0] if response.data else {}
@@ -290,7 +358,7 @@ def signup():
                 'bestStreak': created_user.get('best_streak') or 0,
                 'roomsCreated': created_user.get('rooms_created') or 0,
                 'currentXP': created_user.get('current_xp', 0),
-                'maxXP': created_user.get('max_xp', 10000),
+                'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': inv_data or [],
                 # explicit nulls so a new account never inherits the previous
@@ -361,7 +429,7 @@ def google_signup():
                     'bestStreak': user.get('best_streak') or 0,
                     'roomsCreated': user.get('rooms_created') or 0,
                     'currentXP': user.get('current_xp', 0),
-                    'maxXP': user.get('max_xp', 10000),
+                    'maxXP': user.get('max_xp', 100),
                     'level': user.get('level', 1),
                     'inventory': raw_inv or [],
                     'avatarConfig': parse_json_field(user.get('avatar_config')),
@@ -392,7 +460,8 @@ def google_signup():
             "coins": 100,
             "streak": 0,
             "inventory": [],
-            "status": "offline"
+            "status": "offline",
+            "max_xp": 100,
         }).execute()
 
         created_user = response.data[0] if response.data else {}
@@ -415,7 +484,7 @@ def google_signup():
                 'bestStreak': created_user.get('best_streak') or 0,
                 'roomsCreated': created_user.get('rooms_created') or 0,
                 'currentXP': created_user.get('current_xp', 0),
-                'maxXP': created_user.get('max_xp', 10000),
+                'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': raw_inv or [],
                 'avatarConfig': None,
@@ -486,7 +555,7 @@ def login():
                 'bestStreak': user.get('best_streak') or 0,
                 'roomsCreated': user.get('rooms_created') or 0,
                 'currentXP': user.get('current_xp', 0),
-                'maxXP': user.get('max_xp', 10000),
+                'maxXP': user.get('max_xp', 100),
                 'level': user.get('level', 1),
                 'inventory': raw_inv or [],
                 'avatarConfig': parse_json_field(user.get('avatar_config')),
@@ -596,31 +665,126 @@ def change_password():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/change-password-direct', methods=['POST'])
+def change_password_direct():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip()
+    old_password = data.get('old_password', '')
+    new_password = data.get('new_password', '')
+
+    if not email or not old_password or not new_password:
+        return jsonify({'error': 'All fields are required.'}), 400
+
+    try:
+        res = supabase.table('users').select('id, password').ilike('email', email).execute()
+        if not res.data:
+            return jsonify({'error': 'User not found.'}), 404
+
+        user = res.data[0]
+
+        if not bcrypt.check_password_hash(user['password'], old_password):
+            return jsonify({'error': 'Incorrect old password.'}), 400
+
+        hashed_new_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
+
+        supabase.table('users').update({
+            'password': hashed_new_password
+        }).eq('id', user['id']).execute()
+
+        return jsonify({'success': True, 'message': 'Password updated successfully!'}), 200
+    except Exception as e:
+        print("[CHANGE PASSWORD ERROR]:", str(e))
+        return jsonify({'error': str(e)}), 500
 
 # =============================================================================
 # EMAIL REMINDERS (scheduled background job + settings endpoints)
 # =============================================================================
 
 def send_study_reminder():
-    """Background function that runs periodically to send reminders."""
     with app.app_context():
-        current_time_str = datetime.now().strftime("%H:%M")
+        # Current Philippine Standard Time (UTC+8)
+        now_pht = datetime.now(timezone.utc) + timedelta(hours=8)
+        current_time_str = now_pht.strftime("%H:%M")
+        current_minute_iso_prefix = now_pht.strftime("%Y-%m-%dT%H:%M")
+        today_date_str = now_pht.strftime("%Y-%m-%d")
 
-        # TODO: Query your database for users who have reminders enabled
-        # and whose reminder_time matches the current hour/minute.
-        users_to_remind = []
+        # -------------------------------------------------------------
+        # A. DAILY RECURRING REMINDERS (from public.study_reminders)
+        # -------------------------------------------------------------
+        try:
+            rem_res = supabase.table('study_reminders') \
+                .select('user_id, reminder_time, last_sent_date') \
+                .eq('enabled', True) \
+                .eq('reminder_time', current_time_str) \
+                .execute()
 
-        for user in users_to_remind:
-            msg = Message(
-                subject="⏰ StudyCircle Daily Reminder: Time to Focus!",
-                recipients=[user.email],
-                body=f"Hi {user.username},\n\nThis is your daily reminder to open StudyCircle and complete your focus sessions today! Keep your streak going! 🔥\n\n- StudyCircle Team"
-            )
-            try:
+            for item in (rem_res.data or []):
+                if item.get('last_sent_date') == today_date_str:
+                    continue
+
+                u_res = supabase.table('users').select('email, username').eq('id', item['user_id']).execute()
+                if not u_res.data:
+                    continue
+
+                user = u_res.data[0]
+                target_email = user['email']
+                username = user['username']
+
+                msg = Message(
+                    subject="⏰ StudyCircle Daily Reminder: Time to Focus!",
+                    recipients=[target_email],
+                    body=f"Hi {username},\n\nThis is your daily study reminder! Log in to StudyCircle and keep your streak going! 🔥\n\n- StudyCircle Team"
+                )
                 mail.send(msg)
-                print(f"Reminder email sent successfully to {user.email}")
-            except Exception as e:
-                print(f"Error sending email to {user.email}: {e}")
+
+                supabase.table('study_reminders').update({
+                    'last_sent_date': today_date_str
+                }).eq('user_id', item['user_id']).execute()
+
+                print(f"[DAILY REMINDER SENT] to {target_email} at {current_time_str} PHT")
+        except Exception as e:
+            print("[DAILY REMINDER WORKER ERROR]:", e)
+
+        # -------------------------------------------------------------
+        # B. MANUAL REMINDERS (scheduled for exact date & time)
+        # -------------------------------------------------------------
+        try:
+            # Query all users who have items in their inventory
+            users_res = supabase.table('users').select('id, email, username, inventory').execute()
+            for u in (users_res.data or []):
+                inv = parse_json_field(u.get('inventory'), [])
+                if not isinstance(inv, list):
+                    continue
+
+                modified = False
+                for item in inv:
+                    if isinstance(item, dict) and item.get('type') == 'manual_reminder':
+                        # Check if matches current minute and hasn't been sent yet
+                        rem_dt = str(item.get('datetime', ''))
+                        is_sent = item.get('sent', False)
+
+                        if not is_sent and rem_dt.startswith(current_minute_iso_prefix):
+                            target_email = u.get('email')
+                            username = u.get('username') or 'Student'
+
+                            try:
+                                msg = Message(
+                                    subject="⏰ StudyCircle Scheduled Reminder: Study Time!",
+                                    recipients=[target_email],
+                                    body=f"Hi {username},\n\nThis is your scheduled study reminder for {rem_dt}!\n\nOpen StudyCircle now and jump into a focus session: http://localhost:5173\n\n- StudyCircle Team"
+                                )
+                                mail.send(msg)
+                                item['sent'] = True
+                                modified = True
+                                print(f"[MANUAL REMINDER SENT] to {target_email} for {rem_dt}")
+                            except Exception as m_err:
+                                print(f"[MANUAL REMINDER SEND FAILED for {target_email}]:", m_err)
+
+                if modified:
+                    supabase.table('users').update({'inventory': inv}).eq('id', u['id']).execute()
+
+        except Exception as e:
+            print("[MANUAL REMINDER WORKER ERROR]:", e)
 
 
 # Background scheduler that checks every minute for scheduled reminders
@@ -629,32 +793,184 @@ scheduler.add_job(func=send_study_reminder, trigger="interval", minutes=1)
 scheduler.start()
 
 
+@app.route('/api/get-reminders', methods=['GET'])
+def get_reminders():
+    email = (request.args.get('email') or '').strip()
+    if not email:
+        return jsonify({'success': False, 'message': 'Email is required'}), 400
+
+    try:
+        user_res = supabase.table('users').select('id, inventory').ilike('email', email).execute()
+        if not user_res.data:
+            return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        user = user_res.data[0]
+        user_id = user['id']
+
+        # 1. Daily Reminder from public.study_reminders table
+        rem_res = supabase.table('study_reminders').select('*').eq('user_id', user_id).execute()
+        daily_enabled = False
+        daily_time = '08:00'
+
+        if rem_res.data:
+            daily_enabled = bool(rem_res.data[0].get('enabled'))
+            daily_time = rem_res.data[0].get('reminder_time') or '08:00'
+
+        # 2. Manual reminders from user's inventory
+        raw_inv = parse_json_field(user.get('inventory'), [])
+        if not isinstance(raw_inv, list):
+            raw_inv = []
+
+        manual_reminders = [item for item in raw_inv if isinstance(item, dict) and item.get('type') == 'manual_reminder']
+
+        return jsonify({
+            'success': True,
+            'dailyReminderEnabled': daily_enabled,
+            'dailyReminderTime': daily_time,
+            'manualReminders': manual_reminders
+        }), 200
+    except Exception as e:
+        print("[GET REMINDERS ERROR]:", str(e))
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/update-reminder', methods=['POST'])
 def update_reminder():
-    data = request.json
-    email = data.get('email')
-    enabled = data.get('enabled')
-    reminder_time = data.get('time')
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
+    enabled = bool(data.get('enabled'))
+    reminder_time = data.get('time', '08:00')
 
     if not email:
         return jsonify({"success": False, "message": "Email is required"}), 400
 
     try:
-        print(f"Saved reminder for {email}: Enabled={enabled}, Time={reminder_time}")
+        user_res = supabase.table('users').select('id').ilike('email', email).execute()
+        if not user_res.data:
+            return jsonify({"success": False, "message": "User not found"}), 404
 
-        # If enabled, immediately send a confirmation/test reminder email so we can see it
+        user_id = user_res.data[0]['id']
+
+        # Upsert into public.study_reminders table
+        existing = supabase.table('study_reminders').select('user_id').eq('user_id', user_id).execute()
+        if existing.data:
+            supabase.table('study_reminders').update({
+                'enabled': enabled,
+                'reminder_time': reminder_time
+            }).eq('user_id', user_id).execute()
+        else:
+            supabase.table('study_reminders').insert({
+                'user_id': user_id,
+                'enabled': enabled,
+                'reminder_time': reminder_time
+            }).execute()
+
+        # Confirmation email if enabled
         if enabled:
-            msg = Message(
-                subject="⏰ StudyCircle Reminder Set Successfully!",
-                recipients=[email],
-                body=f"Hello!\n\nYour daily study reminder has been successfully set to {reminder_time}. We will keep you focused!\n\n- StudyCircle Team"
-            )
-            mail.send(msg)
-            print(f"Confirmation email sent to {email}")
+            try:
+                msg = Message(
+                    subject="⏰ StudyCircle Reminder Set Successfully!",
+                    recipients=[email],
+                    body=f"Hello!\n\nYour daily study reminder has been set to {reminder_time} (Philippine Standard Time).\n\nKeep your focus strong!\n- StudyCircle Team"
+                )
+                mail.send(msg)
+            except Exception as mail_err:
+                print("[MAIL SEND ERROR]:", mail_err)
 
-        return jsonify({"success": True, "message": "Reminder settings saved and email sent!"}), 200
+        return jsonify({"success": True, "message": "Reminder settings updated successfully!"}), 200
     except Exception as e:
-        print(f"Error sending email: {e}")
+        print("[UPDATE REMINDER ERROR]:", str(e))
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/add-manual-reminder', methods=['POST'])
+def add_manual_reminder():
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    dt_str = data.get('datetime')
+    title = data.get('title', 'Custom Reminder')
+
+    if not email or not dt_str:
+        return jsonify({"success": False, "message": "Email and datetime are required"}), 400
+
+    try:
+        user_res = supabase.table('users').select('id, inventory').ilike('email', email).execute()
+        if not user_res.data:
+            return jsonify({"success": False, "message": f"User {email} not found"}), 404
+
+        user = user_res.data[0]
+        raw_inv = parse_json_field(user.get('inventory'), [])
+        if not isinstance(raw_inv, list):
+            raw_inv = []
+
+        reminder_obj = {
+            'id': str(uuid.uuid4()),
+            'type': 'manual_reminder',
+            'title': title,
+            'datetime': dt_str,
+            'sent': False,
+            'created_at': datetime.now(timezone.utc).isoformat()
+        }
+
+        # Append to inventory list
+        updated_inv = [item for item in raw_inv]
+        updated_inv.append(reminder_obj)
+
+        # 1. Guarantee Database Save in public.users
+        save_res = supabase.table('users').update({
+            'inventory': updated_inv
+        }).eq('id', user['id']).execute()
+
+        if not save_res.data:
+            return jsonify({"success": False, "message": "Failed to persist to database"}), 500
+
+        # 2. Try sending initial confirmation email safely without breaking the DB save
+        try:
+            if app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD'):
+                msg = Message(
+                    subject="⏰ StudyCircle Custom Reminder Added",
+                    recipients=[email],
+                    body=f"Hello!\n\nA manual study reminder has been scheduled for {dt_str} (Philippine Standard Time).\n\nKeep up the great work!\n- StudyCircle Team"
+                )
+                mail.send(msg)
+                print(f"[MANUAL REMINDER CONFIRMATION SENT] to {email}")
+        except Exception as mail_err:
+            print("[EMAIL DISPATCH WARNING - check app password / credentials]:", mail_err)
+
+        return jsonify({"success": True, "reminder": reminder_obj}), 200
+
+    except Exception as e:
+        print("[ADD MANUAL REMINDER ERROR]:", str(e))
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/remove-manual-reminder', methods=['POST'])
+def remove_manual_reminder():
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
+    rem_id = data.get('id')
+
+    if not email or not rem_id:
+        return jsonify({"success": False, "message": "Email and reminder ID required"}), 400
+
+    try:
+        user_res = supabase.table('users').select('id, inventory').ilike('email', email).execute()
+        if not user_res.data:
+            return jsonify({"success": False, "message": "User not found"}), 404
+
+        user = user_res.data[0]
+        raw_inv = parse_json_field(user.get('inventory'), [])
+        if not isinstance(raw_inv, list):
+            raw_inv = []
+
+        updated_inv = [item for item in raw_inv if not (isinstance(item, dict) and item.get('id') == rem_id)]
+
+        supabase.table('users').update({
+            'inventory': updated_inv
+        }).eq('id', user['id']).execute()
+
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        print("[REMOVE MANUAL REMINDER ERROR]:", str(e))
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -1202,12 +1518,9 @@ def complete_focus_session():
         # Best streak = the highest streak this account has ever reached
         new_best_streak = max(int(user.get('best_streak') or 0), new_streak)
 
-        # Unlock the 3rd streak-freeze slot the moment someone hits Level 20
-        if new_level >= 20 and current_level < 20:
-            try:
-                supabase.table('streak_freezes_inventory').update({"max_slots": 3}).eq('user_id', user_id).execute()
-            except Exception as freeze_err:
-                print("Note: could not update streak freeze slots:", freeze_err)
+        # NOTE: the 3rd streak-freeze slot is no longer unlocked automatically at
+        # Level 20. It is unlocked when the player CLAIMS the Level 20 reward
+        # (see claim_reward below).
 
         # 1. Update the users table (streak included)
         supabase.table('users').update({
@@ -2074,13 +2387,8 @@ def update_progress():
             "max_xp": new_max_xp
         }).eq('email', email).execute()
 
-        # 4. If Level 20+ was reached, unlock the 3rd streak-freeze slot
-        if new_level >= 20:
-            user_id = current_user.get('id')
-            if user_id:
-                supabase.table('streak_freezes_inventory').update({
-                    "max_slots": 3
-                }).eq('user_id', user_id).execute()
+        # NOTE: the 3rd streak-freeze slot is unlocked by CLAIMING the Level 20
+        # reward (see claim_reward), not automatically when Level 20 is reached.
 
         return jsonify({
             "success": True,
@@ -2094,50 +2402,54 @@ def update_progress():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+LEVEL_REWARD_TIERS = [1, 5, 10, 15, 20, 25, 30, 40, 50]
+
+
 @app.route('/api/claim-reward', methods=['POST'])
 def claim_reward():
-    data = request.json
-    email = data.get('email')
-    level = data.get('level')
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
+    try:
+        level = int(data.get('level'))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "A valid level is required"}), 400
 
-    if not email or level is None:
-        return jsonify({"success": False, "message": "Email and level are required"}), 400
+    if not email:
+        return jsonify({"success": False, "message": "Email is required"}), 400
+    if level not in LEVEL_REWARD_TIERS:
+        return jsonify({"success": False, "message": "Unknown reward tier."}), 400
 
     try:
-        # Get the user's current inventory of claimed rewards
-        user_res = supabase.table('users').select('id, inventory').eq('email', email).execute()
+        user_res = supabase.table('users').select('id, inventory, current_xp, level').eq('email', email).execute()
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
+        user = user_res.data[0]
 
-        current_inventory = user_res.data[0].get('inventory') or []
-        if isinstance(current_inventory, str):
-            try:
-                current_inventory = json.loads(current_inventory)
-            except:
-                current_inventory = []
+        # the server decides whether the player really reached this level
+        real_level, _ = calculate_level_from_total_xp(int(user.get('current_xp') or 0))
+        real_level = max(real_level, int(user.get('level') or 1))
+        if level > real_level:
+            return jsonify({"success": False, "message": f"Reach Level {level} first."}), 403
 
-        # If not claimed yet, add it to the inventory
+        inventory = parse_json_field(user.get('inventory'), [])
+        if not isinstance(inventory, list):
+            inventory = []
+
         reward_key = f"level_{level}_reward"
-        if reward_key not in current_inventory:
-            current_inventory.append(reward_key)
+        already = reward_key in inventory
+        if not already:
+            inventory.append(reward_key)
+            supabase.table('users').update({"inventory": inventory}).eq('id', user['id']).execute()
 
-            # If Level 20 was claimed, also update streak freeze max slots to 3 per spec
+            # Level 20+ reward: 3rd streak-freeze slot
             if level >= 20:
-                user_id = user_res.data[0].get('id')
-                if user_id:
-                    try:
-                        supabase.table('streak_freezes_inventory').update({
-                            "max_slots": 3
-                        }).eq('user_id', user_id).execute()
-                    except Exception as sf_err:
-                        print("Note on streak freeze update:", sf_err)
+                ensure_streak_freeze_row(user['id'])
+                try:
+                    supabase.table('streak_freezes_inventory').update({"max_slots": 3}).eq('user_id', user['id']).execute()
+                except Exception as sf_err:
+                    print("Note on streak freeze update:", sf_err)
 
-            # Update the database with the list/json object for the jsonb column
-            supabase.table('users').update({
-                "inventory": current_inventory
-            }).eq('email', email).execute()
-
-        return jsonify({"success": True, "inventory": current_inventory}), 200
+        return jsonify({"success": True, "alreadyClaimed": already, "inventory": inventory}), 200
 
     except Exception as e:
         print("Error claiming reward:", str(e))
@@ -2255,7 +2567,7 @@ def get_streak_freezes():
 
 @app.route('/api/save-user-tool', methods=['POST'])
 def save_user_tool():
-    data = request.json
+    data = request.json or {}
     email = data.get('email')
     new_tool = data.get('tool')
 
@@ -2267,23 +2579,20 @@ def save_user_tool():
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
 
-        current_inventory = user_res.data[0].get('inventory') or []
-        if isinstance(current_inventory, str):
-            try:
-                current_inventory = json.loads(current_inventory)
-            except:
-                current_inventory = []
+        inventory = parse_json_field(user_res.data[0].get('inventory'), [])
+        if not isinstance(inventory, list):
+            inventory = []
 
-        # Update or add the tool to the inventory list
         tool_id = new_tool.get('id')
-        current_inventory = [t for t in current_inventory if isinstance(t, dict) and t.get('id') != tool_id]
-        current_inventory.insert(0, new_tool)
+        # keep EVERYTHING except an older copy of this same tool:
+        # reward strings ("level_5_reward", "streak_3_reward") AND other tools
+        kept = [t for t in inventory if not (isinstance(t, dict) and t.get('id') == tool_id)]
+        inventory = [new_tool] + kept
 
-        supabase.table('users').update({
-            "inventory": current_inventory
-        }).eq('email', email).execute()
+        supabase.table('users').update({"inventory": inventory}).eq('email', email).execute()
 
-        return jsonify({"success": True, "inventory": current_inventory}), 200
+        # the AI Tools page only wants tool objects
+        return jsonify({"success": True, "inventory": [t for t in inventory if isinstance(t, dict)]}), 200
 
     except Exception as e:
         print("Error saving user tool:", str(e))
@@ -2301,14 +2610,11 @@ def get_user_tools():
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
 
-        inventory = user_res.data[0].get('inventory') or []
-        if isinstance(inventory, str):
-            try:
-                inventory = json.loads(inventory)
-            except:
-                inventory = []
+        inventory = parse_json_field(user_res.data[0].get('inventory'), [])
+        if not isinstance(inventory, list):
+            inventory = []
 
-        return jsonify({"success": True, "inventory": inventory}), 200
+        return jsonify({"success": True, "inventory": [t for t in inventory if isinstance(t, dict)]}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 

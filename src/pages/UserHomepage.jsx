@@ -16,6 +16,18 @@ const LOFI_TRACKS = [
   { id: 'lofi4', name: 'Cosmic Chillout', artist: 'StudyCircle Sound', src: 'media/BGM/LOFI4.mp3' },
 ];
 
+// Same fallback the Sidebar uses, so a player with no saved avatar looks the same everywhere
+// (and never inherits another account's avatar from this browser).
+const DEFAULT_AVATAR_CONFIG = {
+  body: 'BODY1',
+  face: 'FACE1',
+  tops: 'TOP7',
+  bottoms: 'BOTTOM6',
+  shoes: '',
+  hair: '',
+  accessories: '',
+};
+
 const avatarConfig = {
   scale: 0.85,
   bottom: '15%',
@@ -118,7 +130,7 @@ const activityIcons = {
 };
 
 export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false }) {
-  const { playerData } = usePlayer();
+  const { playerData, setPlayerData } = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -131,6 +143,55 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     currentXP: playerData?.currentXP ?? 0,
     maxXP: playerData?.maxXP ?? 10000,
   };
+
+  // ---------------------------------------------------------------------------
+  // REAL AVATAR (from the logged-in account / database)
+  // myAvatarConfig  = this player's saved avatar
+  // avatarReady     = true once we finished asking the database (we wait for this
+  //                   before joining a room, so other players get the real avatar)
+  // ---------------------------------------------------------------------------
+  const [myAvatarConfig, setMyAvatarConfig] = useState(playerData?.avatarConfig || null);
+  const [avatarReady, setAvatarReady] = useState(false);
+  const resolvedMyAvatar = myAvatarConfig || DEFAULT_AVATAR_CONFIG;
+
+  useEffect(() => {
+    const email = playerData?.email;
+    if (!email) return undefined;
+
+    let cancelled = false;
+    setAvatarReady(false);
+
+    fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        if (d.success) {
+          let cfg = d.profile?.avatarConfig || null;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
+          }
+          const finalCfg = cfg && typeof cfg === 'object' && Object.keys(cfg).length > 0 ? cfg : null;
+          setMyAvatarConfig(finalCfg);
+          // keep the shared player data in sync (same as the sidebar)
+          setPlayerData((prev) => ({ ...prev, avatarConfig: finalCfg }));
+        }
+      })
+      .catch((err) => console.error('Failed to load avatar from database:', err))
+      .finally(() => {
+        if (!cancelled) setAvatarReady(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [playerData?.email, setPlayerData]);
+
+  // instant update after saving in the Customizer (same event the sidebar listens to)
+  useEffect(() => {
+    const handleAvatarUpdate = (e) => setMyAvatarConfig(e.detail || null);
+    window.addEventListener('avatar-updated', handleAvatarUpdate);
+    return () => window.removeEventListener('avatar-updated', handleAvatarUpdate);
+  }, []);
+
+  // ---------------------------------------------------------------------------
 
   const [recentActivities, setRecentActivities] = useState([]);
   const [userActivities, setUserActivities] = useState({});
@@ -330,6 +391,51 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return '';
   };
 
+// Helper function to submit reports to the backend database
+  const handleSubmitReport = async (targetType, targetDetails, reason, notes, onSuccess, closeModal) => {
+    // Force grab the username from state, player object, or direct localStorage fallback
+    let usernameToUse = player?.username || playerData?.username;
+    
+    if (!usernameToUse) {
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        usernameToUse = storedUser.username;
+      } catch (e) {}
+    }
+
+    if (!usernameToUse) {
+      alert("Error: Username not found. Please log in again.");
+      return;
+    }
+
+    console.log("Submitting report with reporter_username:", usernameToUse); // Debug log
+
+    try {
+      const response = await fetch('http://localhost:5000/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reporter_username: usernameToUse, // Send the correct username key
+          target_type: targetType,
+          target_details: targetDetails,
+          reason: reason,
+          additional_notes: notes
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        closeModal(false);
+        onSuccess(true);
+      } else {
+        alert("Failed to submit report: " + (data.error || "Unknown error"));
+      }
+    } catch (err) {
+      console.error("Network error while submitting report:", err);
+      alert("Network error while submitting report.");
+    }
+  };
+
   // 1. Kunin ang session data mula sa activeSession o mula sa completedSessionData cache
   const savedSession = 
     timer.activeSession || 
@@ -367,7 +473,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const isCurrentUserHost = (currentHostMember && currentHostMember.username === player.username) || 
                           (roomData.hostId === player.username);
 
-    const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
+  const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
 
   useEffect(() => {
     const onMsg = (e) => {
@@ -387,12 +493,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return;
     }
 
-    // Read from the active timer or completedSessionData cache
     const currentActiveSession = 
       timer.activeSession || 
       JSON.parse(localStorage.getItem('completedSessionData') || localStorage.getItem('activeSession') || '{}');
     
-    // Ensure the correct workType, technique, and duration are chosen
     const finalActivity = 
       currentActiveSession.workType || 
       currentActiveSession.activity || 
@@ -447,7 +551,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
         window.dispatchEvent(new Event('player-data-updated'));
 
-        // Clear the completedSessionData cache after saving successfully
         localStorage.removeItem('activeSession');
         localStorage.removeItem('completedSessionData');
 
@@ -465,7 +568,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   };
 
-    const handleHostStartSession = (sessionPayload) => {
+  const handleHostStartSession = (sessionPayload) => {
     if (socketRef.current && isMultiplayer) {
       socketRef.current.emit('start_shared_room', {
         room: roomData.roomName,
@@ -486,6 +589,15 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return rawConfig;
     }
     return null;
+  };
+
+  // The avatar to draw for a room member:
+  //  - me      -> my real avatar (loaded from my account / database)
+  //  - others  -> the avatar the server read from THEIR account when they joined
+  //  - nothing saved -> the default avatar (never a leftover from another account)
+  const getMemberAvatar = (member) => {
+    if (member?.username === player.username) return resolvedMyAvatar;
+    return getLeaderboardAvatarConfig(member) || DEFAULT_AVATAR_CONFIG;
   };
 
   const handleHostDecision = (approved) => {
@@ -563,7 +675,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const socketRef = useRef(null);
 
-  // 1. Tell Flask this user is online as soon as they open the homepage
   useEffect(() => {
     const userEmail = getUserEmail();
     if (!userEmail) return;
@@ -582,7 +693,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     };
   }, [player.email]);
 
-  // 2. Tell Flask when the student starts or stops a study session
   useEffect(() => {
     const userEmail = getUserEmail();
     if (!socketRef.current || !userEmail) return;
@@ -603,11 +713,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       if (!emailToUse) return;
 
       try {
-        const userRes = supabase.table('users').select('streak').eq('email', emailToUse).execute();
-        if (userRes.data && userRes.data.length > 0) {
-          setDbStreak(userRes.data[0].streak || 0);
-        }
-
         const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
         const data = await response.json();
 
@@ -628,7 +733,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   }, [player.email, playerData]);
 
   useEffect(() => {
-    if (isMultiplayer) {
+    // Wait until we know the player's real avatar, so the room receives the right one
+    if (isMultiplayer && avatarReady) {
       socketRef.current = io('http://localhost:5000');
       
       const currentStatus = timer.activeSession ? "IN SESSION" : "ONLINE";
@@ -638,14 +744,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         username: player.username,
         level: player.level,
         status: currentStatus,
-        avatar_config: playerData?.avatar_config || playerData?.config || playerData?.avatarConfig || null
+        avatar_config: resolvedMyAvatar
       });
 
       socketRef.current.on('room_update', (data) => {
         setRoomData((prev) => {
           const updated = { ...prev };
           if (data.members) {
-            // I-preserve ang isSpeaking status ng bawat miyembro tuwing may room_update
             updated.members = data.members.map(newM => {
               const existing = prev.members.find(oldM => oldM.username === newM.username);
               return {
@@ -677,8 +782,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         });
       });
 
-      // Listener para sa pag-start ng shared room session (para mag-update ang state sa members)
-            socketRef.current.on('shared_room_started', (data) => {
+      socketRef.current.on('shared_room_started', (data) => {
         setRoomData((prev) => ({ ...prev, isStarted: true }));
         if (data?.session) timer.startSyncedSession(data.session);
       });
@@ -688,9 +792,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         navigate('/dashboard');
       });
 
-      // Makinig kung ikaw ay na-kick ng host
       socketRef.current.on('kicked_from_room', (data) => {
-        // Kung ang username na natanggap mula sa server ay ikaw, saka lang lalabas ang modal
         if (!data || data.username === player.username) {
           localStorage.removeItem('activeRoomSession');
           setShowKickModal(true);
@@ -724,7 +826,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         }
       };
     }
-  }, [isMultiplayer, roomData.roomName, player.username, isCurrentUserHost]);
+  }, [isMultiplayer, avatarReady, roomData.roomName, player.username, isCurrentUserHost]);
 
   const handleSendRoomMessage = (e) => {
     e.preventDefault();
@@ -824,8 +926,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         privacy: parsed?.privacy || 'public',
         code: parsed?.code || null,
         maxMembers: parsed?.maxMembers || 6,
-        taskType: parsed?.task_type || parsed?.taskType || 'individual', // <--- IDINAGDAG
-        isStarted: parsed?.is_started || parsed?.isStarted || false,     // <--- IDINAGDAG
+        taskType: parsed?.task_type || parsed?.taskType || 'individual',
+        isStarted: parsed?.is_started || parsed?.isStarted || false,
         roomConfig: finalRoomConfig,
         auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
       }));
@@ -883,7 +985,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   };
 
   const handleKickMember = (memberId, memberUsername) => {
-    // I-broadcast sa Socket.io server na na-kick ang user na ito
     if (socketRef.current && isMultiplayer) {
       socketRef.current.emit('kick_room_member', {
         room: roomData.roomName,
@@ -1163,7 +1264,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
                   const isMe = member.username === player.username;
-                  const memberAvatarConfig = getLeaderboardAvatarConfig(member) || member.avatar_config || member.config;
+                  // real avatar: mine from my account, others from THEIR account
+                  const memberAvatarConfig = getMemberAvatar(member);
 
                   return (
                     <div
@@ -1181,7 +1283,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         transform: `translate(-50%, 0) scale(${pos.scale})`,
                       }}
                     >
-                      {/* NAMETAG & MIC STATUS SA ITAAS NG AVATAR */}
                       <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-[#000000]/70 px-2 sm:px-3 py-1 rounded-[6px] whitespace-nowrap shadow-md pointer-events-none flex items-center justify-center gap-1.5 z-30 border border-theme-dark/40">
                         {member.isHost && (
                           <svg className="w-2.5 h-2.5 text-[#FFD700] shrink-0" viewBox="0 0 24 24" fill="currentColor" title="Host">
@@ -1219,20 +1320,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         >
                           <div className="relative shrink-0 flex items-center justify-center">
                             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              {memberAvatarConfig ? (
-                                <div 
-                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
-                                  style={{ transform: 'scale(0.38) translateY(12px)' }}
-                                >
-                                  <CustomAvatar config={memberAvatarConfig} state="idle" />
-                                </div>
-                              ) : (
-                                <img
-                                  src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
-                                  alt="Player Avatar"
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
+                              <div 
+                                className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                style={{ transform: 'scale(0.38) translateY(12px)' }}
+                              >
+                                <CustomAvatar config={memberAvatarConfig} state="idle" />
+                              </div>
                             </div>
                             <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
                               <span className="font-pressstart text-[8px] text-theme-dark">
@@ -1308,7 +1401,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                               </button>
                             </div>
 
-                            {/* HOST-ONLY KICK BUTTON */}
                             {isCurrentUserHost && !isMe && (
                               <button
                                 onClick={(e) => {
@@ -1346,7 +1438,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       {player.username}
                     </span>
                   </div>
-                  <CustomAvatar state="idle" />
+                  <CustomAvatar config={resolvedMyAvatar} state="idle" />
                 </div>
               )}
             </div>
@@ -1601,7 +1693,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[250px] pr-1">
               {roomData.members.map((member, idx) => {
-                const memberAvatarConfig = getLeaderboardAvatarConfig(member);
+                const memberAvatarConfig = getMemberAvatar(member);
                 const isMe = member.username === player.username;
 
                 return (
@@ -1615,20 +1707,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="relative shrink-0 w-7 h-7 rounded-[4px] border border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                        {memberAvatarConfig ? (
-                          <div 
-                            className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
-                            style={{ transform: 'scale(0.38) translateY(12px)' }}
-                          >
-                            <CustomAvatar config={memberAvatarConfig} state="idle" />
-                          </div>
-                        ) : (
-                          <img
-                            src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
-                            alt={member.username}
-                            className="w-full h-full object-cover"
-                          />
-                        )}
+                        <div 
+                          className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                          style={{ transform: 'scale(0.38) translateY(12px)' }}
+                        >
+                          <CustomAvatar config={memberAvatarConfig} state="idle" />
+                        </div>
                       </div>
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-1">
@@ -1900,7 +1984,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         )}
       </div>
 
-      {/* FEEDBACK MODAL ('HOW WAS YOUR SESSION?') */}
+      {/* FEEDBACK MODAL */}
       {showFeedbackModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] w-full max-w-lg p-5 sm:p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto dark:bg-zinc-900">
@@ -2187,9 +2271,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportModal(false);
+                  const targetDetails = {
+                    roomName: roomData.roomName,
+                    host: roomData.hostId || (roomData.members.find(m => m.isHost)?.username) || 'Unknown',
+                    dateCreated: roomData.createdAt || new Date().toLocaleDateString() // <--- Add this
+                  };
+                  handleSubmitReport('room', targetDetails, reportReason, reportNotes, setShowReportSuccessModal, setShowReportModal);
                   setReportNotes('');
-                  setShowReportSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >
@@ -2341,9 +2429,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportUserModal(false);
+                  const targetDetails = {
+                    username: reportedUser?.username || 'Unknown',
+                    level: reportedUser?.level || 1
+                  };
+                  handleSubmitReport('user', targetDetails, reportUserReason, reportUserNotes, setShowReportUserSuccessModal, setShowReportUserModal);
                   setReportUserNotes('');
-                  setShowReportUserSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >
@@ -2430,7 +2521,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
                       <path d="M0 0h16v16H0z" fill="none" />
                       <g fill="currentColor">
-                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118q.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
                         <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
                       </g>
                     </svg>
@@ -2497,9 +2588,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
               </button>
               <button
                 onClick={() => {
-                  setShowReportMessageModal(false);
+                  const targetDetails = {
+                    username: reportedMessage?.sender || 'Unknown',
+                    content: reportedMessage?.text || '',
+                    time: reportedMessage?.time || ''
+                  };
+                  handleSubmitReport('message', targetDetails, reportMessageReason, reportMessageNotes, setShowReportMessageSuccessModal, setShowReportMessageModal);
                   setReportMessageNotes('');
-                  setShowReportMessageSuccessModal(true);
                 }}
                 className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-5 py-2.5 rounded-[8px] transition-all duration-150 retro-shadow cursor-pointer hover:opacity-90"
               >

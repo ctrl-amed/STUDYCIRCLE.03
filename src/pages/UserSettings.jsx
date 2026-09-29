@@ -1,21 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 const API_BASE = 'http://localhost:5000';
 
+// --- Philippine Time helpers -------------------------------------------------
+// current PH time as "YYYY-MM-DDTHH:MM" (used as the `min` of datetime-local)
+const getPhNowInputValue = () =>
+  new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+    .format(new Date())
+    .replace(' ', 'T');
+
+// show any ISO datetime in Philippine time, no matter the device's timezone
+const formatPhDateTime = (iso) =>
+  new Date(iso).toLocaleString('en-PH', {
+    timeZone: 'Asia/Manila',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
 export default function UserSettings() {
   const { playerData, setPlayerData } = usePlayer();
 
-  // Settings State - Kunin ang email mula sa playerData kung meron
+  // Settings State
   const [settingsData, setSettingsData] = useState(() => ({
-    email: playerData?.email || 'hero@acorn.study',
-    passwordHash: playerData?.passwordHash || 'Password123!',
-    dailyReminderEnabled: true,
+    email: playerData?.email || '',
+    dailyReminderEnabled: false, // real value is loaded from the backend
     dailyReminderTime: '08:00',
     manualReminders: [],
   }));
 
   const [remindersLoaded, setRemindersLoaded] = useState(false);
+
+  // Study Reminders Form State
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [reminderTimeInput, setReminderTimeInput] = useState('08:00');
+  const [manualDatetimeInput, setManualDatetimeInput] = useState('');
 
   useEffect(() => {
     if (playerData?.email) {
@@ -59,6 +86,7 @@ export default function UserSettings() {
 
   // Toast Notification State
   const [toastMessage, setToastMessage] = useState(null);
+  const toastTimer = useRef(null);
 
   // Modals Visibility
   const [showUsernameModal, setShowUsernameModal] = useState(false);
@@ -86,22 +114,20 @@ export default function UserSettings() {
   const [newPassError, setNewPassError] = useState('');
   const [passwordNote, setPasswordNote] = useState('');
 
-  // Study Reminders Form State
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [reminderTimeInput, setReminderTimeInput] = useState(settingsData.dailyReminderTime);
-  const [manualDatetimeInput, setManualDatetimeInput] = useState('');
-
-  // Password Strength Regex
+  // Regexes
   const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const umakEmailRegex = /^[a-zA-Z0-9._%+-]+@umak\.edu\.ph$/i;
 
-  // Toast Generator
+  // Toast Generator (clears the previous timer so toasts never cut each other short)
   const showSuccessToast = (msg) => {
     setToastMessage(msg);
-    setTimeout(() => {
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => {
       setToastMessage(null);
     }, 4000);
   };
+
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   // --- USERNAME HANDLERS (Connected to Backend) ---
   const handleOpenUsernameModal = () => {
@@ -172,8 +198,12 @@ export default function UserSettings() {
       setEmailError('Email field cannot be empty.');
       return;
     }
-    if (!emailRegex.test(val)) {
-      setEmailError('Invalid email address format (missing @ or domain).');
+    if (!umakEmailRegex.test(val)) {
+      setEmailError('You must use a valid @umak.edu.ph email address.');
+      return;
+    }
+    if (val.toLowerCase() === (playerData?.email || '').toLowerCase()) {
+      setEmailError('This is already your current email.');
       return;
     }
 
@@ -268,6 +298,9 @@ export default function UserSettings() {
     } else if (!strongPasswordRegex.test(newPassword)) {
       setNewPassError('Password not strong enough.');
       hasError = true;
+    } else if (oldPassword && newPassword === oldPassword) {
+      setNewPassError('New password must be different from the old one.');
+      hasError = true;
     }
 
     if (!confirmPassword) {
@@ -293,11 +326,14 @@ export default function UserSettings() {
 
       const data = await response.json();
       if (!response.ok) {
-        setOldPassError(data.error || 'Wrong credentials');
+        if (data.field === 'new_password') {
+          setNewPassError(data.error || 'Invalid new password.');
+        } else {
+          setOldPassError(data.error || 'Wrong credentials');
+        }
         return;
       }
 
-      setSettingsData((prev) => ({ ...prev, passwordHash: newPassword }));
       setShowPasswordModal(false);
       showSuccessToast('Password changed successfully!');
     } catch (err) {
@@ -306,7 +342,7 @@ export default function UserSettings() {
     }
   };
 
-  // --- REMINDERS HANDLERS (Connected to Backend, linked to this account) ---
+  // --- REMINDERS HANDLERS (Connected to Backend, linked to this account, PH time) ---
   const toggleDailyReminder = async () => {
     const newEnabledState = !settingsData.dailyReminderEnabled;
 
@@ -337,6 +373,7 @@ export default function UserSettings() {
         ...prev,
         dailyReminderEnabled: !newEnabledState,
       }));
+      showSuccessToast('Could not update reminder. Try again.');
     }
   };
 
@@ -376,7 +413,7 @@ export default function UserSettings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: playerData.email,
-          datetime: manualDatetimeInput,
+          datetime: manualDatetimeInput, // Philippine time (datetime-local value)
           title: 'Custom Reminder',
         }),
       });
@@ -385,11 +422,7 @@ export default function UserSettings() {
         throw new Error(data.message || 'Failed to add reminder');
       }
 
-      const saved = data.reminder || {
-        id: Date.now(),
-        title: 'Custom Reminder',
-        datetime: manualDatetimeInput,
-      };
+      const saved = data.reminder;
 
       setSettingsData((prev) => ({
         ...prev,
@@ -399,7 +432,7 @@ export default function UserSettings() {
       showSuccessToast('Manual reminder added!');
     } catch (error) {
       console.error('Error adding manual reminder:', error);
-      showSuccessToast('Could not add reminder. Try again.');
+      showSuccessToast(error.message || 'Could not add reminder. Try again.');
     }
   };
 
@@ -574,7 +607,7 @@ export default function UserSettings() {
                 <div className="flex flex-col gap-2 mt-2 bg-theme-muted p-3 rounded-[6px] border border-theme-dark/30 dark:bg-zinc-700">
                   <div className="flex items-center justify-between">
                     <span className="font-pixel text-[13px] text-theme-dark">
-                      You will be reminded daily at {settingsData.dailyReminderTime}
+                      You will be reminded daily at {settingsData.dailyReminderTime} (PH time)
                     </span>
                     <button
                       onClick={() => setShowTimePicker(!showTimePicker)}
@@ -607,13 +640,14 @@ export default function UserSettings() {
               <div className="flex flex-col gap-3 pt-1">
                 <span className="font-pressstart text-[10px] text-theme-dark">MANUAL REMINDERS</span>
                 <span className="font-pixel text-[13px] text-theme-dark/70">
-                  Set a specific custom date and time for a reminder.
+                  Set a specific custom date and time (PH time) for a reminder.
                 </span>
 
                 <div className="flex flex-col sm:flex-row gap-2 mt-1">
                   <input
                     type="datetime-local"
                     value={manualDatetimeInput}
+                    min={getPhNowInputValue()}
                     onChange={(e) => setManualDatetimeInput(e.target.value)}
                     className="bg-theme-muted border-[1.5px] border-theme-dark p-2 font-pixel text-[13px] text-theme-dark rounded-[6px] flex-1 dark:bg-zinc-700"
                   />
@@ -637,7 +671,7 @@ export default function UserSettings() {
                         className="flex items-center justify-between bg-theme-muted p-2 rounded-[6px] border border-theme-dark/30 font-pixel text-[13px] dark:bg-zinc-700"
                       >
                         <span className="text-theme-dark">
-                          📅 {new Date(rem.datetime).toLocaleString()}
+                          📅 {formatPhDateTime(rem.datetime)}
                         </span>
                         <button
                           onClick={() => handleRemoveManualReminder(rem.id)}
@@ -743,15 +777,16 @@ export default function UserSettings() {
                 <input
                   type="email"
                   value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="Enter new email"
+                  onChange={(e) => {
+                    setNewEmail(e.target.value);
+                    setEmailError('');
+                  }}
+                  placeholder="yourname@umak.edu.ph"
                   className="w-full bg-theme-muted border-[1.5px] border-theme-dark p-2.5 font-pixel text-[15px] rounded-[6px] outline-none dark:bg-zinc-800"
                 />
-                {emailError && (
-                  <p className="font-pixel text-[12px] text-theme-danger mt-1 leading-tight">
-                    ✘ {emailError}
-                  </p>
-                )}
+                <p className={`font-pixel text-[12px] mt-1 leading-tight ${emailError ? 'text-theme-danger' : 'text-theme-dark/70'}`}>
+                  {emailError ? `✘ ${emailError}` : 'Only a valid @umak.edu.ph email address is accepted.'}
+                </p>
               </div>
             </div>
 
