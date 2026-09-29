@@ -753,6 +753,16 @@ useEffect(() => {
     fetchTodayStatsAndStreak();
   }, [player.email, playerData]);
 
+  // Keep my status in the room in sync: ONLINE <-> IN SESSION
+useEffect(() => {
+  if (!isMultiplayer || !socketRef.current) return;
+  socketRef.current.emit('update_status', {
+    room: roomData.roomName,
+    username: player.username,
+    status: timer.activeSession ? 'IN SESSION' : 'ONLINE',
+  });
+}, [isMultiplayer, timer.activeSession, roomData.roomName, player.username]);
+
   const applySyncedSession = (session, timerState, serverNow) => {
   if (!session) return;
   // room_update fires on every join/leave: only apply a given session once
@@ -786,27 +796,33 @@ useEffect(() => {
         // IMPORTANT: this callback MUST always return the new state object.
         // Returning undefined makes roomData undefined and crashes the page (white screen).
         setRoomData((prev) => {
-          const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
-          const hostMember = incomingMembers.find((m) => m.isHost);
+        const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
+        const hostMember = incomingMembers.find((m) => m.isHost);
 
-          let cfg = data?.room_config ?? prev.roomConfig ?? null;
-          if (typeof cfg === 'string') {
-            try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
-          }
+        let cfg = data?.room_config ?? prev.roomConfig ?? null;
+        if (typeof cfg === 'string') {
+          try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
+        }
 
-          const newLogs = Array.isArray(data?.logs)
-            ? data.logs.map((l, i) => ({ ...l, id: `${l.id}_${Date.now()}_${i}` }))
-            : [];
+        const seen = new Set((prev.auditLogs || []).map((l) => l.id));
+        const newLogs = (Array.isArray(data?.logs) ? data.logs : []).filter((l) => !seen.has(l.id));
 
-          return {
-            ...prev,
-            members: incomingMembers,
-            hostId: hostMember?.username || prev.hostId,
-            roomConfig: cfg,
-            auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
-          };
-        });
+        return {
+          ...prev,
+          members: incomingMembers,
+          hostId: hostMember?.username || prev.hostId,
+          roomConfig: cfg,
+          auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
+        };
       });
+      });
+
+      socketRef.current.on('room_closed', (data) => {
+      alert(data?.reason || 'This room has been suspended.');
+      localStorage.removeItem('activeRoomSession');
+      setIsMultiplayer(false);
+      navigate('/dashboard');
+    });
 
       socketRef.current.on('shared_room_started', (data) => {
         applySyncedSession(data?.session, data?.timer, data?.serverNow);
@@ -857,7 +873,26 @@ useEffect(() => {
         }
       };
     }
-  }, [isMultiplayer, avatarReady, roomData.roomName, player.username, isCurrentUserHost]);
+  }, [isMultiplayer, avatarReady, roomData.roomName, player.username]);
+
+  const [nowTick, setNowTick] = useState(Date.now());
+useEffect(() => {
+  const t = setInterval(() => setNowTick(Date.now()), 15000);
+  return () => clearInterval(t);
+}, []);
+
+const timeAgo = (ts) => {
+  if (!ts) return '';
+  const diff = Math.max(0, Math.floor((nowTick - new Date(ts).getTime()) / 1000));
+  if (diff < 30) return 'Just now';
+  if (diff < 60) return `${diff}s ago`;
+  const mins = Math.floor(diff / 60);
+  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days} day${days > 1 ? 's' : ''} ago`;
+};
 
   const handleSendRoomMessage = (e) => {
     e.preventDefault();
@@ -960,7 +995,7 @@ useEffect(() => {
         taskType: parsed?.task_type || parsed?.taskType || 'individual',
         isStarted: parsed?.is_started || parsed?.isStarted || false,
         roomConfig: finalRoomConfig,
-        auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
+        auditLogs: [],  
       }));
     } else {
       setIsMultiplayer(false);
@@ -1016,28 +1051,28 @@ useEffect(() => {
   };
 
   const handleKickMember = (memberId, memberUsername) => {
-    if (socketRef.current && isMultiplayer) {
-      socketRef.current.emit('kick_room_member', {
-        room: roomData.roomName,
-        username: memberUsername
-      });
-    }
+  if (socketRef.current && isMultiplayer) {
+    socketRef.current.emit('kick_room_member', {
+      room: roomData.roomName,
+      username: memberUsername
+    });
+  }
 
-    setRoomData((prev) => ({
-      ...prev,
-      members: prev.members.filter((m) => m.id !== memberId),
-      auditLogs: [
-        {
-          id: Date.now(),
-          user: player.username,
-          action: `kicked ${memberUsername} from the room`,
-          time: 'Just now',
-        },
-        ...prev.auditLogs,
-      ],
-    }));
-    setActiveProfileId(null);
-  };
+  setRoomData((prev) => ({
+    ...prev,
+    members: prev.members.filter((m) => m.id !== memberId),
+    auditLogs: [
+      {
+        id: Date.now(),
+        user: player.username,
+        action: `kicked ${memberUsername} from the room`,
+        ts: new Date().toISOString(),
+      },
+      ...prev.auditLogs,
+    ],
+  }));
+  setActiveProfileId(null);
+};
 
   const handleAddFriend = async (member) => {
     const identifier = member.email || member.username;
@@ -1554,7 +1589,7 @@ useEffect(() => {
                         <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                         <span className="font-pixel text-[14px] text-theme-dark truncate">{log.action}</span>
                       </div>
-                      <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
+                      <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{timeAgo(log.ts)}</span>
                     </div>
                   ))
                 )}
@@ -2769,7 +2804,7 @@ useEffect(() => {
                     <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                     <span className="font-pixel text-[15px] text-theme-dark truncate">{log.action}</span>
                   </div>
-                  <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
+                  <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{timeAgo(log.ts)}</span>
                 </div>
               ))}
             </div>

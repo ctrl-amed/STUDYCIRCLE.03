@@ -1,5 +1,40 @@
 // src/pages/ITRooms.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { io } from 'socket.io-client';
+import { adminFetch } from '../utils/adminApi';
+
+const API = 'http://localhost:5000';
+
+// server sends { value, change } -> shape the cards use
+const toCard = (m, upIsGood = true) => ({
+  value: Number(m?.value ?? 0).toLocaleString(),
+  changeNum: m?.change == null ? null : `${m.change >= 0 ? '↑' : '↓'} ${Math.abs(m.change)}%`,
+  positive: m?.change == null ? true : (m.change >= 0) === upIsGood,
+});
+
+// dropdown value -> query params the backend understands
+const rangeQuery = (dateRange) => {
+  const p = new URLSearchParams();
+  if (dateRange.includes(' to ')) {
+    const [start, end] = dateRange.split(' to ');
+    p.set('range', 'Custom');
+    p.set('start', start);
+    p.set('end', end);
+  } else {
+    p.set('range', dateRange);
+  }
+  return p.toString();
+};
+
+const fmtDate = (iso) =>
+  iso
+    ? new Date(iso).toLocaleDateString('en-US', {
+        timeZone: 'Asia/Manila',
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+      })
+    : 'N/A';
 
 export default function ITRooms() {
   // Search and Filter State (Default dateRange set to 'All time')
@@ -22,38 +57,77 @@ export default function ITRooms() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [closeReason, setCloseReason] = useState('Explicit room name');
   const [internalNotes, setInternalNotes] = useState('');
-  
+  const [isClosing, setIsClosing] = useState(false);
+
   // Success State
   const [closeSuccessData, setCloseSuccessData] = useState(null);
 
-  // Comprehensive Mock Rooms Data with a healthy distribution of dateCreated values
-  const [roomsList, setRoomsList] = useState([
-    { id: 1, roomName: 'Chill & Lofi Beats', host: 'AlexMorgan', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 4 },
-    { id: 2, roomName: 'Advanced React Algorithms', host: 'PixelCoder99', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 2 },
-    { id: 3, roomName: 'Late Night Study Grinds', host: 'SarahConnor', status: 'Inactive', privacy: 'Private', dateCreated: '09/22/2026', capacity: 5 },
-    { id: 4, roomName: 'Quiet Study Sanctuary', host: 'CodeNinja21', status: 'Active', privacy: 'Public', dateCreated: '09/22/2026', capacity: 3 },
-    { id: 5, roomName: 'Math Calculus Mastery', host: 'MathWhiz', status: 'Inactive', privacy: 'Private', dateCreated: '09/20/2026', capacity: 1 },
-    { id: 6, roomName: 'Quantum Physics Hub', host: 'PhysicsGeek', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 6 },
-    { id: 7, roomName: 'Data Structures & Trees', host: 'AlgorithmMaps', status: 'Active', privacy: 'Public', dateCreated: '09/21/2026', capacity: 4 },
-    { id: 8, roomName: 'WebDev Frontend Sprint', host: 'WebDevPro', status: 'Active', privacy: 'Public', dateCreated: '09/18/2026', capacity: 2 },
-    { id: 9, roomName: 'UI/UX Critique Lounge', host: 'UIUXDesigner', status: 'Inactive', privacy: 'Private', dateCreated: '09/22/2026', capacity: 5 },
-    { id: 10, roomName: 'Cybersecurity CTF Prep', host: 'SecurityAnalyst', status: 'Active', privacy: 'Public', dateCreated: '09/19/2026', capacity: 3 },
-    { id: 11, roomName: 'Game Dev Unity Hangout', host: 'GameDevGuru', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 1 },
-    { id: 12, roomName: 'Python AI & Neural Nets', host: 'AITeacher', status: 'Active', privacy: 'Public', dateCreated: '09/15/2026', capacity: 6 },
-    { id: 13, roomName: 'Database Architecture', host: 'DatabaseGuru', status: 'Suspended', privacy: 'Private', dateCreated: '09/01/2026', capacity: 4 },
-    { id: 14, roomName: 'System Administration Lab', host: 'NetworkAdmin', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 2 },
-    { id: 15, roomName: 'Docker & Kubernetes Ops', host: 'DevOpsEngineer', status: 'Active', privacy: 'Public', dateCreated: '09/20/2026', capacity: 5 },
-    { id: 16, roomName: 'Mobile App Swift Jam', host: 'MobileDev', status: 'Inactive', privacy: 'Private', dateCreated: '09/10/2026', capacity: 3 },
-    { id: 17, roomName: 'Embedded Systems & IoT', host: 'RoboticsKid', status: 'Active', privacy: 'Public', dateCreated: '09/22/2026', capacity: 1 },
-    { id: 18, roomName: 'Cloud Computing AWS/GCP', host: 'CloudArchitect', status: 'Active', privacy: 'Public', dateCreated: '09/05/2026', capacity: 6 },
-    { id: 19, roomName: 'Digital Art & Canvas', host: 'ArtStudent', status: 'Inactive', privacy: 'Public', dateCreated: '09/17/2026', capacity: 4 },
-    { id: 20, roomName: 'Lo-Fi Literature Reading', host: 'LiteratureFan', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 2 },
-    { id: 21, roomName: 'Music Theory & Chords', host: 'MusicComposer', status: 'Active', privacy: 'Public', dateCreated: '09/21/2026', capacity: 5 },
-    { id: 22, roomName: 'Organic Chemistry Review', host: 'ChemistryLab', status: 'Inactive', privacy: 'Private', dateCreated: '08/28/2026', capacity: 3 },
-    { id: 23, roomName: 'World History Debates', host: 'HistoryBuff', status: 'Active', privacy: 'Public', dateCreated: '09/23/2026', capacity: 1 },
-    { id: 24, roomName: 'Bioinformatics & DNA', host: 'BioHacker', status: 'Suspended', privacy: 'Private', dateCreated: '09/02/2026', capacity: 6 },
-    { id: 25, roomName: 'Arcade Retro Coding', host: 'RetroGamer', status: 'Inactive', privacy: 'Public', dateCreated: '09/12/2026', capacity: 4 },
-  ]);
+  // REAL DATA STATE
+  const [roomsList, setRoomsList] = useState([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(true);
+  const [serverMetrics, setServerMetrics] = useState({
+    totalRooms: { value: 0, change: null },
+    reportedRooms: { value: 0, change: null },
+  });
+
+  // sockets are created once, so read the newest range through a ref
+  const dateRangeRef = useRef(dateRange);
+  dateRangeRef.current = dateRange;
+
+  const fetchRooms = async (showLoader = false) => {
+    if (showLoader) setIsLoadingRooms(true);
+    try {
+      const res = await fetch(`${API}/api/itadmin/rooms?${rangeQuery(dateRangeRef.current)}`);
+      const data = await res.json();
+      if (data.success) {
+        setRoomsList(
+          data.rooms.map((r) => ({
+            id: r.id,
+            roomName: r.name,
+            host: r.host,
+            status: r.status_display, // Active | Inactive | Suspended (closed)
+            privacy: r.privacy === 'private' ? 'Private' : 'Public',
+            dateCreated: fmtDate(r.created_at),
+            capacity: r.max_members ?? 4,
+          }))
+        );
+        setServerMetrics(data.metrics);
+      }
+    } catch (err) {
+      console.error('Failed to fetch rooms:', err);
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  };
+
+  // refetch whenever the date range changes
+  useEffect(() => {
+    fetchRooms(true);
+  }, [dateRange]);
+
+  // live updates
+  useEffect(() => {
+    const socket = io(API);
+
+    // live member counts -> flip Active/Inactive without a refetch
+    socket.on('rooms_counts', (counts) => {
+      setRoomsList((prev) =>
+        prev.map((r) =>
+          r.status === 'Suspended'
+            ? r
+            : { ...r, status: (counts[r.roomName] || 0) > 0 ? 'Active' : 'Inactive' }
+        )
+      );
+    });
+
+    // room created / closed / new report about a room
+    socket.on('rooms_changed', () => fetchRooms());
+    socket.on('admin_refresh', ({ scope }) => {
+      if (scope === 'rooms' || scope === 'reports') fetchRooms();
+    });
+
+    return () => socket.disconnect();
+  }, []);
 
   // Handle Date Range Filter Dropdown Change
   const handleDateFilterChange = (e) => {
@@ -92,6 +166,9 @@ export default function ITRooms() {
   // Check if current view is Today to hide percentage trend indicators
   const isToday = dateRange === 'Today';
 
+  // trend only when a range is selected AND the backend could compare it
+  const showTrend = (card) => !isToday && dateRange !== 'All time' && !!card.changeNum;
+
   // Dynamic Timeframe Mapping Logic Helper matching ITDashboard & ITUsers
   const getTimeframeLabel = () => {
     switch (dateRange) {
@@ -109,75 +186,30 @@ export default function ITRooms() {
     }
   };
 
-  // Mock Room Metrics Data adapted for Room Management
-  const metricsData = {
-    totalRooms: { value: '48', changeNum: '↑ 10%', positive: true },
-    activeRooms: { value: '34', changeNum: '↑ 5%', positive: true },
-    inactiveRooms: { value: '14', changeNum: '↓ 2%', positive: false },
-    reportedRooms: { value: '3', changeNum: '↓ 25%', positive: true },
-  };
+  // Total + Reported come from the server; Active / Inactive are derived live from the rows
+  const metricsData = useMemo(() => {
+    const active = roomsList.filter((r) => r.status === 'Active').length;
+    const inactive = roomsList.filter((r) => r.status === 'Inactive').length;
+    return {
+      totalRooms: toCard(serverMetrics.totalRooms),
+      activeRooms: { value: String(active), changeNum: null, positive: true },
+      inactiveRooms: { value: String(inactive), changeNum: null, positive: true },
+      reportedRooms: toCard(serverMetrics.reportedRooms, false), // more reports = bad
+    };
+  }, [roomsList, serverMetrics]);
 
   const todayMax = new Date().toISOString().split('T')[0];
 
-  // Robust date comparison helper matching MM/DD/YYYY room dateCreated against dateRange filters
-  const matchesDateFilter = (dateCreatedStr) => {
-    if (dateRange === 'All time' || !dateRange) {
-      return true;
-    }
-
-    const [month, day, year] = dateCreatedStr.split('/');
-    const roomDate = new Date(`${year}-${month}-${day}`);
-    roomDate.setHours(0, 0, 0, 0);
-
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    if (dateRange === 'Today') {
-      return roomDate.getTime() === now.getTime();
-    }
-
-    if (dateRange === 'Yesterday') {
-      const yesterday = new Date(now);
-      yesterday.setDate(now.getDate() - 1);
-      return roomDate.getTime() === yesterday.getTime();
-    }
-
-    const diffTime = now - roomDate;
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
-
-    if (dateRange === 'Last 7 days') {
-      return diffDays >= 0 && diffDays <= 7;
-    }
-
-    if (dateRange === 'Last 30 days') {
-      return diffDays >= 0 && diffDays <= 30;
-    }
-
-    if (dateRange.includes('to')) {
-      const [startStr, endStr] = dateRange.split(' to ');
-      const startDateObj = new Date(startStr);
-      startDateObj.setHours(0, 0, 0, 0);
-      const endDateObj = new Date(endStr);
-      endDateObj.setHours(23, 59, 59, 999);
-
-      return roomDate >= startDateObj && roomDate <= endDateObj;
-    }
-
-    return true;
-  };
-
-  // Filtering rooms based on search query, status filter, and dateCreated filter
+  // Filtering rooms based on search query and status (date range is applied by the backend)
   const filteredRooms = roomsList.filter((room) => {
     const matchesSearch =
       room.roomName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       room.host.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesStatus =
       statusFilter === 'All Status' || room.status.toLowerCase() === statusFilter.toLowerCase();
 
-    const matchesDate = matchesDateFilter(room.dateCreated);
-
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesSearch && matchesStatus;
   });
 
   // Pagination Calculations (Strictly 20 rows per page)
@@ -193,24 +225,34 @@ export default function ITRooms() {
     }
   };
 
-  // Close Room action confirmation & simulated backend flow handler
-  const confirmCloseRoom = () => {
-    if (roomToClose) {
-      // Update room status in state list to 'Suspended' or 'Closed'
-      setRoomsList((prev) =>
-        prev.map((r) => (r.id === roomToClose.id ? { ...r, status: 'Suspended' } : r))
-      );
-
-      // --- SIMULATED BACKEND ACTIONS ---
-      console.log(`[Backend Simulation] Automated room closure email dispatched to host ${roomToClose.host} for room "${roomToClose.roomName}". Reason: ${closeReason}, Notes: ${internalNotes}`);
-      console.log(`[Backend Simulation] Restriction modal triggered for host ${roomToClose.host}; active session for room ID ${roomToClose.id} terminated immediately.`);
-      // ---------------------------------
-
-      // Transition modal into Success State
-      setCloseSuccessData({
-        roomName: roomToClose.roomName,
-        host: roomToClose.host,
+  // Close Room: the server closes it, kicks everyone inside live, and emails the host
+  const confirmCloseRoom = async () => {
+    if (!roomToClose || isClosing) return;
+    setIsClosing(true);
+    try {
+      const res = await fetch(`${API}/api/itadmin/rooms/${roomToClose.id}/close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: closeReason, notes: internalNotes }),
       });
+      const data = await res.json();
+
+      if (data.success) {
+        setRoomsList((prev) =>
+          prev.map((r) => (r.id === roomToClose.id ? { ...r, status: 'Suspended' } : r))
+        );
+        setCloseSuccessData({
+          roomName: roomToClose.roomName,
+          host: roomToClose.host,
+        });
+      } else {
+        alert(data.message || 'Failed to close room.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Network error while closing room.');
+    } finally {
+      setIsClosing(false);
     }
   };
 
@@ -304,7 +346,7 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">TOTAL ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.totalRooms.value}</h3>
-            {!isToday && dateRange !== 'All time' && (
+            {showTrend(metricsData.totalRooms) && (
               <div className="flex items-center gap-1.5 mt-3 justify-end">
                 <span className={`font-pressstart text-[9px] ${metricsData.totalRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
                   {metricsData.totalRooms.changeNum}
@@ -327,7 +369,7 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">ACTIVE ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.activeRooms.value}</h3>
-            {!isToday && dateRange !== 'All time' && (
+            {showTrend(metricsData.activeRooms) && (
               <div className="flex items-center gap-1.5 mt-3 justify-end">
                 <span className={`font-pressstart text-[9px] ${metricsData.activeRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
                   {metricsData.activeRooms.changeNum}
@@ -351,7 +393,7 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">INACTIVE ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.inactiveRooms.value}</h3>
-            {!isToday && dateRange !== 'All time' && (
+            {showTrend(metricsData.inactiveRooms) && (
               <div className="flex items-center gap-1.5 mt-3 justify-end">
                 <span className={`font-pressstart text-[9px] ${metricsData.inactiveRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
                   {metricsData.inactiveRooms.changeNum}
@@ -374,7 +416,7 @@ export default function ITRooms() {
           <div className="flex flex-col flex-1 min-w-0">
             <span className="font-pixel text-[18px] sm:text-[24px] text-theme-dark uppercase">REPORTED ROOMS</span>
             <h3 className="font-pressstart text-[20px] sm:text-[24px] text-theme-dark mt-1 truncate">{metricsData.reportedRooms.value}</h3>
-            {!isToday && dateRange !== 'All time' && (
+            {showTrend(metricsData.reportedRooms) && (
               <div className="flex items-center gap-1.5 mt-3 justify-end">
                 <span className={`font-pressstart text-[9px] ${metricsData.reportedRooms.positive ? 'text-theme-safe' : 'text-theme-danger'}`}>
                   {metricsData.reportedRooms.changeNum}
@@ -407,7 +449,13 @@ export default function ITRooms() {
               </tr>
             </thead>
             <tbody className="divide-y divide-theme-dark/10 font-pixel text-[15px] sm:text-[18px] text-theme-dark">
-              {currentRows.length > 0 ? (
+              {isLoadingRooms ? (
+                <tr>
+                  <td colSpan="7" className="py-12 text-center font-pixel text-lg text-theme-dark/60 animate-pulse">
+                    Loading rooms from database...
+                  </td>
+                </tr>
+              ) : currentRows.length > 0 ? (
                 currentRows.map((room) => (
                   <tr key={room.id} className="hover:bg-theme-muted/50 transition-colors">
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-left">{room.roomName}</td>
@@ -563,20 +611,22 @@ export default function ITRooms() {
                 <div className="flex gap-3 justify-center mt-4 pt-2">
                   <button
                     type="button"
+                    disabled={isClosing}
                     onClick={() => {
                       setShowCloseModal(false);
                       setRoomToClose(null);
                     }}
-                    className="bg-[#E87339] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow"
+                    className="bg-[#E87339] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow disabled:opacity-50"
                   >
                     CANCEL
                   </button>
                   <button
                     type="button"
+                    disabled={isClosing}
                     onClick={confirmCloseRoom}
-                    className="bg-[#8B0000] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow"
+                    className="bg-[#8B0000] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow disabled:opacity-50"
                   >
-                    CONFIRM
+                    {isClosing ? 'CLOSING...' : 'CONFIRM'}
                   </button>
                 </div>
               </>

@@ -1,6 +1,7 @@
 // src/pages/ITReports.jsx
 import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
+import { adminFetch } from '../utils/adminApi';
 
 export default function ITReports() {
   // Search and Filter State (Default dateRange set to 'All time')
@@ -31,6 +32,7 @@ export default function ITReports() {
   const [successActionTitle, setSuccessActionTitle] = useState('');
   const [fadingTicketIds, setFadingTicketIds] = useState([]);
   const [showChatLogModal, setShowChatLogModal] = useState(false);
+  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
 
   // Closed / Resolved Tickets State (Mock data removed; starts empty, populated from backend actions)
   const [resolvedTicketsList, setResolvedTicketsList] = useState([]);
@@ -42,10 +44,9 @@ export default function ITReports() {
   const [ticketsList, setTicketsList] = useState([]);
   const [loadingTickets, setLoadingTickets] = useState(true);
 
-  // Fetch live reports from backend on mount & sync mapping with reporter_username
-// Fetch live reports from backend on mount & split into open vs resolved/closed lists
+  // Fetch live reports from backend on mount & split into open vs resolved/closed lists
   useEffect(() => {
-    fetch('http://localhost:5000/api/itadmin/reports')
+    adminFetch('http://localhost:5000/api/itadmin/reports')
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -62,6 +63,7 @@ export default function ITReports() {
               content: rep.reason || 'No description provided.',
               username: rep.target_details?.username || rep.reporter_username || 'User',
               host: rep.target_details?.host || 'N/A',
+              roomName: rep.target_details?.roomName || '',
               dateCreated: rep.target_details?.dateCreated ? new Date(rep.target_details.dateCreated).toLocaleDateString() : 'N/A',
               userSince: 'N/A',
               reportingHistory: '1 time reported',
@@ -77,7 +79,9 @@ export default function ITReports() {
             if (rep.status === 'resolved' || rep.status === 'closed') {
               resolvedList.push({
                 ...formattedTicket,
-                status: rep.status
+                status: rep.status,
+                // resolved list items use the time the action happened
+                timestamp: rep.updated_at || formattedTicket.timestamp
               });
             } else {
               openList.push(formattedTicket);
@@ -147,7 +151,7 @@ export default function ITReports() {
     }
   };
 
-// Combine open and resolved/closed tickets so metric cards count all reports regardless of status
+  // Combine open and resolved/closed tickets so metric cards count all reports regardless of status
   const allReportsCombined = [...ticketsList, ...resolvedTicketsList];
 
   const metricsData = {
@@ -173,7 +177,7 @@ export default function ITReports() {
 
     const ticketDate = new Date(timestampStr);
     const nowDate = new Date();
-    
+
     const ticketDay = new Date(ticketDate.getFullYear(), ticketDate.getMonth(), ticketDate.getDate()).getTime();
     const today = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
     const dayMs = 24 * 60 * 60 * 1000;
@@ -288,71 +292,79 @@ export default function ITReports() {
     setActiveModalStep('success');
   };
 
-const handleCloseSuccessModal = () => {
-    if (ticketToResolve) {
-      const targetId = ticketToResolve.id;
-      const isDismiss = successActionTitle.includes('Dismiss');
-      const statusValue = isDismiss ? 'closed' : 'resolved';
+  // Sends the action to the backend (authenticated) and only moves the ticket
+  // to "resolved / closed" once the server accepted it. A suspend action on a
+  // user/message report also creates the real suspension, so the user shows up
+  // as Suspended in the Manage Users page.
+  const handleCloseSuccessModal = async () => {
+    if (!ticketToResolve) {
+      setActiveModalStep('none');
+      return;
+    }
+    if (isSubmittingAction) return;
 
-      let finalDuration = null;
-      const isSuspendAction = successActionTitle.includes('Suspend');
-      const isMessageOrUser = ticketToResolve.type === 'message' || ticketToResolve.type === 'user';
+    const targetId = ticketToResolve.id;
+    const isDismiss = successActionTitle.includes('Dismiss');
+    const statusValue = isDismiss ? 'closed' : 'resolved';
 
-      if (isSuspendAction && isMessageOrUser) {
-        finalDuration = suspensionDuration === 'Custom' 
-          ? `Custom: ${customSuspensionDate}` 
-          : suspensionDuration;
-      }
+    let finalDuration = null;
+    const isSuspendAction = successActionTitle.includes('Suspend');
+    const isMessageOrUser = ticketToResolve.type === 'message' || ticketToResolve.type === 'user';
 
-      // 1. Send update request to backend API
-      fetch(`http://localhost:5000/api/itadmin/reports/${targetId}`, {
+    if (isSuspendAction && isMessageOrUser) {
+      finalDuration = suspensionDuration === 'Custom'
+        ? `Custom: ${customSuspensionDate}`
+        : suspensionDuration;
+    }
+
+    setIsSubmittingAction(true);
+    try {
+      const res = await adminFetch(`http://localhost:5000/api/itadmin/reports/${targetId}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           status: statusValue,
           actionTaken: successActionTitle,
           reason: actionReason,
           notes: actionNotes,
-          actionNotes: actionNotes,
           suspensionDuration: finalDuration
         }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (!data.success) {
-            console.error('Failed to update report status on backend');
-          }
-        })
-        .catch((err) => {
-          console.error('Error updating report status:', err);
-        });
+      });
+      const data = await res.json();
 
-      // 2. Animate and update local frontend states
-      setFadingTicketIds((prev) => [...prev, targetId]);
-      
-      const resolvedEntry = {
-        id: Date.now(),
-        ticketId: ticketToResolve.ticketId,
-        type: ticketToResolve.type,
-        submitter: ticketToResolve.submitter,
-        timestamp: new Date().toISOString(), // <--- Sets timestamp to the current moment it was resolved/closed
-        status: statusValue,
-        action: successActionTitle,
-        suspensionDuration: finalDuration
-      };
-
-      setTimeout(() => {
-        setTicketsList((prev) => prev.filter((t) => t.id !== targetId));
-        setFadingTicketIds((prev) => prev.filter((id) => id !== targetId));
-        setResolvedTicketsList((prev) => [resolvedEntry, ...prev]);
-        setActiveModalStep('none');
-        setTicketToResolve(null);
-      }, 300);
-    } else {
-      setActiveModalStep('none');
+      if (!data.success) {
+        alert(data.error || 'Failed to update report.');
+        setIsSubmittingAction(false);
+        return;
+      }
+    } catch (err) {
+      console.error('Error updating report status:', err);
+      alert('Network error while updating report.');
+      setIsSubmittingAction(false);
+      return;
     }
+
+    // Animate and update local frontend states
+    setFadingTicketIds((prev) => [...prev, targetId]);
+
+    const resolvedEntry = {
+      id: Date.now(),
+      ticketId: ticketToResolve.ticketId,
+      type: ticketToResolve.type,
+      submitter: ticketToResolve.submitter,
+      timestamp: new Date().toISOString(), // the moment it was resolved/closed
+      status: statusValue,
+      action: successActionTitle,
+      suspensionDuration: finalDuration
+    };
+
+    setTimeout(() => {
+      setTicketsList((prev) => prev.filter((t) => t.id !== targetId));
+      setFadingTicketIds((prev) => prev.filter((id) => id !== targetId));
+      setResolvedTicketsList((prev) => [resolvedEntry, ...prev]);
+      setActiveModalStep('none');
+      setTicketToResolve(null);
+      setIsSubmittingAction(false);
+    }, 300);
   };
 
   // Real PDF Download Export Handler using jsPDF
@@ -365,7 +377,7 @@ const handleCloseSuccessModal = () => {
     });
 
     const doc = new jsPDF();
-    
+
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
     doc.text("Closed & Resolved Tickets Report", 14, 20);
@@ -445,7 +457,7 @@ const handleCloseSuccessModal = () => {
 
       {/* ROW 1: COMBINED SEARCH BAR AND DATE DROPDOWN IN A SINGLE RESPONSIVE ROW */}
       <div className="w-full flex flex-col md:flex-row items-center gap-3">
-        
+
         {/* Search Bar Container */}
         <div className="w-full md:flex-1 flex items-center gap-3 bg-theme-surface border-2 border-theme-dark px-4 py-1 rounded-[12px] shadow-md">
           <svg className="w-6 h-6 text-theme-dark/60 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -484,7 +496,7 @@ const handleCloseSuccessModal = () => {
 
       {/* ROW 2: 4 METRIC CARDS OVERVIEW */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+
         {/* CARD 1: Total Reports */}
         <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-5 shadow-md flex items-start gap-4 relative">
           <div className="w-12 h-12 rounded-full bg-theme-muted border border-theme-dark flex items-center justify-center shrink-0 text-theme-primary self-start">
@@ -581,7 +593,7 @@ const handleCloseSuccessModal = () => {
 
       {/* ROW 3: TWO-COLUMN CONTAINER GRID SECTION (70% / 30%) */}
       <div className="flex flex-col lg:flex-row gap-6 w-full">
-        
+
         {/* Left Column (70% width) - Tickets Feed / Ledger Component */}
         <div className="w-full lg:w-[70%] flex flex-col justify-between">
           <div>
@@ -677,7 +689,7 @@ const handleCloseSuccessModal = () => {
 
         {/* Right Column (30% width) - Stacked Vertically */}
         <div className="w-full lg:w-[30%] flex flex-col gap-6">
-          
+
           {/* Top Row Container (~35% proportion) with Interactive Group & Submitted Filter Dropdowns */}
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 shadow-md h-[35%] min-h-[140px] flex flex-col justify-between">
             <div className="flex items-center gap-2">
@@ -799,7 +811,7 @@ const handleCloseSuccessModal = () => {
       {/* MULTI-STEP TICKET RESOLUTION MODALS */}
       {activeModalStep !== 'none' && ticketToResolve && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
-          
+
           {/* STEP 1: DETAIL MODAL (MESSAGE, ROOM, OR USER) */}
           {activeModalStep === 'detail' && (
             <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-lg w-full shadow-xl flex flex-col gap-4">
@@ -1190,7 +1202,7 @@ const handleCloseSuccessModal = () => {
                 </button>
                 <button
                   type="button"
-                  disabled={!actionReason}
+                  disabled={!actionReason || (suspensionDuration === 'Custom' && !customSuspensionDate)}
                   onClick={() => handleSubmitActionConfirmation('Suspend User')}
                   className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow disabled:opacity-40 disabled:cursor-not-allowed"
                 >
@@ -1271,10 +1283,11 @@ const handleCloseSuccessModal = () => {
               </p>
               <button
                 type="button"
+                disabled={isSubmittingAction}
                 onClick={handleCloseSuccessModal}
-                className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2"
+                className="w-full bg-theme-primary text-white border-2 border-theme-dark py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer hover:opacity-90 retro-shadow mt-2 disabled:opacity-50"
               >
-                Close & Update Feed
+                {isSubmittingAction ? 'Saving...' : 'Close & Update Feed'}
               </button>
             </div>
           )}
@@ -1349,7 +1362,7 @@ const handleCloseSuccessModal = () => {
       {showResolvedHistoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-3xl w-full shadow-xl flex flex-col max-h-[85vh]">
-            
+
             <div className="flex items-center justify-between border-b-2 border-theme-dark/10 pb-3">
               <div className="flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-5 h-5 text-theme-primary">

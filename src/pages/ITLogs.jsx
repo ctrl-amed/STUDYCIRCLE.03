@@ -1,5 +1,23 @@
 // src/pages/ITLogs.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { adminFetch } from '../utils/adminApi';
+
+const API_BASE = 'http://localhost:5000';
+const REFRESH_MS = 30000; // auto-refresh every 30 seconds
+
+// Local (not UTC) YYYY-MM-DD, so "today" matches the admin's own calendar day
+const toLocalDateStr = (d) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+// Parse "YYYY-MM-DD" as a LOCAL midnight date (avoids off-by-one-day timezone bugs)
+const parseLocalDate = (str) => {
+  const [y, m, d] = String(str).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+};
 
 export default function ITLogs() {
   // Search and Date Range Filter State (Default set to 'All time')
@@ -15,6 +33,11 @@ export default function ITLogs() {
   // Pagination State (Strictly 20 rows per page)
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 20;
+
+  // Real data state
+  const [logsList, setLogsList] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // Helper functions to format date (YYYY-MM-DD to MM/DD/YYYY) and timestamp (HH:mm:ss to hh:mm am/pm)
   const formatDateToSlash = (dateStr) => {
@@ -34,34 +57,31 @@ export default function ITLogs() {
     return `${hours}:${minutes} ${ampm}`;
   };
 
-  // Comprehensive Mock Admin Action Logs Data with a healthy distribution relative to current date (2026-09-23)
-  const [logsList, setLogsList] = useState([
-    { id: 1, logId: 'LOG-1001', date: '2026-09-23', timestamp: '14:30:12', admin: 'AdminSarah', targetUser: 'PixelCoder99', action: 'Dismissed', duration: 'N/A' },
-    { id: 2, logId: 'LOG-1002', date: '2026-09-23', timestamp: '13:15:45', admin: 'AdminAlex', targetUser: 'ShadowHacker', action: 'Suspended', duration: '7 Days' },
-    { id: 3, logId: 'LOG-1003', date: '2026-09-22', timestamp: '11:05:30', admin: 'AdminMike', targetUser: 'BadActor23', action: 'Suspended', duration: '30 Days' },
-    { id: 4, logId: 'LOG-1004', date: '2026-09-22', timestamp: '10:20:00', admin: 'AdminSarah', targetUser: 'ChillStudent', action: 'Warning', duration: 'N/A' },
-    { id: 5, logId: 'LOG-1005', date: '2026-09-21', timestamp: '18:45:10', admin: 'AdminAlex', targetUser: 'BioHacker', action: 'Suspended', duration: 'Permanent' },
-    { id: 6, logId: 'LOG-1006', date: '2026-09-21', timestamp: '16:12:33', admin: 'AdminDave', targetUser: 'CodeNinja21', action: 'Dismissed', duration: 'N/A' },
-    { id: 7, logId: 'LOG-1007', date: '2026-09-20', timestamp: '14:00:22', admin: 'AdminSarah', targetUser: 'DatabaseGuru', action: 'Suspended', duration: '14 Days' },
-    { id: 8, logId: 'LOG-1008', date: '2026-09-19', timestamp: '12:30:50', admin: 'AdminMike', targetUser: 'RetroGamer', action: 'Warning', duration: 'N/A' },
-    { id: 9, logId: 'LOG-1009', date: '2026-09-18', timestamp: '15:10:11', admin: 'AdminAlex', targetUser: 'SpammerX', action: 'Suspended', duration: '24 Hours' },
-    { id: 10, logId: 'LOG-1010', date: '2026-09-18', timestamp: '11:20:05', admin: 'AdminDave', targetUser: 'MathWhiz', action: 'Dismissed', duration: 'N/A' },
-    { id: 11, logId: 'LOG-1011', date: '2026-09-17', timestamp: '09:45:30', admin: 'AdminSarah', targetUser: 'HistoryBuff', action: 'Dismissed', duration: 'N/A' },
-    { id: 12, logId: 'LOG-1012', date: '2026-09-16', timestamp: '17:30:00', admin: 'AdminMike', targetUser: 'TrollMaster', action: 'Suspended', duration: '7 Days' },
-    { id: 13, logId: 'LOG-1013', date: '2026-09-15', timestamp: '14:15:22', admin: 'AdminAlex', targetUser: 'PhysicsGeek', action: 'Dismissed', duration: 'N/A' },
-    { id: 14, logId: 'LOG-1014', date: '2026-09-14', timestamp: '10:05:12', admin: 'AdminDave', targetUser: 'ChemistryLab', action: 'Warning', duration: 'N/A' },
-    { id: 15, logId: 'LOG-1015', date: '2026-09-10', timestamp: '16:50:40', admin: 'AdminSarah', targetUser: 'AbusiveUser99', action: 'Suspended', duration: '30 Days' },
-    { id: 16, logId: 'LOG-1016', date: '2026-09-08', timestamp: '13:20:15', admin: 'AdminMike', targetUser: 'LiteratureFan', action: 'Dismissed', duration: 'N/A' },
-    { id: 17, logId: 'LOG-1017', date: '2026-09-05', timestamp: '11:10:00', admin: 'AdminAlex', targetUser: 'ArtStudent', action: 'Warning', duration: 'N/A' },
-    { id: 18, logId: 'LOG-1018', date: '2026-09-03', timestamp: '15:40:50', admin: 'AdminDave', targetUser: 'MusicComposer', action: 'Dismissed', duration: 'N/A' },
-    { id: 19, logId: 'LOG-1019', date: '2026-09-01', timestamp: '12:00:33', admin: 'AdminSarah', targetUser: 'BadBot01', action: 'Suspended', duration: 'Permanent' },
-    { id: 20, logId: 'LOG-1020', date: '2026-09-01', timestamp: '08:30:10', admin: 'AdminMike', targetUser: 'WebDevPro', action: 'Dismissed', duration: 'N/A' },
-    { id: 21, logId: 'LOG-1021', date: '2026-08-25', timestamp: '16:22:11', admin: 'AdminAlex', targetUser: 'DataScientist', action: 'Dismissed', duration: 'N/A' },
-    { id: 22, logId: 'LOG-1022', date: '2026-08-20', timestamp: '14:11:05', admin: 'AdminDave', targetUser: 'CloudArchitect', action: 'Warning', duration: 'N/A' },
-    { id: 23, logId: 'LOG-1023', date: '2026-08-15', timestamp: '10:00:00', admin: 'AdminSarah', targetUser: 'SecurityAnalyst', action: 'Dismissed', duration: 'N/A' },
-    { id: 24, logId: 'LOG-1024', date: '2026-08-10', timestamp: '15:33:40', admin: 'AdminMike', targetUser: 'GameDevGuru', action: 'Suspended', duration: '3 Days' },
-    { id: 25, logId: 'LOG-1025', date: '2026-08-01', timestamp: '11:15:20', admin: 'AdminAlex', targetUser: 'UIUXDesigner', action: 'Dismissed', duration: 'N/A' },
-  ]);
+  // Load the real admin action logs from the backend (authenticated)
+  const fetchLogs = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setIsLoading(true);
+    try {
+      const response = await adminFetch(`${API_BASE}/api/itadmin/logs`);
+      const data = await response.json();
+      if (data.success) {
+        setLogsList(Array.isArray(data.logs) ? data.logs : []);
+        setLoadError('');
+      } else {
+        setLoadError(data.error || 'Failed to load action logs.');
+      }
+    } catch (err) {
+      console.error('Failed to fetch admin logs:', err);
+      setLoadError('Cannot reach the server. Please check that the backend is running.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLogs(true);
+    const timer = setInterval(() => fetchLogs(false), REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [fetchLogs]);
 
   // Handle Date Range Filter Dropdown Change
   const handleDateFilterChange = (e) => {
@@ -74,12 +94,13 @@ export default function ITLogs() {
     }
   };
 
+  const todayMax = toLocalDateStr(new Date());
+
   // Custom Date Form Validation & Submission
   const handleApplyCustomDates = (e) => {
     e.preventDefault();
-    const todayStr = new Date().toISOString().split('T')[0];
 
-    if (startDate > todayStr || endDate > todayStr) {
+    if (startDate > todayMax || endDate > todayMax) {
       setCustomDateError('Error: Future dates are not allowed. Please select a valid past or current date range.');
       return;
     }
@@ -97,16 +118,13 @@ export default function ITLogs() {
     }
   };
 
-  const todayMax = new Date().toISOString().split('T')[0];
-
   // Robust date comparison helper matching YYYY-MM-DD log date against active dateRange filters
   const matchesDateFilter = (logDateStr) => {
     if (dateRange === 'All time' || !dateRange) {
       return true;
     }
 
-    const logDate = new Date(logDateStr);
-    logDate.setHours(0, 0, 0, 0);
+    const logDate = parseLocalDate(logDateStr);
 
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -121,8 +139,7 @@ export default function ITLogs() {
       return logDate.getTime() === yesterday.getTime();
     }
 
-    const diffTime = now - logDate;
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    const diffDays = Math.round((now - logDate) / (1000 * 60 * 60 * 24));
 
     if (dateRange === 'Last 7 days') {
       return diffDays >= 0 && diffDays <= 7;
@@ -132,11 +149,10 @@ export default function ITLogs() {
       return diffDays >= 0 && diffDays <= 30;
     }
 
-    if (dateRange.includes('to')) {
+    if (dateRange.includes(' to ')) {
       const [startStr, endStr] = dateRange.split(' to ');
-      const startDateObj = new Date(startStr);
-      startDateObj.setHours(0, 0, 0, 0);
-      const endDateObj = new Date(endStr);
+      const startDateObj = parseLocalDate(startStr);
+      const endDateObj = parseLocalDate(endStr);
       endDateObj.setHours(23, 59, 59, 999);
 
       return logDate >= startDateObj && logDate <= endDateObj;
@@ -149,11 +165,11 @@ export default function ITLogs() {
   const filteredLogs = logsList.filter((log) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
-      log.logId.toLowerCase().includes(query) ||
-      log.admin.toLowerCase().includes(query) ||
-      log.action.toLowerCase().includes(query) ||
-      log.duration.toLowerCase().includes(query) ||
-      log.targetUser.toLowerCase().includes(query);
+      String(log.logId || '').toLowerCase().includes(query) ||
+      String(log.admin || '').toLowerCase().includes(query) ||
+      String(log.action || '').toLowerCase().includes(query) ||
+      String(log.duration || '').toLowerCase().includes(query) ||
+      String(log.targetUser || '').toLowerCase().includes(query);
 
     const matchesDate = matchesDateFilter(log.date);
 
@@ -162,7 +178,8 @@ export default function ITLogs() {
 
   // Pagination Calculations (Strictly 20 rows per page)
   const totalPages = Math.ceil(filteredLogs.length / rowsPerPage) || 1;
-  const indexOfLastRow = currentPage * rowsPerPage;
+  const safePage = Math.min(currentPage, totalPages);
+  const indexOfLastRow = safePage * rowsPerPage;
   const indexOfFirstRow = indexOfLastRow - rowsPerPage;
   const currentRows = filteredLogs.slice(indexOfFirstRow, indexOfLastRow);
 
@@ -176,9 +193,9 @@ export default function ITLogs() {
   // Helper for action badge coloring in the logs table
   const renderActionBadge = (action) => {
     let badgeColor = 'bg-theme-safe/20 text-theme-safe';
-    if (action.toLowerCase() === 'suspended') {
+    if (String(action).toLowerCase() === 'suspended') {
       badgeColor = 'bg-theme-danger/20 text-theme-danger';
-    } else if (action.toLowerCase() === 'warning') {
+    } else if (String(action).toLowerCase() === 'warning') {
       badgeColor = 'bg-[#FFB703]/20 text-[#B38000]';
     }
 
@@ -189,12 +206,19 @@ export default function ITLogs() {
     );
   };
 
+  const emptyMessage = () => {
+    if (isLoading) return 'Loading action logs...';
+    if (loadError) return loadError;
+    if (logsList.length === 0) return 'No admin actions have been recorded yet.';
+    return 'No action logs found matching your search or filter criteria.';
+  };
+
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
 
       {/* ROW 1: COMBINED SEARCH BAR AND DATE DROPDOWN IN A SINGLE RESPONSIVE ROW */}
       <div className="w-full flex flex-col md:flex-row items-center gap-3">
-        
+
         {/* Search Bar Container */}
         <div className="w-full md:flex-1 flex items-center gap-3 bg-theme-surface border-2 border-theme-dark px-4 py-1 rounded-[12px] shadow-md">
           <svg className="w-6 h-6 text-theme-dark/60 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -213,10 +237,10 @@ export default function ITLogs() {
           />
         </div>
 
-        {/* Date Range Dropdown Container */}
+        {/* Date Range Dropdown + Refresh */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
           <select
-            value={dateRange.includes('to') ? 'Custom' : dateRange}
+            value={dateRange.includes(' to ') ? 'Custom' : dateRange}
             onChange={handleDateFilterChange}
             className="w-full md:w-auto bg-theme-surface border-2 border-theme-dark font-pixel text-[16px] sm:text-[20px] px-3.5 py-2 rounded-[12px] text-theme-dark outline-none cursor-pointer shadow-md hover:bg-theme-muted transition-colors"
           >
@@ -227,13 +251,24 @@ export default function ITLogs() {
             <option value="Last 30 days">Last 30 days</option>
             <option value="Custom">Custom</option>
           </select>
+
+          <button
+            type="button"
+            onClick={() => fetchLogs(true)}
+            title="Refresh logs"
+            className="bg-theme-surface border-2 border-theme-dark px-3.5 py-2 rounded-[12px] text-theme-dark shadow-md hover:bg-theme-muted transition-colors cursor-pointer shrink-0"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M5.6 15A8 8 0 0 0 20 12M18.4 9A8 8 0 0 0 4 12" />
+            </svg>
+          </button>
         </div>
 
       </div>
 
       {/* SYSTEM LOGS DATA TABLE & LEDGER CONTAINER */}
       <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-md flex flex-col justify-between gap-6">
-        
+
         {/* Table Wrapper */}
         <div className="overflow-x-auto w-full rounded-[12px]">
           <table className="w-full text-center border-collapse min-w-[750px]">
@@ -252,7 +287,7 @@ export default function ITLogs() {
               {currentRows.length > 0 ? (
                 currentRows.map((log) => (
                   <tr key={log.id} className="hover:bg-theme-muted/50 transition-colors">
-                      <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-primary text-left">{log.logId}</td>
+                    <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-primary text-left">{log.logId}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">{formatDateToSlash(log.date)}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-center">{formatTimeTo12Hour(log.timestamp)}</td>
                     <td className="py-3.5 px-3 font-pixel text-[15px] sm:text-[20px] text-theme-dark text-left">{log.admin}</td>
@@ -267,8 +302,11 @@ export default function ITLogs() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="py-12 text-center font-pixel text-lg text-theme-dark/60">
-                    No action logs found matching your search or filter criteria.
+                  <td
+                    colSpan="7"
+                    className={`py-12 text-center font-pixel text-lg ${loadError && !isLoading ? 'text-theme-danger' : 'text-theme-dark/60'}`}
+                  >
+                    {emptyMessage()}
                   </td>
                 </tr>
               )}
@@ -286,8 +324,8 @@ export default function ITLogs() {
             {/* Previous Arrow Button */}
             <button
               type="button"
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
+              onClick={() => handlePageChange(safePage - 1)}
+              disabled={safePage === 1}
               className="px-3 py-1.5 font-pressstart text-[10px] bg-theme-surface hover:bg-theme-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors rounded-[6px]"
             >
               &lt;
@@ -300,7 +338,7 @@ export default function ITLogs() {
                 type="button"
                 onClick={() => handlePageChange(num)}
                 className={`px-3 py-1.5 rounded-[6px] font-pressstart text-[9px] cursor-pointer transition-colors ${
-                  currentPage === num
+                  safePage === num
                     ? 'bg-theme-primary text-white shadow-xs'
                     : 'bg-theme-surface text-theme-dark hover:bg-theme-muted'
                 }`}
@@ -312,8 +350,8 @@ export default function ITLogs() {
             {/* Next Arrow Button */}
             <button
               type="button"
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages || totalPages === 0}
+              onClick={() => handlePageChange(safePage + 1)}
+              disabled={safePage === totalPages || totalPages === 0}
               className="px-3 py-1.5 font-pressstart text-[10px] bg-theme-surface hover:bg-theme-muted disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors rounded-[6px]"
             >
               &gt;

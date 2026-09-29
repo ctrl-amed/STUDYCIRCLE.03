@@ -18,6 +18,8 @@ from pypdf import PdfReader
 import uuid
 import re
 import time
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+from functools import wraps
 
 # =============================================================================
 # APP CONFIGURATION & SETUP
@@ -71,6 +73,73 @@ def parse_json_field(value, default=None):
         except Exception:
             return default
     return value
+
+
+# =============================================================================
+# ADMIN AUTH HELPERS
+# =============================================================================
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_hex(32)
+    print("[WARNING] SECRET_KEY not set in .env. Admin tokens will reset on every server restart.")
+
+token_serializer = URLSafeTimedSerializer(SECRET_KEY)
+ADMIN_TOKEN_MAX_AGE = 60 * 60 * 8  # 8 hours
+ADMIN_PASSWORD_REGEX = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$')
+
+# Lock an admin account for 5 min after 5 wrong passwords (in memory)
+ADMIN_MAX_ATTEMPTS = 5
+ADMIN_LOCK_SECONDS = 300
+admin_login_attempts = {}
+
+
+def _admin_locked(email):
+    rec = admin_login_attempts.get(email)
+    if not rec:
+        return False
+    if rec['locked_until'] > time.time():
+        return True
+    if rec['locked_until']:
+        admin_login_attempts.pop(email, None)
+    return False
+
+
+def _admin_fail(email):
+    rec = admin_login_attempts.setdefault(email, {'count': 0, 'locked_until': 0})
+    rec['count'] += 1
+    if rec['count'] >= ADMIN_MAX_ATTEMPTS:
+        rec['locked_until'] = time.time() + ADMIN_LOCK_SECONDS
+
+
+def require_admin(allow_pending=False, super_only=False):
+    """Protects a route. Reads the Bearer token, re-checks the admin in the DB
+    (so deactivating a professor takes effect immediately), and sets request.admin."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            token = request.headers.get('Authorization', '').replace('Bearer ', '').strip()
+            try:
+                payload = token_serializer.loads(token, max_age=ADMIN_TOKEN_MAX_AGE)
+            except (BadSignature, SignatureExpired):
+                return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+
+            res = supabase.table('admins') \
+                .select('id, username, full_name, role, is_active, must_change_password') \
+                .eq('id', payload.get('id')).execute()
+            admin = res.data[0] if res.data else None
+
+            if not admin or not admin['is_active']:
+                return jsonify({'success': False, 'error': 'Unauthorized'}), 401
+            if admin['must_change_password'] and not allow_pending:
+                return jsonify({'success': False, 'error': 'Password change required.', 'mustChangePassword': True}), 403
+            if super_only and admin['role'] != 'super_admin':
+                return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
+            request.admin = admin
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 def calculate_level_from_total_xp(total_xp):
@@ -137,6 +206,7 @@ def create_report():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/itadmin/reports', methods=['GET'])
+@require_admin()
 def admin_get_reports():
     try:
         response = supabase.table('reports').select('*').order('created_at', desc=True).execute()
@@ -145,22 +215,23 @@ def admin_get_reports():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/itadmin/reports/<report_id>', methods=['PATCH'])
+@require_admin()
 def admin_update_report(report_id):
     data = request.json or {}
     status = data.get('status') # 'resolved' or 'closed'
     action_taken = data.get('actionTaken')
     reason = data.get('reason')
     notes = data.get('notes') or data.get('actionNotes') or data.get('additionalNotes')
-    
     suspension_duration = data.get('suspensionDuration')
 
     if not status:
         return jsonify({"success": False, "error": "Status is required."}), 400
 
     try:
-        # Fetch the report target type to validate server-side rules
-        rep_res = supabase.table('reports').select('target_type').eq('id', report_id).execute()
-        target_type = rep_res.data[0].get('target_type') if rep_res.data else None
+        # Fetch the report target type + details to validate server-side rules
+        rep_res = supabase.table('reports').select('target_type, target_details').eq('id', report_id).execute()
+        rep_row = rep_res.data[0] if rep_res.data else {}
+        target_type = rep_row.get('target_type')
 
         # Enforce rule: Rooms, dismissals, and warnings must ALWAYS have a NULL suspension duration
         is_suspend_action = action_taken and 'Suspend' in action_taken
@@ -169,14 +240,64 @@ def admin_update_report(report_id):
         if target_type == 'room' or not (is_suspend_action and is_message_or_user):
             suspension_duration = None
 
-        # Update Supabase record
-        response = supabase.table('reports').update({
+        # Update Supabase record. The admin name comes from the login token, not the frontend.
+        update_payload = {
             "status": status,
             "action_taken": action_taken,
             "reason": reason,
             "action_notes": notes,
-            "suspension_duration": suspension_duration  # <--- Evaluates to NULL if not a user/message suspension
-        }).eq('id', report_id).execute()
+            "suspension_duration": suspension_duration,
+            "admin_username": request.admin['username']
+        }
+
+        response = supabase.table('reports').update(update_payload).eq('id', report_id).execute()
+
+        # ---- NEW: a suspend action on a user/message report creates a real suspension ----
+        if is_suspend_action and is_message_or_user:
+            details = parse_json_field(rep_row.get('target_details'), {}) or {}
+            target_username = (details.get('username') or details.get('reportedUsername')
+                               or details.get('sender') or '').strip()
+            target_email = (details.get('email') or '').strip()
+
+            q = supabase.table('users').select('id, email')
+            if target_email:
+                q = q.eq('email', target_email)
+            elif target_username:
+                q = q.eq('username', target_username)
+            else:
+                q = None
+
+            u_res = q.execute() if q is not None else None
+            if u_res and u_res.data:
+                raw_dur = data.get('suspensionDuration') or '24 Hours / 1 Day'
+                custom_dt = None
+                duration_label = raw_dur
+                if raw_dur.startswith('Custom'):
+                    duration_label = 'Custom Date/Time'
+                    custom_dt = raw_dur.split(':', 1)[1].strip() if ':' in raw_dur else None
+
+                apply_user_suspension(
+                    u_res.data[0]['id'], u_res.data[0]['email'],
+                    reason or 'Community Guidelines Violation',
+                    duration_label, custom_dt, notes or '',
+                    request.admin['username']
+                )
+            else:
+                print(f"[REPORT SUSPEND] Could not find target user for report {report_id}: {details}")
+
+        if target_type == 'room' and action_taken and re.search(r'suspend|close', action_taken, re.I):
+            details = parse_json_field(rep_row.get('target_details'), {}) or {}
+            room_name = details.get('roomName')
+            if room_name:
+                supabase.table('rooms').update({
+                    'is_closed': True,
+                    'status': 'suspended',
+                    'closed_reason': reason or 'Community Guidelines Violation',
+                    'closed_at': now_iso()
+                }).eq('name', room_name).execute()
+                # kick everyone currently inside + refresh lists
+                socketio.emit('room_closed', {'room': room_name, 'reason': 'This room has been suspended by an administrator.'}, room=room_name)
+                socketio.emit('rooms_changed')
 
         return jsonify({"success": True, "message": "Report updated successfully", "report": response.data}), 200
     except Exception as e:
@@ -272,6 +393,27 @@ def get_active_suspension(user_id):
         print("Error checking suspension table:", e)
         return None
 
+def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, admin_username):
+    """Single place that creates a suspension. Used by Manage Users AND Reports."""
+    expiration_iso = calculate_suspension_expiration(duration, custom_dt)
+
+    supabase.table('suspensions').update({'is_active': False}) \
+        .eq('user_id', user_id).eq('is_active', True).execute()
+
+    supabase.table('suspensions').insert({
+        'user_id': user_id,
+        'email': email,
+        'reason': reason,
+        'duration': duration,
+        'internal_notes': notes,
+        'suspended_until': expiration_iso,
+        'is_active': True,
+        'admin_username': admin_username
+    }).execute()
+
+    supabase.table('users').update({'status': 'Suspended'}).eq('id', user_id).execute()
+    socketio.emit('users_changed')   # lets an open Manage Users page refresh
+    return expiration_iso
 
 # =============================================================================
 # HEALTH CHECK
@@ -2012,8 +2154,40 @@ room_empty_since = {}  # room -> when the last person left
 # maps socket id -> (room, username) so we can clean up when a tab closes
 sid_to_room = {}
 
+INACTIVE_ROOM_MINUTES = 5
+EMPTY_ROOM_GRACE_SECONDS = INACTIVE_ROOM_MINUTES * 60
+
+
 def now_iso():
     return datetime.now(timezone.utc).isoformat()
+
+
+def new_log(user, action):
+    """Unique id + real timestamp, so the client can dedupe and show '2 mins ago'."""
+    return {'id': f"log_{uuid.uuid4().hex}", 'user': user, 'action': action, 'ts': now_iso()}
+
+
+def is_room_closed(room):
+    return bool(room.get('is_closed')) or room.get('status') in ('suspended', 'closed')
+
+
+def get_live_count(room_name):
+    return len(room_members.get(room_name, []))
+
+
+def is_room_active(room):
+    """Active = someone inside, OR empty for less than INACTIVE_ROOM_MINUTES."""
+    name = room.get('name')
+    if get_live_count(name) > 0:
+        return True
+    last = room_empty_since.get(name)
+    if last is None:
+        try:
+            dt = datetime.fromisoformat(str(room.get('created_at')).replace('Z', '+00:00'))
+            last = dt.timestamp()
+        except Exception:
+            last = 0
+    return (time.time() - last) < EMPTY_ROOM_GRACE_SECONDS
 
 
 def note_if_room_empty(room):
@@ -2035,9 +2209,6 @@ def maybe_reset_stale_session(room):
             supabase.table('rooms').update({'is_started': False}).eq('name', room).execute()
         except Exception as e:
             print("Could not reset room:", e)
-
-def get_live_count(room_name):
-    return len(room_members.get(room_name, []))
 
 
 def broadcast_room_counts(room_name=None):
@@ -2072,9 +2243,12 @@ def on_join_room(data):
     maybe_reset_stale_session(room)
 
     try:
-        r = supabase.table('rooms').select('privacy, task_type, is_started, host, max_members').eq('name', room).execute()
+        r = supabase.table('rooms').select('privacy, task_type, is_started, host, max_members, is_closed, status').eq('name', room).execute()
         if r.data:
             info = r.data[0]
+            if is_room_closed(info):
+                emit('room_join_rejected', {'reason': 'This room has been suspended.'})
+                return
             returning = any(m['username'] == username for m in room_members.get(room, []))
             was_in_session = username in session_participants.get(room, set())
 
@@ -2139,10 +2313,12 @@ def on_join_room(data):
     if isinstance(room_cfg, str):
         try:
             room_cfg = json.loads(room_cfg)
-        except:
+        except Exception:
             pass
 
     existing_user = next((m for m in room_members[room] if m['username'] == username), None)
+    is_new = existing_user is None
+
     if existing_user:
         existing_user['status'] = status
         if db_avatar:
@@ -2163,16 +2339,16 @@ def on_join_room(data):
             'totalFocusTime': total_focus_formatted
         })
 
-        emit('room_update', {
+    # log only when it's a NEW member
+    emit('room_update', {
         'members': room_members[room],
         'room_config': room_cfg,
         'active_session': active_room_sessions.get(room),
         'timer_state': timer_states.get(room),
         'server_now': now_iso(),
-        'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
+        'logs': [new_log(username, 'joined the room')] if is_new else []
     }, room=room)
 
-    # tell every client (Rooms page, IT admin) the new live count
     broadcast_room_counts(room)
 
 
@@ -2180,10 +2356,10 @@ def on_join_room(data):
 def get_rooms():
     try:
         res = supabase.table('rooms').select('*').execute()
-        rooms = res.data or []
+        rooms = [r for r in (res.data or []) if not is_room_closed(r)]   # suspended = hidden
         for r in rooms:
             r['current_members'] = get_live_count(r['name'])
-            r['is_active'] = r['current_members'] > 0
+            r['is_active'] = is_room_active(r)
         return jsonify({'success': True, 'rooms': rooms}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -2284,7 +2460,7 @@ def on_leave_room(data):
         room_members[room] = [m for m in room_members[room] if m['username'] != username]
         emit('room_update', {
             'members': room_members[room],
-            'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+            'logs': [new_log(username, 'left the room')]
         }, room=room)
         broadcast_room_counts(room)
         note_if_room_empty(room)
@@ -2845,7 +3021,7 @@ def handle_disconnect():
             room_members[room] = [m for m in room_members[room] if m['username'] != username]
             socketio.emit('room_update', {
                 'members': room_members[room],
-                'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
+                'logs': [new_log(username, 'left the room')]
             }, room=room)
             broadcast_room_counts(room)
             note_if_room_empty(room)
@@ -2862,7 +3038,95 @@ def handle_disconnect():
                 pass
         broadcast_presence_to_admins()
 
+
+# --- Admin authentication (professors / IT staff) ---
+
+@app.route('/api/itadmin/login', methods=['POST'])
+def admin_login():
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    res = supabase.table('admins').select('*').eq('email', email).execute()
+    admin = res.data[0] if res.data else None
+
+    # Not an admin email: plain 401, and we don't count it. The frontend then tries student login.
+    if not admin:
+        return jsonify({'success': False, 'error': 'Invalid email or password.'}), 401
+
+    if _admin_locked(email):
+        return jsonify({'success': False, 'error': 'Too many failed attempts. Try again in a few minutes.'}), 429
+
+    if not admin['is_active'] or not bcrypt.check_password_hash(admin['password'], password):
+        _admin_fail(email)
+        return jsonify({'success': False, 'error': 'Invalid email or password.'}), 401
+
+    admin_login_attempts.pop(email, None)
+    supabase.table('admins').update({'last_login_at': datetime.now(timezone.utc).isoformat()}).eq('id', admin['id']).execute()
+
+    return jsonify({
+        'success': True,
+        'token': token_serializer.dumps({'id': admin['id']}),
+        'mustChangePassword': bool(admin['must_change_password']),
+        'admin': {'username': admin['username'], 'fullName': admin['full_name'], 'role': admin['role']}
+    }), 200
+
+
+@app.route('/api/itadmin/change-password', methods=['POST'])
+@require_admin(allow_pending=True)
+def admin_change_password():
+    data = request.get_json() or {}
+    old_pw = data.get('old_password') or ''
+    new_pw = data.get('new_password') or ''
+
+    if not ADMIN_PASSWORD_REGEX.match(new_pw):
+        return jsonify({'success': False, 'error': 'Password needs 8+ characters, upper and lower case, a number, and a special character.'}), 400
+    if old_pw == new_pw:
+        return jsonify({'success': False, 'error': 'New password must be different from the current one.'}), 400
+
+    res = supabase.table('admins').select('password').eq('id', request.admin['id']).execute()
+    if not res.data or not bcrypt.check_password_hash(res.data[0]['password'], old_pw):
+        return jsonify({'success': False, 'error': 'Current password is incorrect.'}), 400
+
+    supabase.table('admins').update({
+        'password': bcrypt.generate_password_hash(new_pw).decode('utf-8'),
+        'must_change_password': False
+    }).eq('id', request.admin['id']).execute()
+
+    return jsonify({'success': True, 'token': token_serializer.dumps({'id': request.admin['id']})}), 200
+
+
+@app.route('/api/itadmin/create-admin', methods=['POST'])
+@require_admin(super_only=True)
+def admin_create_admin():
+    data = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    full_name = (data.get('fullName') or '').strip()
+    email = (data.get('email') or '').strip().lower()
+
+    if not username or not full_name or not email:
+        return jsonify({'success': False, 'error': 'Username, full name and email are required.'}), 400
+
+    temp_password = secrets.token_urlsafe(9) + 'A1!'   # guarantees the password rules
+    try:
+        supabase.table('admins').insert({
+            'username': username,
+            'full_name': full_name,
+            'email': email,
+            'password': bcrypt.generate_password_hash(temp_password).decode('utf-8'),
+            'role': 'professor',
+            'must_change_password': True,
+        }).execute()
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Could not create admin: {e}'}), 400
+
+    return jsonify({'success': True, 'tempPassword': temp_password}), 201
+
+
+# --- Admin data endpoints ---
+
 @app.route('/api/itadmin/users', methods=['GET'])
+@require_admin()
 def admin_get_users():
     try:
         users_res = supabase.table('users').select('id, username, email, status, created_at').order('created_at', desc=True).execute()
@@ -2969,6 +3233,7 @@ def admin_get_users():
 
 
 @app.route('/api/itadmin/rooms', methods=['GET'])
+@require_admin()
 def admin_get_rooms():
     """Manage Rooms page: live member counts + Active / Inactive metrics.
     Active   = room currently has at least 1 person inside.
@@ -2979,8 +3244,8 @@ def admin_get_rooms():
 
         for r in rooms:
             r['current_members'] = get_live_count(r['name'])
-            r['is_active'] = r['current_members'] > 0
-            r['status_display'] = 'Active' if r['is_active'] else 'Inactive'
+            r['is_active'] = is_room_active(r) and not is_room_closed(r)
+            r['status_display'] = 'Suspended' if is_room_closed(r) else ('Active' if r['is_active'] else 'Inactive')
 
         active = sum(1 for r in rooms if r['is_active'])
 
@@ -2997,8 +3262,136 @@ def admin_get_rooms():
         print("ADMIN GET ROOMS ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _to_pht(iso_str):
+    """ISO timestamp (UTC from Supabase) -> timezone-aware datetime in Philippine time."""
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso_str).replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(PHT)
+    except Exception:
+        return None
+
+
+def _normalize_log_action(action_taken):
+    text = (action_taken or '').lower()
+    if 'suspend' in text:
+        return 'Suspended'
+    if 'warn' in text:
+        return 'Warning'
+    return 'Dismissed'
+
+
+def _normalize_log_duration(duration):
+    """'7 Days / 1 Week' -> '7 Days', 'Permanent / Indefinite' -> 'Permanent'."""
+    if not duration:
+        return 'N/A'
+    d = str(duration).strip()
+    if d.lower().startswith('permanent'):
+        return 'Permanent'
+    if d.lower().startswith('custom'):
+        return 'Custom'
+    return d.split('/')[0].strip()
+
+
+@app.route('/api/itadmin/logs', methods=['GET'])
+@require_admin()
+def admin_get_logs():
+    """
+    Admin action history for the IT Logs page. Built from:
+      1) reports that an admin already acted on (dismissed / warned / suspended)
+      2) suspensions issued directly (e.g. from Manage Users) that have no matching report
+    """
+    try:
+        logs = []
+
+        # ---- 1. Actioned reports ----
+        rep_res = supabase.table('reports').select('*') \
+            .neq('status', 'pending') \
+            .order('updated_at', desc=True) \
+            .limit(1000).execute()
+
+        for r in (rep_res.data or []):
+            # skip anything that was never actually actioned
+            if not r.get('action_taken') and r.get('status') not in ('resolved', 'closed'):
+                continue
+
+            dt = _to_pht(r.get('updated_at') or r.get('created_at'))
+            if not dt:
+                continue
+
+            action = _normalize_log_action(r.get('action_taken'))
+            details = parse_json_field(r.get('target_details'), {}) or {}
+            target = details.get('username') or details.get('host') or details.get('roomName') or 'Unknown'
+
+            ticket = str(r.get('ticket_id') or '')
+            digits = re.sub(r'\D', '', ticket)
+            log_id = f"LOG-{digits}" if digits else f"LOG-{str(r.get('id'))[:6].upper()}"
+
+            logs.append({
+                'logId': log_id,
+                'date': dt.strftime('%Y-%m-%d'),
+                'timestamp': dt.strftime('%H:%M:%S'),
+                'admin': r.get('admin_username') or 'IT Admin',
+                'targetUser': target,
+                'action': action,
+                'duration': _normalize_log_duration(r.get('suspension_duration')) if action == 'Suspended' else 'N/A',
+                '_dt': dt,
+            })
+
+        # ---- 2. Direct suspensions (skip ones already covered by a report log) ----
+        susp_res = supabase.table('suspensions').select('*') \
+            .order('created_at', desc=True).limit(1000).execute()
+        susp_rows = susp_res.data or []
+
+        user_ids = list({s['user_id'] for s in susp_rows if s.get('user_id') is not None})
+        names = {}
+        if user_ids:
+            u_res = supabase.table('users').select('id, username').in_('id', user_ids).execute()
+            names = {u['id']: u['username'] for u in (u_res.data or [])}
+
+        for s in susp_rows:
+            dt = _to_pht(s.get('created_at'))
+            if not dt:
+                continue
+            target = names.get(s.get('user_id')) or s.get('email') or 'Unknown'
+
+            already_logged = any(
+                l['action'] == 'Suspended'
+                and l['targetUser'].lower() == str(target).lower()
+                and abs((l['_dt'] - dt).total_seconds()) < 300
+                for l in logs
+            )
+            if already_logged:
+                continue
+
+            logs.append({
+                'logId': f"LOG-S{s.get('id')}",
+                'date': dt.strftime('%Y-%m-%d'),
+                'timestamp': dt.strftime('%H:%M:%S'),
+                'admin': s.get('admin_username') or 'IT Admin',
+                'targetUser': target,
+                'action': 'Suspended',
+                'duration': _normalize_log_duration(s.get('duration')),
+                '_dt': dt,
+            })
+
+        # newest first, then number the rows and drop the helper field
+        logs.sort(key=lambda l: l['_dt'], reverse=True)
+        for i, l in enumerate(logs, start=1):
+            l['id'] = i
+            l.pop('_dt', None)
+
+        return jsonify({'success': True, 'logs': logs}), 200
+
+    except Exception as e:
+        print("ADMIN GET LOGS ERROR:", str(e))
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/itadmin/suspend-user', methods=['POST'])
+@require_admin()
 def admin_suspend_user():
     """Inserts a suspension record into the public.suspensions table."""
     data = request.json or {}
@@ -3017,12 +3410,22 @@ def admin_suspend_user():
             return jsonify({'success': False, 'message': 'User not found'}), 404
 
         user_id = user_res.data[0]['id']
-        expiration_iso = calculate_suspension_expiration(duration, custom_dt)
+        expiration_iso = apply_user_suspension(
+            user_id, target_email, reason, duration, custom_dt, notes,
+            request.admin['username']
+        )
+
+        return jsonify({
+            'success': True,
+            'message': f"Suspension logged for {target_email}",
+            'suspended_until': expiration_iso
+        }), 200
 
         # 1. Deactivate any prior active suspensions for this user
         supabase.table('suspensions').update({'is_active': False}).eq('user_id', user_id).execute()
 
         # 2. Insert new record in the dedicated suspensions table
+        #    (admin name comes from the login token, not the frontend)
         supabase.table('suspensions').insert({
             'user_id': user_id,
             'email': target_email,
@@ -3030,7 +3433,8 @@ def admin_suspend_user():
             'duration': duration,
             'internal_notes': notes,
             'suspended_until': expiration_iso,
-            'is_active': True
+            'is_active': True,
+            'admin_username': request.admin['username']
         }).execute()
 
         # Keep user status updated

@@ -30,6 +30,12 @@ export default function Auth() {
   const [showSuspendedModal, setShowSuspendedModal] = useState(false);
   const [suspendedUserData, setSuspendedUserData] = useState(null);
 
+  // Professor / IT admin first-login password change
+  const [adminPending, setAdminPending] = useState(null);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
+  const [adminPwErr, setAdminPwErr] = useState('');
+
   // Sign Up Form States
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
@@ -357,13 +363,38 @@ export default function Auth() {
       return;
     }
 
-    // Direct IT Admin bypass credentials if configured
-    if (emailVal.toLowerCase() === 'itadmin@studycircle.app' && passwordVal === 'Admin123!') {
-      localStorage.setItem('active_user_email', emailVal);
-      startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
-        navigate('/itadmin/dashboard');
-      }, false);
-      return;
+    // Professor / IT admin login. Checked first; if the email isn't an admin, we fall through to student login.
+    try {
+      const adminRes = await fetch('http://localhost:5000/api/itadmin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailVal, password: passwordVal }),
+      });
+
+      if (adminRes.status === 429) {
+        const d = await adminRes.json();
+        setLoginError(`✘ ${d.error}`);
+        return;
+      }
+
+      if (adminRes.ok) {
+        const adminData = await adminRes.json();
+        sessionStorage.setItem('admin_token', adminData.token);
+        sessionStorage.setItem('admin_user', JSON.stringify(adminData.admin));
+        localStorage.setItem('active_user_email', emailVal);
+
+        if (adminData.mustChangePassword) {
+          setAdminPending(adminData);
+          return;
+        }
+
+        startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
+          navigate('/itadmin/dashboard');
+        }, false);
+        return;
+      }
+    } catch (err) {
+      // server unreachable: the student login below will show the connection error
     }
 
     try {
@@ -422,6 +453,48 @@ export default function Auth() {
     } catch (err) {
       console.error(err);
       setLoginError('✘ Unable to connect to Flask server.');
+    }
+  };
+
+  const handleAdminPasswordChange = async (e) => {
+    e.preventDefault();
+
+    if (!passwordRegex.test(adminNewPassword)) {
+      setAdminPwErr('Password must contain at least 8 characters, an uppercase letter, a lowercase letter, a number, and a special character.');
+      return;
+    }
+    if (adminNewPassword !== adminConfirmPassword) {
+      setAdminPwErr('Passwords do not match.');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/itadmin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminPending.token}`,
+        },
+        body: JSON.stringify({ old_password: loginPassword, new_password: adminNewPassword }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAdminPwErr(data.error || 'Could not change password.');
+        return;
+      }
+
+      sessionStorage.setItem('admin_token', data.token);
+      setAdminPending(null);
+      setAdminNewPassword('');
+      setAdminConfirmPassword('');
+      setLoginPassword('');
+
+      startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
+        navigate('/itadmin/dashboard');
+      }, false);
+    } catch (err) {
+      setAdminPwErr('Unable to connect to server.');
     }
   };
 
@@ -1023,6 +1096,47 @@ export default function Auth() {
                   UNDERSTOOD
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADMIN FIRST-LOGIN PASSWORD CHANGE MODAL */}
+        {adminPending && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
+              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Set a New Password</h3>
+              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
+                Welcome, {adminPending.admin.fullName}! You're using a temporary password. Please set your own before continuing.
+              </p>
+
+              <form onSubmit={handleAdminPasswordChange} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="font-pressstart text-[10px] text-theme-dark">NEW PASSWORD</label>
+                  <input
+                    type="password"
+                    value={adminNewPassword}
+                    onChange={(e) => { setAdminNewPassword(e.target.value); setAdminPwErr(''); }}
+                    className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-pressstart text-[10px] text-theme-dark">CONFIRM PASSWORD</label>
+                  <input
+                    type="password"
+                    value={adminConfirmPassword}
+                    onChange={(e) => { setAdminConfirmPassword(e.target.value); setAdminPwErr(''); }}
+                    className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
+                  />
+                </div>
+                {adminPwErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {adminPwErr}</p>}
+
+                <button
+                  type="submit"
+                  className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-5 py-2.5 cursor-pointer retro-shadow mt-2"
+                >
+                  SAVE & CONTINUE
+                </button>
+              </form>
             </div>
           </div>
         )}

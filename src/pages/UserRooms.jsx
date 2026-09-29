@@ -92,6 +92,8 @@ export default function UserRooms() {
           maxMembers: r.max_members || 4,
           tasks: r.tasks || [],
           taskType: r.task_type || 'individual',
+          isClosed: Boolean(r.is_closed) || ['suspended', 'closed'].includes(r.status),
+          isActive: r.is_active !== false,
         }));
         setRoomsList(formattedRooms);
       }
@@ -100,25 +102,9 @@ export default function UserRooms() {
     }
   };
 
-  // Runs ONCE per user: loads rooms, history and opens a single socket connection
+  // Runs ONCE per user: loads rooms, opens a single socket connection, polls for the 5-min inactive rule
   useEffect(() => {
     fetchRealRooms();
-
-    // Load session history and remove duplicates using a Map based on 'finishedAt' or unique signature
-    try {
-      const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
-      const uniqueHistory = Array.from(
-        new Map(
-          savedHistory.map((item) => [
-            item.finishedAt || `${item.workType}-${item.focusTime}-${item.techniqueName}`,
-            item,
-          ])
-        ).values()
-      );
-      setSessionHistory(uniqueHistory);
-    } catch (err) {
-      console.error('Failed to parse session history:', err);
-    }
 
     const socket = io('http://localhost:5000');
     socketRef.current = socket;
@@ -126,11 +112,14 @@ export default function UserRooms() {
     // REALTIME: server tells us how many people are inside each room
     socket.on('rooms_counts', (counts) => {
       setRoomsList((prev) =>
-        prev.map((r) => ({ ...r, currentMembers: counts[r.name] ?? 0 }))
+        prev.map((r) => {
+          const n = counts[r.name] ?? 0;
+          return { ...r, currentMembers: n, isActive: n > 0 ? true : r.isActive };
+        })
       );
     });
 
-    // A room was created / changed, so refresh the list
+    // A room was created / changed / suspended, so refresh the list
     socket.on('rooms_changed', fetchRealRooms);
 
     // Listen for incoming join requests if current user is the host
@@ -156,10 +145,47 @@ export default function UserRooms() {
       }
     });
 
+    // "Inactive" is time-based, so re-check with the server every minute
+    const poll = setInterval(fetchRealRooms, 60000);
+
     return () => {
+      clearInterval(poll);
       socket.disconnect();
     };
   }, [myUsername]);
+
+  // History: ONLY this account's sessions (from the database, not localStorage)
+  useEffect(() => {
+    const email = playerData?.email;
+    setSessionHistory([]);
+    if (!email) return undefined;
+
+    let cancelled = false;
+    fetch(`http://localhost:5000/api/get-all-sessions?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled || !d.success) return;
+        setSessionHistory(
+          (d.sessions || []).map((s) => {
+            let tasks = s.tasks_list;
+            if (typeof tasks === 'string') {
+              try { tasks = JSON.parse(tasks); } catch (e) { tasks = []; }
+            }
+            return {
+              id: s.id,
+              workType: s.activity_name,
+              techniqueName: s.technique,
+              focusTime: s.duration_minutes,
+              finishedAt: s.created_at,
+              tasks: Array.isArray(tasks) ? tasks : [],
+            };
+          })
+        );
+      })
+      .catch((err) => console.error('Failed to load session history:', err));
+
+    return () => { cancelled = true; };
+  }, [playerData?.email]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -283,6 +309,8 @@ export default function UserRooms() {
           focusTime: data.room.focus_time || 25,
           breakTime: data.room.break_time || 5,
           isStarted: data.room.is_started || false,
+          isClosed: false,
+          isActive: true,
         };
 
         setRoomsList((prev) => [createdRoom, ...prev]);
@@ -312,7 +340,7 @@ export default function UserRooms() {
     }
 
     const matchedRoom = roomsList.find(
-      (r) => r.privacy === 'private' && r.code && r.code.toUpperCase() === code
+      (r) => r.privacy === 'private' && !r.isClosed && r.code && r.code.toUpperCase() === code
     );
 
     if (!matchedRoom) {
@@ -369,8 +397,13 @@ export default function UserRooms() {
     });
   };
 
-  const filteredAllRooms = filterRooms(roomsList.filter((r) => r.privacy.toLowerCase() === 'public'));
-  const filteredMyRooms = filterRooms(roomsList.filter((r) => r.host === myUsername));
+  // Suspended rooms are hidden everywhere. Inactive rooms are hidden from ALL ROOMS only.
+  const visibleRooms = roomsList.filter((r) => !r.isClosed);
+  const filteredAllRooms = filterRooms(
+    visibleRooms.filter((r) => r.privacy === 'public' && r.isActive)
+  );
+  const filteredMyRooms = filterRooms(visibleRooms.filter((r) => r.host === myUsername));
+
   const filteredHistory = sessionHistory.filter((item) => {
     const query = searchQuery.toLowerCase();
     return (
@@ -387,7 +420,7 @@ export default function UserRooms() {
     if (isHistoryTab) {
       return (
         <div
-          key={room.id || Math.random()}
+          key={room.id}
           className="bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-4 flex flex-col gap-3 shadow-sm justify-between"
         >
           <div className="flex items-start gap-3">
@@ -454,6 +487,11 @@ export default function UserRooms() {
                 <span className="inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] border-theme-dark/40 bg-theme-muted px-2 py-0.5 rounded uppercase text-theme-dark">
                   <span>Tasks: {roomTaskType}</span>
                 </span>
+                {!room.isActive && (
+                  <span className="inline-flex items-center font-pressstart text-[7px] border-[1.5px] border-theme-dark/40 bg-gray-200 px-2 py-0.5 rounded uppercase text-theme-dark/70">
+                    Inactive
+                  </span>
+                )}
               </div>
               <div className={`flex items-center gap-1 font-pressstart text-[8px] ${isFull ? 'text-theme-danger' : 'text-theme-dark'}`}>
                 <span>
