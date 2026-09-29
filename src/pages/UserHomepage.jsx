@@ -489,8 +489,14 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const techMult = techMultipliers[techKey] || 1.0;
   const checklistMult = 1.0 + Math.min(completedTasks * 0.05, 0.25);
   const baseRate = 0.4;
-  const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
-  const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
+
+  // Reward preview: reduced for focus time lost to nudge pauses
+  const penalty = timer.getNudgePenalty();
+  const totalFocusSecs = Math.max(1, durationMins * 60 * Number(savedSession.sessionCount || 1));
+  const consumedRatio = Math.max(0, 1 - penalty.pausedSeconds / totalFocusSecs);
+
+  const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult * consumedRatio) * 10) / 10;
+  const calculatedCoins = Math.round(Math.max(1, Math.floor(durationMins * 0.2)) * consumedRatio);
 
   // Tumpak na Host Checking
   const currentHostMember = roomData.members.find(m => m.isHost);
@@ -514,37 +520,30 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         username: player.username,
       });
     }
-  }, [timer.showRewardModal]);
-
-  useEffect(() => {
-    const onMsg = (e) => {
-      if (e?.data?.type === 'SESSION_CREATED' && e.data.session && isMultiplayer && isSharedRoom && isCurrentUserHost) {
-        handleHostStartSession(e.data.session);
-      }
-    };
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, [isMultiplayer, isSharedRoom, isCurrentUserHost, roomData.roomName, player.username]);                        
+  }, [timer.showRewardModal]);                       
 
   // Solo / public / private-individual: everyone controls their own timer.
-// Private-shared: only the host does.
-const canControlTimer = !isMultiplayer || !isSharedRoom || isCurrentUserHost;
+  // Private-shared: only the host does.
+  const canControlTimer = !isMultiplayer || !isSharedRoom || isCurrentUserHost;
 
-// Shared-room members follow the host, so the "still here?" nudge must not pause them
-useEffect(() => {
-  timer.nudgeDisabledRef.current = isMultiplayer && isSharedRoom && !isCurrentUserHost;
-}, [isMultiplayer, isSharedRoom, isCurrentUserHost]);
+  // Shared-room members follow the host, so the "still here?" nudge must not pause them
+  useEffect(() => {
+    // host controls the timer, so the host is never nudge-paused; members are
+    timer.nudgeDisabledRef.current = isMultiplayer && isSharedRoom && isCurrentUserHost;
+    timer.sharedMemberRef.current = isMultiplayer && isSharedRoom && !isCurrentUserHost;
+  }, [isMultiplayer, isSharedRoom, isCurrentUserHost]);
 
-// HOST -> everyone: send the timer state after every pause / resume / phase change
-useEffect(() => {
-  if (!isMultiplayer || !isSharedRoom || !isCurrentUserHost || !timer.activeSession) return;
-  if (!socketRef.current) return;
-  socketRef.current.emit('host_timer_update', {
-    room: roomData.roomName,
-    username: player.username,
-    timer: timer.getTimerSnapshot(),
-  });
-}, [timer.isTimerRunning, timer.isFocusPhase, timer.currentSessionCount, timer.activeSession]);
+  // HOST -> everyone: send the timer state after every pause / resume / phase change
+  // (only once the session has actually started)
+  useEffect(() => {
+    if (!isMultiplayer || !isSharedRoom || !isCurrentUserHost || !timer.activeSession) return;
+    if (!roomData.isStarted || !socketRef.current) return;
+    socketRef.current.emit('host_timer_update', {
+      room: roomData.roomName,
+      username: player.username,
+      timer: timer.getTimerSnapshot(),
+    });
+  }, [timer.isTimerRunning, timer.isFocusPhase, timer.currentSessionCount, timer.activeSession, roomData.isStarted]);
 
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
@@ -582,6 +581,10 @@ useEffect(() => {
       ? { isMultiplayer, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1 }
       : (roomContextRef.current || { isMultiplayer: false, isHost: false, roomSize: 1 });
 
+    // Nudge penalty: the server reduces rewards for unused focus time
+    const penalty = timer.getNudgePenalty();
+    const totalFocusSeconds = finalDuration * 60 * Number(currentActiveSession.sessionCount || 1);
+
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
         method: 'POST',
@@ -599,13 +602,17 @@ useEffect(() => {
           roomSize: ctx.roomSize,
           taskStatus: taskStatus,
           productivityLevel: productivityLevel,
-          accomplishedText: accomplishedText
+          accomplishedText: accomplishedText,
+          nudgePauses: penalty.nudgePauses,
+          pausedSeconds: penalty.pausedSeconds,
+          totalFocusSeconds,
         })
       });
 
       const data = await response.json();
       if (data.success) {
         roomContextRef.current = null;
+        timer.resetNudgePenalty();
 
         const storedUser = JSON.parse(localStorage.getItem(`user_${userEmail}`) || '{}');
         storedUser.coins = data.coins;
@@ -644,6 +651,24 @@ useEffect(() => {
         session: sessionPayload,
       });
     }
+  };
+
+  // Host, shared room, session set up but not started: the button starts it for everyone.
+  const awaitingSharedStart =
+    isMultiplayer && isSharedRoom && isCurrentUserHost && Boolean(timer.activeSession) && !roomData.isStarted;
+
+  const handleToggleTimer = () => {
+    if (awaitingSharedStart) {
+      handleHostStartSession(timer.activeSession);  // server echoes shared_room_started to everyone, host included
+      return;
+    }
+    timer.toggleTimer();
+  };
+
+  // Member who got nudge-paused: re-sync to the host's current timer
+  const handleMemberResume = () => {
+    timer.beginResync();
+    socketRef.current?.emit('request_timer_state', { room: roomData.roomName });
   };
 
   const getLeaderboardAvatarConfig = (item) => {
@@ -801,23 +826,23 @@ useEffect(() => {
   }, [player.email, playerData]);
 
   // Keep my status in the room in sync: ONLINE <-> IN SESSION
-useEffect(() => {
-  if (!isMultiplayer || !socketRef.current) return;
-  socketRef.current.emit('update_status', {
-    room: roomData.roomName,
-    username: player.username,
-    status: timer.activeSession ? 'IN SESSION' : 'ONLINE',
-  });
-}, [isMultiplayer, timer.activeSession, roomData.roomName, player.username]);
+  useEffect(() => {
+    if (!isMultiplayer || !socketRef.current) return;
+    socketRef.current.emit('update_status', {
+      room: roomData.roomName,
+      username: player.username,
+      status: timer.activeSession ? 'IN SESSION' : 'ONLINE',
+    });
+  }, [isMultiplayer, timer.activeSession, roomData.roomName, player.username]);
 
   const applySyncedSession = (session, timerState, serverNow) => {
-  if (!session) return;
-  // room_update fires on every join/leave: only apply a given session once
-  if (syncedStartRef.current === session.startedAt) return;
-  syncedStartRef.current = session.startedAt;
-  setRoomData((prev) => ({ ...prev, isStarted: true }));
-  timer.startSyncedSession(session, timerState, serverNow);
-};
+    if (!session) return;
+    // room_update fires on every join/leave: only apply a given session once
+    if (syncedStartRef.current === session.startedAt) return;
+    syncedStartRef.current = session.startedAt;
+    setRoomData((prev) => ({ ...prev, isStarted: true }));
+    timer.startSyncedSession(session, timerState, serverNow);
+  };
 
   useEffect(() => {
     // Wait until we know the player's real avatar, so the room receives the right one
@@ -843,25 +868,25 @@ useEffect(() => {
         // IMPORTANT: this callback MUST always return the new state object.
         // Returning undefined makes roomData undefined and crashes the page (white screen).
         setRoomData((prev) => {
-        const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
-        const hostMember = incomingMembers.find((m) => m.isHost);
+          const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
+          const hostMember = incomingMembers.find((m) => m.isHost);
 
-        let cfg = data?.room_config ?? prev.roomConfig ?? null;
-        if (typeof cfg === 'string') {
-          try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
-        }
+          let cfg = data?.room_config ?? prev.roomConfig ?? null;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
+          }
 
-        const seen = new Set((prev.auditLogs || []).map((l) => l.id));
-        const newLogs = (Array.isArray(data?.logs) ? data.logs : []).filter((l) => !seen.has(l.id));
+          const seen = new Set((prev.auditLogs || []).map((l) => l.id));
+          const newLogs = (Array.isArray(data?.logs) ? data.logs : []).filter((l) => !seen.has(l.id));
 
-        return {
-          ...prev,
-          members: incomingMembers,
-          hostId: hostMember?.username || prev.hostId,
-          roomConfig: cfg,
-          auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
-        };
-      });
+          return {
+            ...prev,
+            members: incomingMembers,
+            hostId: hostMember?.username || prev.hostId,
+            roomConfig: cfg,
+            auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
+          };
+        });
       });
 
       // the shared session finished: the room will close after a short grace period
@@ -930,23 +955,23 @@ useEffect(() => {
   }, [isMultiplayer, avatarReady, roomData.roomName, player.username]);
 
   const [nowTick, setNowTick] = useState(Date.now());
-useEffect(() => {
-  const t = setInterval(() => setNowTick(Date.now()), 15000);
-  return () => clearInterval(t);
-}, []);
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(t);
+  }, []);
 
-const timeAgo = (ts) => {
-  if (!ts) return '';
-  const diff = Math.max(0, Math.floor((nowTick - new Date(ts).getTime()) / 1000));
-  if (diff < 30) return 'Just now';
-  if (diff < 60) return `${diff}s ago`;
-  const mins = Math.floor(diff / 60);
-  if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days} day${days > 1 ? 's' : ''} ago`;
-};
+  const timeAgo = (ts) => {
+    if (!ts) return '';
+    const diff = Math.max(0, Math.floor((nowTick - new Date(ts).getTime()) / 1000));
+    if (diff < 30) return 'Just now';
+    if (diff < 60) return `${diff}s ago`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  };
 
   const handleSendRoomMessage = (e) => {
     e.preventDefault();
@@ -1105,28 +1130,28 @@ const timeAgo = (ts) => {
   };
 
   const handleKickMember = (memberId, memberUsername) => {
-  if (socketRef.current && isMultiplayer) {
-    socketRef.current.emit('kick_room_member', {
-      room: roomData.roomName,
-      username: memberUsername
-    });
-  }
+    if (socketRef.current && isMultiplayer) {
+      socketRef.current.emit('kick_room_member', {
+        room: roomData.roomName,
+        username: memberUsername
+      });
+    }
 
-  setRoomData((prev) => ({
-    ...prev,
-    members: prev.members.filter((m) => m.id !== memberId),
-    auditLogs: [
-      {
-        id: Date.now(),
-        user: player.username,
-        action: `kicked ${memberUsername} from the room`,
-        ts: new Date().toISOString(),
-      },
-      ...prev.auditLogs,
-    ],
-  }));
-  setActiveProfileId(null);
-};
+    setRoomData((prev) => ({
+      ...prev,
+      members: prev.members.filter((m) => m.id !== memberId),
+      auditLogs: [
+        {
+          id: Date.now(),
+          user: player.username,
+          action: `kicked ${memberUsername} from the room`,
+          ts: new Date().toISOString(),
+        },
+        ...prev.auditLogs,
+      ],
+    }));
+    setActiveProfileId(null);
+  };
 
   const handleAddFriend = async (member) => {
     const identifier = member.email || member.username;
@@ -1573,7 +1598,10 @@ const timeAgo = (ts) => {
             isFocusPhase={timer.isFocusPhase}
             currentSessionCount={timer.currentSessionCount}
             totalSessions={timer.totalSessions}
-            toggleTimer={canControlTimer ? timer.toggleTimer : () => {}}
+            toggleTimer={canControlTimer ? handleToggleTimer : () => {}}
+            awaitingSharedStart={awaitingSharedStart}
+            isSelfPaused={timer.isSelfPaused}
+            onSelfResume={handleMemberResume}
             canControlTimer={canControlTimer}
             cancelSession={timer.cancelSession}
             toggleDocumentPiP={timer.toggleDocumentPiP}
@@ -2395,7 +2423,7 @@ const timeAgo = (ts) => {
                   const targetDetails = {
                     roomName: roomData.roomName,
                     host: roomData.hostId || (roomData.members.find(m => m.isHost)?.username) || 'Unknown',
-                    dateCreated: roomData.createdAt || new Date().toLocaleDateString() // <--- Add this
+                    dateCreated: roomData.createdAt || new Date().toLocaleDateString()
                   };
                   handleSubmitReport('room', targetDetails, reportReason, reportNotes, setShowReportSuccessModal, setShowReportModal);
                   setReportNotes('');
@@ -3176,6 +3204,12 @@ const timeAgo = (ts) => {
                 <span className="font-pixel text-[14px] text-theme-dark/70">BONOS</span>
               </div>
             </div>
+
+            {penalty.nudgePauses > 0 && (
+              <p className="font-pixel text-[14px] text-theme-danger">
+                Timer stopped {penalty.nudgePauses}x. Rewards reduced for the unused focus time.
+              </p>
+            )}
 
             <button
               onClick={() => {

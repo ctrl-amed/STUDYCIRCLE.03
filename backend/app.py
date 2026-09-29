@@ -1548,6 +1548,9 @@ def complete_focus_session():
     is_host = data.get('isHost', False)
     room_size = int(data.get('roomSize', 1))
 
+    nudge_pauses = max(0, int(data.get('nudgePauses', 0) or 0))
+    paused_seconds = max(0, int(data.get('pausedSeconds', 0) or 0))
+
     if not raw_email:
         return jsonify({"success": False, "error": "Email is required. Please check login state."}), 400
 
@@ -1565,6 +1568,9 @@ def complete_focus_session():
         current_coins = int(user.get('coins') or 0)
         current_level = int(user.get('level') or 1)
         current_streak = int(user.get('streak') or 0)
+
+        total_focus_seconds = max(1, int(data.get('totalFocusSeconds') or duration_minutes * 60))
+        consumed_ratio = max(0.0, 1.0 - (paused_seconds / total_focus_seconds))
 
         # v2.1 Master EXP Formula
         R_base = 0.4
@@ -1602,7 +1608,7 @@ def complete_focus_session():
         bonus_exp = 4.0 if ('ULTRADIAN' in tech_upper and duration_minutes >= 90) else 0.0
 
         base_calc = duration_minutes * R_base * mu_tech * mu_checklist
-        calculated_exp = (base_calc * SessMult * CapMult) + bonus_exp
+        calculated_exp = ((base_calc * SessMult * CapMult) + bonus_exp) * consumed_ratio
         rounded_exp_gained = round(calculated_exp, 4)
 
         # Look at this user's session history once — used for BOTH the daily
@@ -1626,7 +1632,7 @@ def complete_focus_session():
                 studied_yesterday = True
 
         # Enforce the 100-coin-per-day limit
-        raw_coins_gained = max(1, int(round(duration_minutes * 0.2)))
+        raw_coins_gained = int(round(max(1, int(round(duration_minutes * 0.2))) * consumed_ratio))
         coins_gained = max(0, min(raw_coins_gained, 100 - coins_earned_today))
 
         new_xp = current_xp + rounded_exp_gained
@@ -1688,7 +1694,9 @@ def complete_focus_session():
             "productivity_level": productivity_level,
             "accomplished_text": accomplished_text,
             "exp_gained": rounded_exp_gained,
-            "coins_gained": coins_gained
+            "coins_gained": coins_gained,
+            "nudge_pauses": nudge_pauses,
+            "paused_seconds": paused_seconds,
         }).execute()
 
         print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{coins_gained} Coins, Level: {new_level}, Streak: {new_streak}")
@@ -1704,7 +1712,9 @@ def complete_focus_session():
             "streak": new_streak,
             "bestStreak": new_best_streak,
             "streakFreezeUsed": freeze_used,
-            "didLevelUp": new_level > current_level
+            "didLevelUp": new_level > current_level,
+            "nudgePauses": nudge_pauses,
+            "consumedRatio": round(consumed_ratio, 3),
         }), 200
 
     except Exception as e:
@@ -2636,6 +2646,7 @@ def handle_kick_room_member(data):
 
 
 @socketio.on('start_shared_room')
+
 def handle_start_shared_room(data):
     room_name = data.get('room')
     session = data.get('session')
@@ -2647,6 +2658,9 @@ def handle_start_shared_room(data):
     except Exception as e:
         print("Host check error:", e)
         return
+
+    if room_name in active_room_sessions or not session:
+        return  # already started (double click) or nothing to start
 
     if session:
         session = dict(session)
@@ -2717,6 +2731,14 @@ def handle_host_timer_update(data):
 
     timer_states[room] = state
     emit('timer_state', {'timer': state, 'serverNow': now_iso()}, room=room, include_self=False)
+
+
+@socketio.on('request_timer_state')
+def handle_request_timer_state(data):
+    room = data.get('room')
+    state = timer_states.get(room)
+    if state:
+        emit('timer_state', {'timer': state, 'serverNow': now_iso()})  # only to the requester
 
 
 @socketio.on('shared_session_finished')

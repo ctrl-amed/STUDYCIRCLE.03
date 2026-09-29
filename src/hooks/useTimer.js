@@ -64,11 +64,18 @@ export function useTimer() {
   const [nudgeCountdown, setNudgeCountdown] = useState(30);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
   const [nudgeCount, setNudgeCount] = useState(0);
+  const [pausedSeconds, setPausedSeconds] = useState(0);
+const [isSelfPaused, setIsSelfPaused] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+
+  const sharedMemberRef = useRef(false);     // true for non-host players in a private-shared room
+const selfPausedRef = useRef(false);
+const selfPauseStartRef = useRef(null);
 
   const sessionStartTimeRef = useRef(null);
   const pipWindowRef = useRef(null);
   const nudgeIntervalRef = useRef(null);
+  const [nudgePauseCount, setNudgePauseCount] = useState(0);
 
   // The timer is driven by a wall-clock end time, NOT by counting ticks.
   // That is what keeps it correct when the tab is in the background or the
@@ -90,6 +97,8 @@ export function useTimer() {
     totalSessions,
     tasksList,
     isIdle,
+    nudgePauseCount,
+  pausedSeconds,
   };
 
   const showRetroToast = (msg) => {
@@ -187,12 +196,13 @@ export function useTimer() {
 
   // Called when the host's timer changes while a session is already running
   const applyTimerSnapshot = useCallback(
-    (snap, serverNow) => {
-      if (!liveRef.current.activeSession) return;
-      applySnapshotCore(snap, serverNow);
-    },
-    [applySnapshotCore]
-  );
+  (snap, serverNow) => {
+    if (!liveRef.current.activeSession) return;
+    if (selfPausedRef.current) return;  
+    applySnapshotCore(snap, serverNow);
+  },
+  [applySnapshotCore]
+);
 
   // Called when the host starts a shared session (or when a player (re)joins one)
   const startSyncedSession = useCallback(
@@ -228,6 +238,11 @@ export function useTimer() {
         );
         setCurrentSessionCount(0);
         setIsFocusPhase(true);
+        setNudgePauseCount(0);
+        setPausedSeconds(0);
+        selfPausedRef.current = false;
+        selfPauseStartRef.current = null;
+        setIsSelfPaused(false);
       }
 
       const snapshot = timerState || {
@@ -456,31 +471,72 @@ export function useTimer() {
     }
   };
 
+  const selfPause = useCallback(() => {
+  setRemainingTimeSec(secondsLeftUntil(phaseEndsAtRef.current));
+  setIsTimerRunning(false);
+  selfPausedRef.current = true;
+  setIsSelfPaused(true);
+  // only focus time counts as "not consumed"
+  selfPauseStartRef.current = liveRef.current.isFocusPhase ? Date.now() : null;
+  setNudgePauseCount((c) => c + 1);
+}, []);
+
+// Called when the player presses RESUME. UserHomepage then asks the server for the host's timer.
+const beginResync = useCallback(() => {
+  if (!selfPausedRef.current) return;
+  if (selfPauseStartRef.current) {
+    const secs = Math.round((Date.now() - selfPauseStartRef.current) / 1000);
+    setPausedSeconds((p) => p + secs);
+  }
+  selfPauseStartRef.current = null;
+  selfPausedRef.current = false;
+  setIsSelfPaused(false);
+}, []);
+
+const getNudgePenalty = useCallback(() => {
+  const l = liveRef.current;
+  let secs = l.pausedSeconds || 0;
+  if (selfPauseStartRef.current) secs += Math.round((Date.now() - selfPauseStartRef.current) / 1000);
+  return { nudgePauses: l.nudgePauseCount || 0, pausedSeconds: secs };
+}, []);
+
+const resetNudgePenalty = useCallback(() => {
+  setNudgePauseCount(0);
+  setPausedSeconds(0);
+}, []);
+
   // Helper to trigger Nudge Modal with active visual 30s countdown
   const triggerNudgeModal = useCallback(() => {
-    // freeze the remaining time at the moment we pause
+  const isSharedMember = sharedMemberRef.current;
+
+  if (!isSharedMember) {
     setRemainingTimeSec(secondsLeftUntil(phaseEndsAtRef.current));
     setIsTimerRunning(false);
-    setShowNudgeModal(true);
-    setIsIdle(false);
-    setNudgeCountdown(30);
+  }
+  setShowNudgeModal(true);
+  setIsIdle(false);
+  setNudgeCountdown(30);
 
-    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+  if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
 
-    nudgeIntervalRef.current = setInterval(() => {
-      setNudgeCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(nudgeIntervalRef.current);
-          setShowNudgeModal(false);
-          setIsTimerRunning(false); // Pause focus session
-          console.log(`[Focus Verification] Timed out at 0s. nudges_accepted: 0`);
+  nudgeIntervalRef.current = setInterval(() => {
+    setNudgeCountdown((prev) => {
+      if (prev <= 1) {
+        clearInterval(nudgeIntervalRef.current);
+        setShowNudgeModal(false);
+        if (sharedMemberRef.current) {
+          selfPause();
+          showRetroToast('Your timer stopped. Press RESUME to sync back with the host.');
+        } else {
+          setIsTimerRunning(false);
           showRetroToast('Session paused due to inactivity.');
-          return 0;
         }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
+        return 0;
+      }
+      return prev - 1;
+    });
+  }, 1000);
+}, [selfPause]);
 
   // 1. COUNTDOWN TICKER (wall-clock based, so background tabs / throttling can't slow it)
   useEffect(() => {
@@ -541,28 +597,26 @@ export function useTimer() {
 
   // Handler when user clicks "YES, I'M HERE" before timer reaches 0
   const handleConfirmNudge = useCallback(() => {
-    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+  if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+  const config = getTechniqueConfig();
 
-    const config = getTechniqueConfig();
+  setShowNudgeModal(false);
+  setNudgeCount((prev) => prev + 1);
 
-    setShowNudgeModal(false);
-    console.log(`[Focus Verification] User confirmed presence. nudges_accepted: 1`);
-
-    setNudgeCount((prev) => prev + 1);
+  if (!sharedMemberRef.current) {
     startTimerClock(liveRef.current.remainingTimeSec);
+  }
 
-    setIsCooldownActive(true);
-    setTimeout(() => {
-      setIsCooldownActive(false);
-    }, config.cooldownMs);
-  }, [getTechniqueConfig, startTimerClock]);
+  setIsCooldownActive(true);
+  setTimeout(() => setIsCooldownActive(false), config.cooldownMs);
+}, [getTechniqueConfig, startTimerClock]);
 
   // Cleanup intervals on unmount
-  useEffect(() => {
-    return () => {
-      if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
-    };
-  }, []);
+useEffect(() => {
+  return () => {
+    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+  };
+}, []);
 
   // 3. PHASE SWITCHING & STATS RECORDING
   useEffect(() => {
@@ -858,6 +912,13 @@ export function useTimer() {
     applyTimerSnapshot,
     getTimerSnapshot,
     nudgeDisabledRef,
+    sharedMemberRef,
+    // nudge / self-pause penalty
+    isSelfPaused,
+    nudgePauseCount,
+    beginResync,
+    getNudgePenalty,
+    resetNudgePenalty,
   };
 }
 

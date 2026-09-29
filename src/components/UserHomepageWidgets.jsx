@@ -45,7 +45,10 @@ export function ActiveSessionWidget({
   canControlTimer = true,
   isCurrentUserHost = false,
   roomData = {},
-  onHostStartSession = () => {}
+  onHostStartSession = () => {},
+  awaitingSharedStart = false,   
+  isSelfPaused = false,          
+  onSelfResume = () => {}  
 }) {
   const context = useOutletContext();
   const { playerData } = usePlayer() || {};
@@ -209,7 +212,7 @@ export function ActiveSessionWidget({
             onClick={() => context?.openCreateSessionModal?.()}
             className="inline-block font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-white bg-theme-primary border-2 border-theme-dark px-3 py-2 md:px-4 md:py-2.5 transition-all duration-150 retro-shadow cursor-pointer text-center z-50 relative pointer-events-auto"
           >
-            {isMultiplayer && isCurrentUserHost ? 'CREATE & START SHARED SESSION' : 'START SESSION'}
+            {isMultiplayer && isSharedRoom && isCurrentUserHost ? 'SET UP SHARED SESSION' : 'START SESSION'}
           </button>
 
           <div className="flex items-center gap-4 sm:gap-6">
@@ -314,11 +317,20 @@ export function ActiveSessionWidget({
                 onClick={toggleTimer}
                 className="w-full font-pressstart text-[11px] sm:text-[13px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
               >
-                {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
+                {awaitingSharedStart
+                  ? 'START SHARED SESSION'
+                  : isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
+              </button>
+            ) : isSelfPaused ? (
+              <button
+                onClick={onSelfResume}
+                className="w-full font-pressstart text-[11px] sm:text-[13px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 hover:bg-[#d0622c] cursor-pointer"
+              >
+                RESUME & SYNC WITH HOST
               </button>
             ) : (
               <div className="w-full font-pressstart text-[9px] sm:text-[11px] text-theme-dark/70 bg-theme-muted border-2 border-theme-dark py-2.5 text-center uppercase">
-                {isTimerRunning ? 'HOST CONTROLS THE TIMER' : 'WAITING FOR HOST TO RESUME'}
+                {isTimerRunning ? 'HOST CONTROLS THE TIMER' : 'WAITING FOR HOST TO START'}
               </div>
             )}
           </div>
