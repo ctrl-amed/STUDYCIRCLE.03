@@ -197,6 +197,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [userActivities, setUserActivities] = useState({});
 
   const timer = useTimer();
+  const syncedStartRef = useRef(null);
   const activeCardRef = useRef(null);
 
   const [greetingText, setGreetingText] = useState('Good Afternoon');
@@ -485,6 +486,26 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     return () => window.removeEventListener('message', onMsg);
   }, [isMultiplayer, isSharedRoom, isCurrentUserHost, roomData.roomName, player.username]);                        
 
+  // Solo / public / private-individual: everyone controls their own timer.
+// Private-shared: only the host does.
+const canControlTimer = !isMultiplayer || !isSharedRoom || isCurrentUserHost;
+
+// Shared-room members follow the host, so the "still here?" nudge must not pause them
+useEffect(() => {
+  timer.nudgeDisabledRef.current = isMultiplayer && isSharedRoom && !isCurrentUserHost;
+}, [isMultiplayer, isSharedRoom, isCurrentUserHost]);
+
+// HOST -> everyone: send the timer state after every pause / resume / phase change
+useEffect(() => {
+  if (!isMultiplayer || !isSharedRoom || !isCurrentUserHost || !timer.activeSession) return;
+  if (!socketRef.current) return;
+  socketRef.current.emit('host_timer_update', {
+    room: roomData.roomName,
+    username: player.username,
+    timer: timer.getTimerSnapshot(),
+  });
+}, [timer.isTimerRunning, timer.isFocusPhase, timer.currentSessionCount, timer.activeSession]);
+
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
 
@@ -732,6 +753,15 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     fetchTodayStatsAndStreak();
   }, [player.email, playerData]);
 
+  const applySyncedSession = (session, timerState, serverNow) => {
+  if (!session) return;
+  // room_update fires on every join/leave: only apply a given session once
+  if (syncedStartRef.current === session.startedAt) return;
+  syncedStartRef.current = session.startedAt;
+  setRoomData((prev) => ({ ...prev, isStarted: true }));
+  timer.startSyncedSession(session, timerState, serverNow);
+};
+
   useEffect(() => {
     // Wait until we know the player's real avatar, so the room receives the right one
     if (isMultiplayer && avatarReady) {
@@ -748,44 +778,45 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       });
 
       socketRef.current.on('room_update', (data) => {
+        // late joiners / people returning to the page get the running session here
+        if (data?.active_session) {
+          applySyncedSession(data.active_session, data.timer_state, data.server_now);
+        }
+
+        // IMPORTANT: this callback MUST always return the new state object.
+        // Returning undefined makes roomData undefined and crashes the page (white screen).
         setRoomData((prev) => {
-          const updated = { ...prev };
-          if (data.members) {
-            updated.members = data.members.map(newM => {
-              const existing = prev.members.find(oldM => oldM.username === newM.username);
-              return {
-                ...newM,
-                isSpeaking: existing ? existing.isSpeaking : false
-              };
-            });
+          const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
+          const hostMember = incomingMembers.find((m) => m.isHost);
+
+          let cfg = data?.room_config ?? prev.roomConfig ?? null;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
           }
-          
-          if (data.logs && data.logs.length > 0) {
-            const existingLogKeys = new Set(prev.auditLogs.map(l => `${l.user}-${l.action}`));
-            const uniqueNewLogs = data.logs.filter(l => !existingLogKeys.has(`${l.user}-${l.action}`));
-            
-            if (uniqueNewLogs.length > 0) {
-              updated.auditLogs = [...uniqueNewLogs, ...prev.auditLogs];
-            }
-          }
-          
-          if (data.room_config) {
-            try {
-              updated.roomConfig = typeof data.room_config === 'string' 
-                ? JSON.parse(data.room_config) 
-                : data.room_config;
-            } catch (e) {
-              console.error("Failed to parse room config", e);
-            }
-          }
-          return updated;
+
+          const newLogs = Array.isArray(data?.logs)
+            ? data.logs.map((l, i) => ({ ...l, id: `${l.id}_${Date.now()}_${i}` }))
+            : [];
+
+          return {
+            ...prev,
+            members: incomingMembers,
+            hostId: hostMember?.username || prev.hostId,
+            roomConfig: cfg,
+            auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
+          };
         });
       });
 
       socketRef.current.on('shared_room_started', (data) => {
-        setRoomData((prev) => ({ ...prev, isStarted: true }));
-        if (data?.session) timer.startSyncedSession(data.session);
+        applySyncedSession(data?.session, data?.timer, data?.serverNow);
       });
+
+      // host paused / resumed / changed phase
+      socketRef.current.on('timer_state', (data) => {
+        if (data?.timer) timer.applyTimerSnapshot(data.timer, data.serverNow);
+      });
+
       socketRef.current.on('room_join_rejected', (data) => {
         alert(data?.reason || "You can't join this room.");
         localStorage.removeItem('activeRoomSession');
@@ -1453,7 +1484,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             isFocusPhase={timer.isFocusPhase}
             currentSessionCount={timer.currentSessionCount}
             totalSessions={timer.totalSessions}
-            toggleTimer={timer.toggleTimer}
+            toggleTimer={canControlTimer ? timer.toggleTimer : () => {}}
+            canControlTimer={canControlTimer}
             cancelSession={timer.cancelSession}
             toggleDocumentPiP={timer.toggleDocumentPiP}
             toggleFullscreen={timer.toggleFullscreen}

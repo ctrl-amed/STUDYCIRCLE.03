@@ -42,6 +42,7 @@ export function ActiveSessionWidget({
   streakDays = 0,
   focusTimeFormatted = '0h 0m',
   isMultiplayer = false,
+  canControlTimer = true,
   isCurrentUserHost = false,
   roomData = {},
   onHostStartSession = () => {}
@@ -84,7 +85,7 @@ export function ActiveSessionWidget({
 
   // Kondisyon para sa Private Shared Rooms
   const isSharedRoom = roomData?.privacy === 'private' && roomData?.taskType === 'shared';
-  const isWaitingForHost = isMultiplayer && isSharedRoom && !isCurrentUserHost && !roomData?.isStarted;
+  const isWaitingForHost = isMultiplayer && isSharedRoom && !isCurrentUserHost && !activeSession;
 
   useEffect(() => {
     const card = cardRef?.current;
@@ -308,12 +309,18 @@ export function ActiveSessionWidget({
           </div>
 
           <div>
-            <button
-              onClick={toggleTimer}
-              className="w-full font-pressstart text-[11px] sm:text-[13px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
-            >
-              {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
-            </button>
+            {canControlTimer ? (
+              <button
+                onClick={toggleTimer}
+                className="w-full font-pressstart text-[11px] sm:text-[13px] text-theme-white bg-theme-primary border-2 border-theme-dark py-2.5 transition-all hover:bg-[#d0622c] cursor-pointer"
+              >
+                {isTimerRunning ? 'PAUSE' : isFocusPhase ? 'START FOCUS' : 'START BREAK'}
+              </button>
+            ) : (
+              <div className="w-full font-pressstart text-[9px] sm:text-[11px] text-theme-dark/70 bg-theme-muted border-2 border-theme-dark py-2.5 text-center uppercase">
+                {isTimerRunning ? 'HOST CONTROLS THE TIMER' : 'WAITING FOR HOST TO RESUME'}
+              </div>
+            )}
           </div>
           
 

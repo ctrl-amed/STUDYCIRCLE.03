@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
+const TIMER_STATE_KEY = 'timerState';
+
 const TECHNIQUE_CONFIGS = {
   POMODORO: {
     gracePeriodMs: 3 * 60 * 1000, // 3 minutes grace period
@@ -17,6 +19,28 @@ const TECHNIQUE_CONFIGS = {
     cooldownMs: 15 * 60 * 1000,
     maxCap: 4,
   },
+};
+
+const parseNum = (val, fallback) => {
+  const num = parseInt(val, 10);
+  return isNaN(num) || num <= 0 ? fallback : num;
+};
+
+// One id per session so a saved timer is never applied to a different session
+const sessionIdOf = (s) => (s ? String(s.createdAt || s.startedAt || '') : '');
+
+// Seconds remaining until a wall-clock timestamp (ms)
+const secondsLeftUntil = (endMs) => Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+
+const readSavedTimerState = (sid) => {
+  try {
+    const raw = localStorage.getItem(TIMER_STATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.sid === sid ? parsed : null;
+  } catch (e) {
+    return null;
+  }
 };
 
 export function useTimer() {
@@ -43,13 +67,29 @@ export function useTimer() {
   const [toastMessage, setToastMessage] = useState('');
 
   const sessionStartTimeRef = useRef(null);
-  const timerRef = useRef(null);
   const pipWindowRef = useRef(null);
   const nudgeIntervalRef = useRef(null);
 
-  const parseNum = (val, fallback) => {
-    const num = parseInt(val, 10);
-    return isNaN(num) || num <= 0 ? fallback : num;
+  // The timer is driven by a wall-clock end time, NOT by counting ticks.
+  // That is what keeps it correct when the tab is in the background or the
+  // page was unmounted while the user visited another route.
+  const phaseEndsAtRef = useRef(0);
+
+  // When true, the idle "Are you still here?" nudge never pauses this player
+  // (used for members of a host-controlled shared room)
+  const nudgeDisabledRef = useRef(false);
+
+  // Always-fresh copy of the latest state, readable from stable callbacks
+  const liveRef = useRef({});
+  liveRef.current = {
+    activeSession,
+    remainingTimeSec,
+    isTimerRunning,
+    isFocusPhase,
+    currentSessionCount,
+    totalSessions,
+    tasksList,
+    isIdle,
   };
 
   const showRetroToast = (msg) => {
@@ -88,44 +128,196 @@ export function useTimer() {
     setDailyFocusFormatted(`${hrs}h ${mins}m`);
   }, []);
 
-  // Load active session from localStorage
+  // ---------------------------------------------------------------------------
+  // CLOCK HELPERS
+  // ---------------------------------------------------------------------------
+
+  // Start (or resume) the countdown from `seconds`
+  const startTimerClock = useCallback((seconds) => {
+    const secs = Math.max(0, Math.floor(seconds));
+    if (secs <= 0) return;
+    phaseEndsAtRef.current = Date.now() + secs * 1000;
+    setRemainingTimeSec(secs);
+    setIsTimerRunning(true);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // SHARED-ROOM SYNC: snapshot of the host's timer
+  // ---------------------------------------------------------------------------
+
+  // What the host sends to the server after every pause / resume / phase change
+  const getTimerSnapshot = useCallback(() => {
+    const l = liveRef.current;
+    return {
+      isRunning: l.isTimerRunning,
+      isFocusPhase: l.isFocusPhase,
+      remainingSec: l.isTimerRunning ? secondsLeftUntil(phaseEndsAtRef.current) : l.remainingTimeSec,
+      currentSessionCount: l.currentSessionCount,
+    };
+  }, []);
+
+  const applySnapshotCore = useCallback(
+    (snap, serverNow) => {
+      if (!snap) return;
+
+      // time that passed on the SERVER between the host's update and now
+      // (both timestamps come from the server clock, so this is skew-proof)
+      const drift =
+        snap.isRunning && serverNow && snap.updatedAt
+          ? Math.max(0, (Date.parse(serverNow) - Date.parse(snap.updatedAt)) / 1000)
+          : 0;
+
+      const remaining = Math.max(0, Math.round((Number(snap.remainingSec) || 0) - drift));
+
+      // "Phase just hit 0 and stopped" is handled by each player's own timer
+      if (!snap.isRunning && remaining <= 0) return;
+
+      setIsFocusPhase(snap.isFocusPhase !== false);
+      setCurrentSessionCount(Number(snap.currentSessionCount) || 0);
+
+      if (snap.isRunning && remaining > 0) {
+        startTimerClock(remaining);
+      } else {
+        setRemainingTimeSec(remaining);
+        setIsTimerRunning(false);
+      }
+    },
+    [startTimerClock]
+  );
+
+  // Called when the host's timer changes while a session is already running
+  const applyTimerSnapshot = useCallback(
+    (snap, serverNow) => {
+      if (!liveRef.current.activeSession) return;
+      applySnapshotCore(snap, serverNow);
+    },
+    [applySnapshotCore]
+  );
+
+  // Called when the host starts a shared session (or when a player (re)joins one)
+  const startSyncedSession = useCallback(
+    (s, timerState, serverNow) => {
+      if (!s) return;
+      const focusMins = parseNum(s.focusTime || s.durationMinutes || s.duration, 25);
+      const breakMins = parseNum(s.breakTime, 5);
+
+      const synced = {
+        ...s,
+        workType: s.workType || s.activity || 'Focus Session',
+        techniqueName: s.techniqueName || s.technique || 'Pomodoro',
+        focusTime: focusMins,
+        breakTime: breakMins,
+      };
+
+      const prev = liveRef.current.activeSession;
+      const sameSession = prev && sessionIdOf(prev) === sessionIdOf(s);
+
+      localStorage.setItem('activeSession', JSON.stringify(synced));
+      setActiveSession(synced);
+      setTotalSessions(parseNum(s.sessionCount, 1));
+      sessionStartTimeRef.current = Date.now();
+      setNudgeCount(0);
+      setIsIdle(false);
+      setShowNudgeModal(false);
+      setIsCooldownActive(false);
+
+      // keep already-ticked tasks if we're just re-syncing the same session
+      if (!sameSession) {
+        setTasksList(
+          (s.tasks || []).map((t) => (typeof t === 'string' ? { text: t, completed: false } : t))
+        );
+        setCurrentSessionCount(0);
+        setIsFocusPhase(true);
+      }
+
+      const snapshot = timerState || {
+        isRunning: true,
+        isFocusPhase: true,
+        remainingSec: focusMins * 60,
+        currentSessionCount: 0,
+        updatedAt: s.startedAt,
+      };
+      applySnapshotCore(snapshot, serverNow);
+    },
+    [applySnapshotCore]
+  );
+
+  // ---------------------------------------------------------------------------
+  // LOAD / RESTORE the active session
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     calculateDailyFocusText();
 
     const loadSession = () => {
       const savedSession = localStorage.getItem('activeSession');
-      if (savedSession) {
-        try {
-          const session = JSON.parse(savedSession);
-          const focusMins = parseNum(session.focusTime || session.duration || session.durationMinutes, 25);
-          const breakMins = parseNum(session.breakTime, 5);
+      if (!savedSession) {
+        setActiveSession(null);
+        return;
+      }
 
-          setActiveSession({
-            ...session,
-            workType: session.workType || session.activity || 'Focus Session',
-            techniqueName: session.techniqueName || session.technique || 'Pomodoro',
-            focusTime: focusMins,
-            breakTime: breakMins,
-          });
+      try {
+        const session = JSON.parse(savedSession);
+        const sid = sessionIdOf(session);
 
+        // This exact session is already running in memory: don't touch the timer
+        const current = liveRef.current.activeSession;
+        if (current && sessionIdOf(current) === sid) return;
+
+        const focusMins = parseNum(session.focusTime || session.duration || session.durationMinutes, 25);
+        const breakMins = parseNum(session.breakTime, 5);
+
+        setActiveSession({
+          ...session,
+          workType: session.workType || session.activity || 'Focus Session',
+          techniqueName: session.techniqueName || session.technique || 'Pomodoro',
+          focusTime: focusMins,
+          breakTime: breakMins,
+        });
+
+        sessionStartTimeRef.current = Date.now();
+        setNudgeCount(0);
+        setIsIdle(false);
+        setShowNudgeModal(false);
+        setIsCooldownActive(false);
+
+        const defaultTasks = (session.tasks || []).map((t) =>
+          typeof t === 'string' ? { text: t, completed: false } : t
+        );
+
+        // Was this session's timer saved before we left the page / refreshed?
+        const saved = readSavedTimerState(sid);
+
+        if (saved) {
+          let remaining = Number(saved.remainingSec) || 0;
+          let running = false;
+
+          if (saved.isRunning) {
+            // time kept passing while we were away
+            remaining = secondsLeftUntil(saved.phaseEndsAt);
+            running = remaining > 0;
+          }
+
+          setIsFocusPhase(saved.isFocusPhase !== false);
+          setCurrentSessionCount(Number(saved.currentSessionCount) || 0);
+          setTotalSessions(parseNum(saved.totalSessions ?? session.sessionCount, 1));
+          setTasksList(Array.isArray(saved.tasks) ? saved.tasks : defaultTasks);
+
+          if (running) {
+            startTimerClock(remaining);
+          } else {
+            setRemainingTimeSec(remaining); // 0 => phase-switch effect finishes the phase
+            setIsTimerRunning(false);
+          }
+        } else {
           setTotalSessions(parseNum(session.sessionCount, 1));
           setRemainingTimeSec(focusMins * 60);
           setIsFocusPhase(true);
           setCurrentSessionCount(0);
           setIsTimerRunning(false);
-
-          sessionStartTimeRef.current = Date.now();
-          setNudgeCount(0);
-          setIsIdle(false);
-          setShowNudgeModal(false);
-          setIsCooldownActive(false);
-
-          setTasksList((session.tasks || []).map((t) => ({ text: t, completed: false })));
-        } catch (e) {
-          console.error('Failed to parse activeSession:', e);
+          setTasksList(defaultTasks);
         }
-      } else {
-        setActiveSession(null);
+      } catch (e) {
+        console.error('Failed to parse activeSession:', e);
       }
     };
 
@@ -137,14 +329,45 @@ export function useTimer() {
       }
     };
 
-    window.addEventListener('storage', loadSession);
+    // only react to the session key (our own timerState writes must not reload it)
+    const handleStorage = (e) => {
+      if (e.key === 'activeSession' || e.key === null) loadSession();
+    };
+
+    window.addEventListener('storage', handleStorage);
     window.addEventListener('message', handleMessage);
 
     return () => {
-      window.removeEventListener('storage', loadSession);
+      window.removeEventListener('storage', handleStorage);
       window.removeEventListener('message', handleMessage);
     };
-  }, [calculateDailyFocusText]);
+  }, [calculateDailyFocusText, startTimerClock]);
+
+  // ---------------------------------------------------------------------------
+  // PERSIST the timer so leaving the page (or refreshing) never loses it
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!activeSession) return;
+    const l = liveRef.current;
+    try {
+      localStorage.setItem(
+        TIMER_STATE_KEY,
+        JSON.stringify({
+          sid: sessionIdOf(activeSession),
+          isFocusPhase,
+          currentSessionCount,
+          totalSessions,
+          isRunning: isTimerRunning,
+          phaseEndsAt: phaseEndsAtRef.current,
+          remainingSec: isTimerRunning ? secondsLeftUntil(phaseEndsAtRef.current) : l.remainingTimeSec,
+          tasks: tasksList,
+          savedAt: Date.now(),
+        })
+      );
+    } catch (e) {
+      console.error('Failed to persist timer state:', e);
+    }
+  }, [activeSession, isFocusPhase, currentSessionCount, totalSessions, isTimerRunning, tasksList]);
 
   // Record focus/break duration
   const recordCompletedSession = useCallback(
@@ -235,6 +458,8 @@ export function useTimer() {
 
   // Helper to trigger Nudge Modal with active visual 30s countdown
   const triggerNudgeModal = useCallback(() => {
+    // freeze the remaining time at the moment we pause
+    setRemainingTimeSec(secondsLeftUntil(phaseEndsAtRef.current));
     setIsTimerRunning(false);
     setShowNudgeModal(true);
     setIsIdle(false);
@@ -257,41 +482,52 @@ export function useTimer() {
     }, 1000);
   }, []);
 
-  // 1. COUNTDOWN TICKER & RELEASE TRIGGER 2
+  // 1. COUNTDOWN TICKER (wall-clock based, so background tabs / throttling can't slow it)
   useEffect(() => {
-    if (isTimerRunning) {
-      timerRef.current = setInterval(() => {
-        setRemainingTimeSec((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            setIsTimerRunning(false);
+    if (!isTimerRunning) return undefined;
 
-            if (isIdle) {
-              triggerNudgeModal();
-            }
+    const tick = () => {
+      const left = secondsLeftUntil(phaseEndsAtRef.current);
+      setRemainingTimeSec(left);
+      if (left <= 0) {
+        setIsTimerRunning(false);
+        if (liveRef.current.isIdle) {
+          triggerNudgeModal();
+        }
+      }
+    };
 
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      clearInterval(timerRef.current);
-    }
+    tick();
+    const id = setInterval(tick, 500);
+    // catch up instantly when the user comes back to this tab
+    document.addEventListener('visibilitychange', tick);
 
-    return () => clearInterval(timerRef.current);
-  }, [isTimerRunning, isIdle, triggerNudgeModal]);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [isTimerRunning, triggerNudgeModal]);
 
   // 2. BOUNDARY-QUEUED IDLE VERIFICATION LOGIC
-    useEffect(() => {
-    if (!isTimerRunning || !activeSession || !isFocusPhase) { setIsIdle(false); return; }
+  useEffect(() => {
+    if (!isTimerRunning || !activeSession || !isFocusPhase) {
+      setIsIdle(false);
+      return;
+    }
     const config = getTechniqueConfig();
     if (isCooldownActive || nudgeCount >= config.maxCap) return;
     let idleTimer;
     const startIdleTimer = () => {
       clearTimeout(idleTimer);
-      const graceLeft = Math.max(0, config.gracePeriodMs - (Date.now() - (sessionStartTimeRef.current || Date.now())));
-      idleTimer = setTimeout(() => { setIsIdle(true); triggerNudgeModal(); }, Math.max(120000, graceLeft));
+      const graceLeft = Math.max(
+        0,
+        config.gracePeriodMs - (Date.now() - (sessionStartTimeRef.current || Date.now()))
+      );
+      idleTimer = setTimeout(() => {
+        if (nudgeDisabledRef.current) return; // shared-room members follow the host
+        setIsIdle(true);
+        triggerNudgeModal();
+      }, Math.max(120000, graceLeft));
     };
     startIdleTimer();
     window.addEventListener('mousemove', startIdleTimer);
@@ -313,13 +549,13 @@ export function useTimer() {
     console.log(`[Focus Verification] User confirmed presence. nudges_accepted: 1`);
 
     setNudgeCount((prev) => prev + 1);
-    setIsTimerRunning(true);
+    startTimerClock(liveRef.current.remainingTimeSec);
 
     setIsCooldownActive(true);
     setTimeout(() => {
       setIsCooldownActive(false);
     }, config.cooldownMs);
-  }, [getTechniqueConfig]);
+  }, [getTechniqueConfig, startTimerClock]);
 
   // Cleanup intervals on unmount
   useEffect(() => {
@@ -330,7 +566,9 @@ export function useTimer() {
 
   // 3. PHASE SWITCHING & STATS RECORDING
   useEffect(() => {
-    if (remainingTimeSec === 0 && !isTimerRunning && activeSession && !showNudgeModal) {
+    // `!showRewardModal` stops this from re-running after the last phase and
+    // saving / counting the finished session more than once
+    if (remainingTimeSec === 0 && !isTimerRunning && activeSession && !showNudgeModal && !showRewardModal) {
       const focusSecs = parseNum(activeSession.focusTime, 25) * 60;
       const breakSecs = parseNum(activeSession.breakTime, 5) * 60;
 
@@ -372,9 +610,20 @@ export function useTimer() {
     tasksList,
     incrementTotalSessions,
     showNudgeModal,
+    showRewardModal,
   ]);
 
-  const toggleTimer = () => setIsTimerRunning((prev) => !prev);
+  // Pause / resume (solo players, or the host of a shared room)
+  const toggleTimer = () => {
+    const l = liveRef.current;
+    if (l.isTimerRunning) {
+      setRemainingTimeSec(secondsLeftUntil(phaseEndsAtRef.current));
+      setIsTimerRunning(false);
+    } else {
+      if (l.remainingTimeSec <= 0) return;
+      startTimerClock(l.remainingTimeSec);
+    }
+  };
 
   const toggleTaskCompletion = (index) => {
     setTasksList((prev) =>
@@ -387,6 +636,7 @@ export function useTimer() {
       setIsTimerRunning(false);
       setActiveSession(null);
       localStorage.removeItem('activeSession');
+      localStorage.removeItem(TIMER_STATE_KEY);
       setIsWidgetFloating(false);
       setIsWidgetFullscreen(false);
       setIsPipActive(false);
@@ -398,7 +648,7 @@ export function useTimer() {
   };
 
   const closeRewardModal = () => {
-    // I-save muna ang session details para magamit pa sa Feedback Modal
+    // Save the session details first so the Feedback Modal can still use them
     if (activeSession) {
       localStorage.setItem('completedSessionData', JSON.stringify({
         ...activeSession,
@@ -408,6 +658,7 @@ export function useTimer() {
     setShowRewardModal(false);
     setActiveSession(null);
     localStorage.removeItem('activeSession');
+    localStorage.removeItem(TIMER_STATE_KEY);
   };
 
   const triggerInstantComplete = () => {
@@ -427,7 +678,7 @@ export function useTimer() {
       }
     }
   };
-  
+
   // Sync state updates to open PiP window
   useEffect(() => {
     if (pipWindowRef.current && !pipWindowRef.current.closed) {
@@ -578,31 +829,6 @@ export function useTimer() {
 
   const toggleFullscreen = () => setIsWidgetFullscreen((prev) => !prev);
 
-    const startSyncedSession = useCallback((s) => {
-    if (!s) return;
-    const focusMins = parseNum(s.focusTime || s.durationMinutes || s.duration, 25);
-    const breakMins = parseNum(s.breakTime, 5);
-    const startedAtMs = s.startedAt ? new Date(s.startedAt).getTime() : Date.now();
-    const elapsed = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
-    const synced = {
-      ...s,
-      workType: s.workType || s.activity || 'Focus Session',
-      techniqueName: s.techniqueName || s.technique || 'Pomodoro',
-      focusTime: focusMins,
-      breakTime: breakMins,
-    };
-    localStorage.setItem('activeSession', JSON.stringify(synced));
-    setActiveSession(synced);
-    setTotalSessions(parseNum(s.sessionCount, 1));
-    setRemainingTimeSec(Math.max(1, focusMins * 60 - elapsed));
-    setIsFocusPhase(true);
-    setCurrentSessionCount(0);
-    setIsTimerRunning(true);
-    sessionStartTimeRef.current = startedAtMs;
-    setNudgeCount(0); setIsIdle(false); setShowNudgeModal(false); setIsCooldownActive(false);
-    setTasksList((s.tasks || []).map((t) => (typeof t === 'string' ? { text: t, completed: false } : t)));
-  }, []);
-
   return {
     activeSession,
     remainingTimeSec,
@@ -626,7 +852,12 @@ export function useTimer() {
     cancelSession,
     toggleDocumentPiP,
     toggleFullscreen,
-    triggerInstantComplete, // Idinagdag dito para magamit sa UserHomepage
+    triggerInstantComplete,
+    // shared-room sync
+    startSyncedSession,
+    applyTimerSnapshot,
+    getTimerSnapshot,
+    nudgeDisabledRef,
   };
 }
 

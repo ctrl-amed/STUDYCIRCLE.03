@@ -17,6 +17,7 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 from pypdf import PdfReader
 import uuid
 import re
+import time
 
 # =============================================================================
 # APP CONFIGURATION & SETUP
@@ -2004,9 +2005,36 @@ def ai_recommendation():
 active_room_sessions = {}
 room_members = {}
 
+timer_states = {}          # room -> host's latest timer snapshot
+session_participants = {}  # room -> usernames allowed to (re)join a started shared session
+room_empty_since = {}  # room -> when the last person left
+
 # maps socket id -> (room, username) so we can clean up when a tab closes
 sid_to_room = {}
 
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def note_if_room_empty(room):
+    if not room_members.get(room):
+        room_empty_since[room] = time.time()
+
+
+def maybe_reset_stale_session(room):
+    """If a room has been empty for a while, forget its finished session."""
+    if room_members.get(room):
+        return
+    since = room_empty_since.get(room)
+    if since and time.time() - since > EMPTY_ROOM_GRACE_SECONDS:
+        active_room_sessions.pop(room, None)
+        timer_states.pop(room, None)
+        session_participants.pop(room, None)
+        room_empty_since.pop(room, None)
+        try:
+            supabase.table('rooms').update({'is_started': False}).eq('name', room).execute()
+        except Exception as e:
+            print("Could not reset room:", e)
 
 def get_live_count(room_name):
     return len(room_members.get(room_name, []))
@@ -2041,11 +2069,14 @@ def on_join_room(data):
     status = data.get('status', 'ONLINE')
     level = data.get('level', 1)
 
+    maybe_reset_stale_session(room)
+
     try:
         r = supabase.table('rooms').select('privacy, task_type, is_started, host, max_members').eq('name', room).execute()
         if r.data:
             info = r.data[0]
             returning = any(m['username'] == username for m in room_members.get(room, []))
+            was_in_session = username in session_participants.get(room, set())
 
             # Room full check
             if not returning and get_live_count(room) >= int(info.get('max_members') or 4):
@@ -2053,11 +2084,14 @@ def on_join_room(data):
                 return
 
             shared = info.get('privacy') == 'private' and info.get('task_type') == 'shared'
-            if shared and info.get('is_started') and info.get('host') != username and not returning:
+            if (shared and info.get('is_started') and info.get('host') != username
+                    and not returning and not was_in_session):
                 emit('room_join_rejected', {'reason': 'This shared session has already started.'})
                 return
     except Exception as e:
         print("Join check error:", e)
+
+    room_empty_since.pop(room, None)
 
     join_room(room)
     sid_to_room[request.sid] = (room, username)
@@ -2129,10 +2163,12 @@ def on_join_room(data):
             'totalFocusTime': total_focus_formatted
         })
 
-    emit('room_update', {
+        emit('room_update', {
         'members': room_members[room],
         'room_config': room_cfg,
         'active_session': active_room_sessions.get(room),
+        'timer_state': timer_states.get(room),
+        'server_now': now_iso(),
         'logs': [{'id': 'log_' + username, 'user': username, 'action': 'joined the room', 'time': 'Just now'}]
     }, room=room)
 
@@ -2251,6 +2287,7 @@ def on_leave_room(data):
             'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
         }, room=room)
         broadcast_room_counts(room)
+        note_if_room_empty(room)
 
 
 @socketio.on('send_room_message')
@@ -2337,10 +2374,27 @@ def handle_start_shared_room(data):
     except Exception as e:
         print("Host check error:", e)
         return
+
     if session:
         session = dict(session)
-        session['startedAt'] = datetime.now(timezone.utc).isoformat()
+        session['startedAt'] = now_iso()
         active_room_sessions[room_name] = session
+
+        # everyone in the room right now may leave and come back to this session
+        session_participants[room_name] = {m['username'] for m in room_members.get(room_name, [])}
+
+        try:
+            focus_secs = int(session.get('focusTime') or 25) * 60
+        except (TypeError, ValueError):
+            focus_secs = 25 * 60
+        timer_states[room_name] = {
+            'isRunning': True,
+            'isFocusPhase': True,
+            'remainingSec': focus_secs,
+            'currentSessionCount': 0,
+            'updatedAt': session['startedAt'],
+        }
+
     try:
         upd = {'is_started': True}
         if session:
@@ -2351,7 +2405,45 @@ def handle_start_shared_room(data):
         supabase.table('rooms').update(upd).eq('name', room_name).execute()
     except Exception as e:
         print("Room update error:", e)
-    socketio.emit('shared_room_started', {'room': room_name, 'session': session}, room=room_name)
+
+    socketio.emit('shared_room_started', {
+        'room': room_name,
+        'session': session,
+        'timer': timer_states.get(room_name),
+        'serverNow': now_iso(),
+    }, room=room_name)
+
+
+@socketio.on('host_timer_update')
+def handle_host_timer_update(data):
+    """Only the host can pause / resume / change phase. Everyone else follows."""
+    room = data.get('room')
+    username = data.get('username')
+    timer = data.get('timer') or {}
+
+    if room not in active_room_sessions:
+        return
+    try:
+        r = supabase.table('rooms').select('host').eq('name', room).execute()
+        if not r.data or r.data[0].get('host') != username:
+            return  # not the host: ignore
+    except Exception as e:
+        print("Host timer check error:", e)
+        return
+
+    try:
+        state = {
+            'isRunning': bool(timer.get('isRunning')),
+            'isFocusPhase': bool(timer.get('isFocusPhase', True)),
+            'remainingSec': max(0, int(timer.get('remainingSec') or 0)),
+            'currentSessionCount': max(0, int(timer.get('currentSessionCount') or 0)),
+            'updatedAt': now_iso(),
+        }
+    except (TypeError, ValueError):
+        return
+
+    timer_states[room] = state
+    emit('timer_state', {'timer': state, 'serverNow': now_iso()}, room=room, include_self=False)
 
 
 # =============================================================================
@@ -2756,6 +2848,7 @@ def handle_disconnect():
                 'logs': [{'id': 'leave_' + str(username), 'user': username, 'action': 'left the room', 'time': 'Just now'}]
             }, room=room)
             broadcast_room_counts(room)
+            note_if_room_empty(room)
 
     # --- 2. Presence tracking for the IT admin dashboard ---
     if request.sid in online_users:
