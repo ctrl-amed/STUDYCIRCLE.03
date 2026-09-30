@@ -193,15 +193,18 @@ export default function ITRooms() {
 
   // Total + Reported come from the server; Active / Inactive are derived live from the rows
   const metricsData = useMemo(() => {
-    const active = roomsList.filter((r) => r.status === 'Active').length;
-    const inactive = roomsList.filter((r) => r.status === 'Inactive').length;
-    return {
-      totalRooms: toCard(serverMetrics.totalRooms),
-      activeRooms: { value: String(active), changeNum: null, positive: true },
-      inactiveRooms: { value: String(inactive), changeNum: null, positive: true },
-      reportedRooms: toCard(serverMetrics.reportedRooms, false), // more reports = bad
-    };
-  }, [roomsList, serverMetrics]);
+  const active = roomsList.filter((r) => r.status === 'Active').length;
+  const inactive = roomsList.filter((r) => r.status === 'Inactive').length;
+  return {
+    totalRooms: {
+      ...toCard(serverMetrics.totalRooms),
+      value: roomsList.length.toLocaleString(), // every room, any status
+    },
+    activeRooms: { value: String(active), changeNum: null, positive: true },
+    inactiveRooms: { value: String(inactive), changeNum: null, positive: true },
+    reportedRooms: toCard(serverMetrics.reportedRooms, false),
+  };
+}, [roomsList, serverMetrics]);
 
   const todayMax = new Date().toISOString().split('T')[0];
 

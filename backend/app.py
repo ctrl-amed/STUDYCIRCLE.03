@@ -3785,14 +3785,24 @@ def admin_get_users():
 @app.route('/api/itadmin/rooms', methods=['GET'])
 @require_admin()
 def admin_get_rooms():
-    """Manage Rooms page: live member counts + Active / Inactive / Closed metrics.
-    Active    = room currently has at least 1 person inside.
-    Inactive  = room has nobody inside (not closed yet).
-    Closed    = closed automatically (5 min empty / session finished).
-    Suspended = closed by an administrator."""
+    """Manage Rooms page.
+    Total    = every room CREATED in the range (active, inactive, closed, suspended).
+    Reported = reports about rooms created in the range.
+    Active / Inactive are derived live by the frontend from the rows."""
     try:
-        res = supabase.table('rooms').select('*').order('created_at', desc=True).execute()
-        rooms = res.data or []
+        range_key = request.args.get('range', 'All time')
+        is_all_time = range_key in ('All time', '', None)
+
+        q = supabase.table('rooms').select('*').order('created_at', desc=True)
+        start = end = None
+        if not is_all_time:
+            try:
+                start, end = _resolve_range(range_key, request.args.get('start'), request.args.get('end'))
+            except (ValueError, TypeError) as ve:
+                return jsonify({'success': False, 'error': f'Invalid date range: {ve}'}), 400
+            q = q.gte('created_at', _iso_utc(start)).lt('created_at', _iso_utc(end))
+
+        rooms = _fetch_all(lambda: q)   # no is_closed / status filter on purpose
 
         for r in rooms:
             r['current_members'] = get_live_count(r['name'])
@@ -3805,18 +3815,31 @@ def admin_get_rooms():
             else:
                 r['status_display'] = 'Active' if r['is_active'] else 'Inactive'
 
-        active = sum(1 for r in rooms if r['status_display'] == 'Active')
-        inactive = sum(1 for r in rooms if r['status_display'] == 'Inactive')
-        closed_count = sum(1 for r in rooms if r['status_display'] == 'Closed')
+        # ---------- Total rooms card ----------
+        total_cur = len(rooms)
+        total_change = None
+        if not is_all_time:
+            prev_start, prev_end = start - (end - start), start
+            total_prev = _count_between('rooms', 'created_at', prev_start, prev_end)
+            total_change = _pct_change(total_cur, total_prev)
+
+        # ---------- Reported rooms card ----------
+        rep_q = supabase.table('reports').select('id', count='exact').eq('target_type', 'room')
+        reported_change = None
+        if not is_all_time:
+            rep_cur = rep_q.gte('created_at', _iso_utc(start)).lt('created_at', _iso_utc(end)).limit(1).execute().count or 0
+            rep_prev = supabase.table('reports').select('id', count='exact').eq('target_type', 'room') \
+                .gte('created_at', _iso_utc(prev_start)).lt('created_at', _iso_utc(prev_end)).limit(1).execute().count or 0
+            reported_change = _pct_change(rep_cur, rep_prev)
+        else:
+            rep_cur = rep_q.limit(1).execute().count or 0
 
         return jsonify({
             'success': True,
             'rooms': rooms,
             'metrics': {
-                'totalRooms': len(rooms),
-                'activeRooms': active,
-                'inactiveRooms': inactive,
-                'closedRooms': closed_count
+                'totalRooms':    {'value': total_cur, 'change': total_change},
+                'reportedRooms': {'value': rep_cur,   'change': reported_change},
             }
         }), 200
     except Exception as e:

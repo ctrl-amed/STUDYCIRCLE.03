@@ -54,6 +54,10 @@ export default function UserRooms() {
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
 
+  // NEW: message shown inside the LIMIT modal (comes from the backend) and a generic notice modal
+  const [limitMessage, setLimitMessage] = useState('');
+  const [notice, setNotice] = useState(null); // { title, message }
+
   // Modal Form Inputs & Selected Items
   const [privateCodeInput, setPrivateCodeInput] = useState('');
   const [privateCodeErr, setPrivateCodeErr] = useState('');
@@ -260,15 +264,24 @@ export default function UserRooms() {
     };
   }, [showRequestModal, requestState]);
 
+  // Opens the LIMIT modal (optionally with the exact message sent by the backend)
+  const openLimitModal = (message = '') => {
+    setShowCreateModal(false);
+    setLimitMessage(message);
+    setShowLimitModal(true);
+  };
+
   const handleConfirmCreate = async () => {
     if (!newRoomName.trim() || !newRoomMaxMembers) {
-      alert('Please fill in the room name and select maximum members.');
+      setNotice({
+        title: 'MISSING INFO',
+        message: 'Please fill in the room name and select maximum members.',
+      });
       return;
     }
 
     if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
-      setShowCreateModal(false);
-      setShowLimitModal(true);
+      openLimitModal();
       return;
     }
 
@@ -327,11 +340,20 @@ export default function UserRooms() {
 
         enterRoomSession(createdRoom);
       } else {
-        alert(data.error || 'Failed to create room.');
+        // Backend said no (for example the daily room limit)
+        const msg = data.error || data.message || 'Failed to create room.';
+        if (/limit reached/i.test(msg)) {
+          openLimitModal(msg);
+        } else {
+          setNotice({ title: 'ERROR', message: msg });
+        }
       }
     } catch (err) {
       console.error('Error creating room:', err);
-      alert('Network error. Make sure your Python backend is running.');
+      setNotice({
+        title: 'NETWORK ERROR',
+        message: 'Cannot reach the server. Make sure your Python backend is running.',
+      });
     }
   };
 
@@ -542,7 +564,7 @@ export default function UserRooms() {
         <button
           onClick={() => {
             if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
-              setShowLimitModal(true);
+              openLimitModal();
             } else {
               setShowCreateModal(true);
             }
@@ -939,13 +961,30 @@ export default function UserRooms() {
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
             <h3 className="font-pressstart text-[11px] text-theme-danger uppercase">LIMIT REACHED</h3>
             <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">
-              Room limit reached! You can only host a maximum of {MAX_ROOM_LIMIT} rooms at a time.
+              {limitMessage ||
+                `Room limit reached! You can only host a maximum of ${MAX_ROOM_LIMIT} group rooms per day.`}
             </p>
             <button
               onClick={() => setShowLimitModal(false)}
               className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full"
             >
               GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* GENERIC NOTICE MODAL (replaces the browser alert()) */}
+      {notice && (
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
+            <h3 className="font-pressstart text-[11px] text-theme-danger uppercase">{notice.title}</h3>
+            <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">{notice.message}</p>
+            <button
+              onClick={() => setNotice(null)}
+              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full"
+            >
+              OK
             </button>
           </div>
         </div>
