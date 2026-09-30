@@ -252,52 +252,56 @@ def admin_update_report(report_id):
 
         response = supabase.table('reports').update(update_payload).eq('id', report_id).execute()
 
-        # ---- NEW: a suspend action on a user/message report creates a real suspension ----
+        details = parse_json_field(rep_row.get('target_details'), {}) or {}
+        is_warning_action = bool(action_taken and 'warn' in action_taken.lower())
+
+        # SUSPEND (user / message report)
         if is_suspend_action and is_message_or_user:
-            details = parse_json_field(rep_row.get('target_details'), {}) or {}
-            target_username = (details.get('username') or details.get('reportedUsername')
-                               or details.get('sender') or '').strip()
-            target_email = (details.get('email') or '').strip()
+            try:
+                target = find_report_target_user(details)
+                if target:
+                    raw_dur = data.get('suspensionDuration') or data.get('duration') or '24 Hours / 1 Day'
+                    custom_dt = data.get('customDatetime')
+                    duration_label = raw_dur
+                    if str(raw_dur).lower().startswith('custom'):
+                        duration_label = 'Custom Date/Time'
+                        if not custom_dt and ':' in raw_dur:
+                            custom_dt = raw_dur.split(':', 1)[1].strip()
+                    apply_user_suspension(
+                        target['id'], target['email'],
+                        reason or 'Community Guidelines Violation',
+                        duration_label, custom_dt, notes or '',
+                        request.admin['username']
+                    )
+                else:
+                    print(f"[REPORT SUSPEND] Could not find target user for report {report_id}: {details}")
+            except Exception as susp_err:
+                print(f"[REPORT SUSPEND ERROR] report {report_id}:", susp_err)
 
-            q = supabase.table('users').select('id, email')
-            if target_email:
-                q = q.eq('email', target_email)
-            elif target_username:
-                q = q.eq('username', target_username)
-            else:
-                q = None
+        # WARNING: lalabas na modal sa room (room report) o sa user (user/message report)
+        if is_warning_action:
+            try:
+                payload = {
+                    'reason': reason or 'Community Guidelines Violation',
+                    'notes': notes or '',
+                    'targetType': target_type,
+                }
+                if target_type == 'room':
+                    room_name = details.get('roomName')
+                    if room_name:
+                        socketio.emit('room_warning', {**payload, 'room': room_name}, room=room_name)
+                else:
+                    target = find_report_target_user(details)
+                    if target:
+                        socketio.emit('account_warning', payload, room=user_room(target['email']))
+            except Exception as warn_err:
+                print(f"[REPORT WARNING ERROR] report {report_id}:", warn_err)
 
-            u_res = q.execute() if q is not None else None
-            if u_res and u_res.data:
-                raw_dur = data.get('suspensionDuration') or '24 Hours / 1 Day'
-                custom_dt = None
-                duration_label = raw_dur
-                if raw_dur.startswith('Custom'):
-                    duration_label = 'Custom Date/Time'
-                    custom_dt = raw_dur.split(':', 1)[1].strip() if ':' in raw_dur else None
-
-                apply_user_suspension(
-                    u_res.data[0]['id'], u_res.data[0]['email'],
-                    reason or 'Community Guidelines Violation',
-                    duration_label, custom_dt, notes or '',
-                    request.admin['username']
-                )
-            else:
-                print(f"[REPORT SUSPEND] Could not find target user for report {report_id}: {details}")
-
+        # CLOSE ROOM
         if target_type == 'room' and action_taken and re.search(r'suspend|close', action_taken, re.I):
-            details = parse_json_field(rep_row.get('target_details'), {}) or {}
             room_name = details.get('roomName')
             if room_name:
-                supabase.table('rooms').update({
-                    'is_closed': True,
-                    'status': 'suspended',
-                    'closed_reason': reason or 'Community Guidelines Violation',
-                    'closed_at': now_iso()
-                }).eq('name', room_name).execute()
-                # kick everyone currently inside + refresh lists
-                socketio.emit('room_closed', {'room': room_name, 'reason': 'This room has been suspended by an administrator.'}, room=room_name)
-                socketio.emit('rooms_changed')
+                suspend_room(room_name, reason or 'Community Guidelines Violation')
 
         return jsonify({"success": True, "message": "Report updated successfully", "report": response.data}), 200
     except Exception as e:
@@ -311,87 +315,152 @@ def admin_update_report(report_id):
 # Philippine Standard Time definition (UTC+8)
 PHT = timezone(timedelta(hours=8))
 
+
+def parse_ts(value):
+    """Parse a Supabase timestamp safely (any fractional-second length, Z or +00:00).
+    Returns a timezone-aware datetime (UTC if the string had no timezone), or None."""
+    if not value:
+        return None
+    s = str(value).strip().replace('Z', '+00:00')
+    m = re.match(r'^(.*?)\.(\d+)(.*)$', s)
+    if m:  # normalise the fraction to exactly 6 digits for older Python versions
+        s = f"{m.group(1)}.{m.group(2)[:6].ljust(6, '0')}{m.group(3)}"
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def format_pht(value):
+    """Timestamp -> 'September 30, 2026 at 03:15 PM PHT'."""
+    try:
+        dt = parse_ts(value)
+        return dt.astimezone(PHT).strftime('%B %d, %Y at %I:%M %p') + ' PHT'
+    except Exception:
+        return str(value)
+
+
+DURATION_DELTAS = {
+    '24 hours': timedelta(days=1), '1 day': timedelta(days=1),
+    '3 days': timedelta(days=3),
+    '7 days': timedelta(days=7), '1 week': timedelta(days=7),
+    '14 days': timedelta(days=14), '2 weeks': timedelta(days=14),
+    '30 days': timedelta(days=30), '1 month': timedelta(days=30),
+    '90 days': timedelta(days=90), '3 months': timedelta(days=90),
+}
+
+
 def calculate_suspension_expiration(duration_str, custom_datetime_str=None):
     """
-    Calculates an exact ISO timestamp when suspension expires in UTC.
-    Interprets HTML datetime-local input as Philippine Time (UTC+8)
-    and stores it in standard UTC for reliable database comparisons.
+    Returns the exact UTC ISO timestamp when the suspension expires, or None
+    for a permanent suspension.
+    Interprets the HTML datetime-local input as Philippine Time (UTC+8)
+    and stores it in UTC for reliable database comparisons.
     """
     now = datetime.now(timezone.utc)
+    label = str(duration_str or '').strip()
+    low = label.lower()
 
-    if duration_str == 'Custom Date/Time' and custom_datetime_str:
-        try:
-            # <input type="datetime-local" /> produces "YYYY-MM-DDTHH:MM" without timezone.
-            # Treat as Philippine Time (UTC+8) and convert to UTC
-            dt = datetime.fromisoformat(custom_datetime_str)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=PHT)
-            return dt.astimezone(timezone.utc).isoformat()
-        except Exception as e:
-            print("Custom datetime parse error:", e)
-            return (now + timedelta(days=1)).isoformat()
+    if low.startswith('permanent'):
+        return None
 
-    durations = {
-        '24 Hours / 1 Day': timedelta(days=1),
-        '3 Days': timedelta(days=3),
-        '7 Days / 1 Week': timedelta(days=7),
-        '14 Days / 2 Weeks': timedelta(days=14),
-        '30 Days / 1 Month': timedelta(days=30),
-        '90 Days / 3 Months': timedelta(days=90),
-    }
+    if low.startswith('custom'):
+        if custom_datetime_str:
+            try:
+                # <input type="datetime-local" /> gives "YYYY-MM-DDTHH:MM" with no timezone
+                dt = datetime.fromisoformat(custom_datetime_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=PHT)
+                return dt.astimezone(timezone.utc).isoformat()
+            except Exception as e:
+                print("Custom datetime parse error:", e)
+        return (now + timedelta(days=1)).isoformat()
 
-    if duration_str in durations:
-        return (now + durations[duration_str]).isoformat()
-    elif duration_str == 'Permanent / Indefinite':
-        return None  # Permanent / Indefinite
+    # match on each part of a label such as "7 Days / 1 Week"
+    for part in low.split('/'):
+        if part.strip() in DURATION_DELTAS:
+            return (now + DURATION_DELTAS[part.strip()]).isoformat()
 
+    print(f"[SUSPENSION] Unknown duration label '{label}', defaulting to 1 day")
     return (now + timedelta(days=1)).isoformat()
+
+
+def _lift_suspension(susp):
+    """Marks one suspension inactive and resets the user's status if nothing else is active."""
+    supabase.table('suspensions').update({'is_active': False}).eq('id', susp['id']).execute()
+    other = supabase.table('suspensions').select('id') \
+        .eq('user_id', susp['user_id']).eq('is_active', True).execute()
+    if not other.data:
+        supabase.table('users').update({'status': 'offline'}).eq('id', susp['user_id']).execute()
+        try:
+            u = supabase.table('users').select('email').eq('id', susp['user_id']).execute()
+            if u.data:
+                suspended_emails.discard((u.data[0]['email'] or '').strip().lower())
+        except Exception:
+            pass
 
 
 def get_active_suspension(user_id):
     """
     Checks the 'suspensions' table for any active suspension for this user.
-    If a suspension has passed its expiration time, it automatically deactivates it.
+    Any suspension that has passed its expiration time is deactivated on the spot.
     Returns: suspension record dict if actively suspended, None if free to log in.
     """
     try:
-        res = supabase.table('suspensions') \
-            .select('*') \
-            .eq('user_id', user_id) \
-            .eq('is_active', True) \
-            .order('created_at', desc=True) \
-            .limit(1) \
-            .execute()
-
-        if not res.data:
-            return None
-
-        suspension = res.data[0]
-        suspended_until_str = suspension.get('suspended_until')
-
-        # If permanent (no end date), they remain suspended
-        if not suspended_until_str:
-            return suspension
-
-        # Ensure safe timezone-aware comparison
-        suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
-        if suspended_until.tzinfo is None:
-            suspended_until = suspended_until.replace(tzinfo=timezone.utc)
+        res = supabase.table('suspensions').select('*') \
+            .eq('user_id', user_id).eq('is_active', True) \
+            .order('created_at', desc=True).execute()
 
         now = datetime.now(timezone.utc)
-
-        if now >= suspended_until:
-            # AUTO-LIFT: Mark suspension as inactive in the suspensions table
-            supabase.table('suspensions').update({'is_active': False}).eq('id', suspension['id']).execute()
-            # Update user status back to offline
-            supabase.table('users').update({'status': 'offline'}).eq('id', user_id).execute()
-            print(f"[AUTO-LIFT] Suspension expired for user ID {user_id}. Restored access.")
-            return None
-
-        return suspension
+        active = None
+        for s in (res.data or []):
+            until = parse_ts(s.get('suspended_until'))
+            if until is not None and now >= until:
+                _lift_suspension(s)
+                print(f"[AUTO-LIFT] Suspension {s['id']} expired for user {user_id}. Restored access.")
+                continue
+            if active is None:
+                active = s
+        return active
     except Exception as e:
         print("Error checking suspension table:", e)
         return None
+
+
+def lift_expired_suspensions():
+    """Runs every minute so suspensions end on time even if the user never logs in."""
+    try:
+        res = supabase.table('suspensions').select('id, user_id, suspended_until') \
+            .eq('is_active', True).execute()
+        now = datetime.now(timezone.utc)
+        lifted = False
+        for s in (res.data or []):
+            until = parse_ts(s.get('suspended_until'))
+            if until is not None and now >= until:
+                _lift_suspension(s)
+                lifted = True
+                print(f"[AUTO-LIFT JOB] Suspension {s['id']} lifted.")
+        if lifted:
+            socketio.emit('users_changed')   # an open IT Users page refreshes itself
+    except Exception as e:
+        print("[AUTO-LIFT JOB ERROR]:", e)
+
+
+def suspended_response(susp):
+    """Builds the 403 response the login screen shows, with the lift time in Philippine time."""
+    reason = susp.get('reason') or "Community Guidelines Violation"
+    if susp.get('suspended_until'):
+        lift_display = format_pht(susp['suspended_until'])
+    else:
+        lift_display = 'Permanent, until reviewed by IT administration'
+    return jsonify({
+        'suspended': True,
+        'is_suspended': True,
+        'error': f"ACCOUNT SUSPENDED: {reason}",
+        'reason': reason,
+        'liftUntil': lift_display
+    }), 403
+
 
 def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, admin_username):
     """Single place that creates a suspension. Used by Manage Users AND Reports."""
@@ -413,7 +482,98 @@ def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, ad
 
     supabase.table('users').update({'status': 'Suspended'}).eq('id', user_id).execute()
     socketio.emit('users_changed')   # lets an open Manage Users page refresh
+
+    lift_display = format_pht(expiration_iso) if expiration_iso else 'Permanent, until reviewed by IT administration'
+    force_logout_user(email, reason, lift_display)   # <-- NEW
     return expiration_iso
+
+
+# ---------- Live enforcement helpers ----------
+suspended_emails = set()   # lowercase emails na currently suspended (in memory)
+
+def user_room(email):
+    """Personal socket room ng user, para maabot siya kahit saang page."""
+    return f"user:{(email or '').strip().lower()}"
+
+try:
+    _res = supabase.table('suspensions').select('email').eq('is_active', True).execute()
+    suspended_emails.update((r.get('email') or '').strip().lower() for r in (_res.data or []) if r.get('email'))
+except Exception as e:
+    print("Could not preload suspended emails:", e)
+
+
+def find_report_target_user(details):
+    username = (details.get('username') or details.get('reportedUsername') or details.get('sender') or '').strip()
+    email = (details.get('email') or '').strip()
+    q = supabase.table('users').select('id, email, username')
+    if email:
+        q = q.eq('email', email)
+    elif username:
+        q = q.eq('username', username)
+    else:
+        return None
+    res = q.execute()
+    return res.data[0] if res.data else None
+
+
+def force_logout_user(email, reason, lift_display):
+    """Pinapa-logout agad ang user: tinatanggal sa study room, presence, at pinapadalhan ng event."""
+    email_l = (email or '').strip().lower()
+    if not email_l:
+        return
+    suspended_emails.add(email_l)
+
+    # 1. Sabihan ang client(s) niya (kahit anong page / tab)
+    socketio.emit('account_suspended', {'reason': reason, 'liftUntil': lift_display}, room=user_room(email_l))
+
+    # 2. Tanggalin sa study room(s) at i-sync ang iba
+    try:
+        u = supabase.table('users').select('username').eq('email', email_l).execute()
+        username = u.data[0]['username'] if u.data else None
+    except Exception:
+        username = None
+
+    if username:
+        for sid, (room, uname) in list(sid_to_room.items()):
+            if uname == username:
+                sid_to_room.pop(sid, None)
+        for room in list(room_members.keys()):
+            before = len(room_members[room])
+            room_members[room] = [m for m in room_members[room] if m['username'] != username]
+            if len(room_members[room]) != before:
+                socketio.emit('room_update', {
+                    'members': room_members[room],
+                    'logs': [new_log(username, 'left the room')]
+                }, room=room)
+                broadcast_room_counts(room)
+                note_if_room_empty(room)
+
+    # 3. Presence (IT dashboard)
+    for sid, info in list(online_users.items()):
+        if (info.get('email') or '') == email_l:
+            online_users.pop(sid, None)
+    broadcast_presence_to_admins()
+
+
+def suspend_room(room_name, reason):
+    """Isang lugar para sa pag-close ng room ng admin (Reports at Manage Rooms)."""
+    supabase.table('rooms').update({
+        'is_closed': True,
+        'status': 'suspended',
+        'closed_reason': reason,
+        'closed_at': now_iso(),
+        'current_members': 0,
+    }).eq('name', room_name).execute()
+
+    socketio.emit('room_closed', {
+        'room': room_name,
+        'reason': f"This room was closed by an administrator. Reason: {reason}"
+    }, room=room_name)
+
+    for store in (room_members, active_room_sessions, timer_states,
+                  session_participants, room_empty_since, room_close_at):
+        store.pop(room_name, None)
+    socketio.emit('rooms_changed')
 
 # =============================================================================
 # HEALTH CHECK
@@ -539,23 +699,7 @@ def google_signup():
             # --- CHECK ACTIVE SUSPENSION ---
             active_susp = get_active_suspension(user['id'])
             if active_susp:
-                reason = active_susp.get('reason') or "Community Guidelines Violation"
-                suspended_until = active_susp.get('suspended_until')
-                lift_display = active_susp.get('duration') or 'Until reviewed by IT administration'
-                if suspended_until:
-                    try:
-                        dt = datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
-                        lift_display = dt.strftime('%B %d, %Y at %I:%M %p UTC')
-                    except Exception:
-                        lift_display = suspended_until
-
-                return jsonify({
-                    'suspended': True,
-                    'is_suspended': True,
-                    'error': f"ACCOUNT SUSPENDED: {reason}",
-                    'reason': reason,
-                    'liftUntil': lift_display
-                }), 403
+                return suspended_response(active_susp)
 
             raw_inv = user.get('inventory')
             if isinstance(raw_inv, str):
@@ -660,24 +804,7 @@ def login():
         # --- CHECK ACTIVE SUSPENSION FROM 'suspensions' TABLE ---
         active_susp = get_active_suspension(user['id'])
         if active_susp:
-            reason = active_susp.get('reason') or "Community Guidelines Violation"
-            suspended_until = active_susp.get('suspended_until')
-
-            lift_display = active_susp.get('duration') or 'Until reviewed by IT administration'
-            if suspended_until:
-                try:
-                    dt = datetime.fromisoformat(suspended_until.replace('Z', '+00:00'))
-                    lift_display = dt.strftime('%B %d, %Y at %I:%M %p UTC')
-                except Exception:
-                    lift_display = suspended_until
-
-            return jsonify({
-                'suspended': True,
-                'is_suspended': True,
-                'error': f"ACCOUNT SUSPENDED: {reason}",
-                'reason': reason,
-                'liftUntil': lift_display
-            }), 403
+            return suspended_response(active_susp)
 
         # Normal password check
         if not bcrypt.check_password_hash(user['password'], password):
@@ -930,9 +1057,11 @@ def send_study_reminder():
             print("[MANUAL REMINDER WORKER ERROR]:", e)
 
 
-# Background scheduler that checks every minute for scheduled reminders
+# Background scheduler: checks every minute for scheduled reminders and expired suspensions
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=send_study_reminder, trigger="interval", minutes=1)
+scheduler.add_job(func=lift_expired_suspensions, trigger="interval", minutes=1,
+                  id="lift_suspensions", replace_existing=True)
 scheduler.start()
 
 
@@ -1551,6 +1680,12 @@ def complete_focus_session():
     nudge_pauses = max(0, int(data.get('nudgePauses', 0) or 0))
     paused_seconds = max(0, int(data.get('pausedSeconds', 0) or 0))
 
+    # Which room this session happened in (multiplayer only), saved to study_sessions.room_id
+    try:
+        room_id = int(data.get('roomId')) if (is_multiplayer and data.get('roomId') is not None) else None
+    except (TypeError, ValueError):
+        room_id = None
+
     if not raw_email:
         return jsonify({"success": False, "error": "Email is required. Please check login state."}), 400
 
@@ -1612,23 +1747,23 @@ def complete_focus_session():
         rounded_exp_gained = round(calculated_exp, 4)
 
         # Look at this user's session history once — used for BOTH the daily
-        # coin cap AND the streak check below.
-        today = datetime.now().date()
-        today_str = today.strftime('%Y-%m-%d')
-        yesterday_str = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        # coin cap AND the streak check below. "Today" is Philippine (Manila) time.
+        today = datetime.now(PHT).date()
+        yesterday = today - timedelta(days=1)
 
         history_res = supabase.table('study_sessions').select('created_at, coins_gained').eq('email', raw_email).execute()
-        history = history_res.data or []
 
         studied_today = False
         studied_yesterday = False
         coins_earned_today = 0
-        for s in history:
-            created_at = s.get('created_at') or ''
-            if created_at.startswith(today_str):
+        for s in (history_res.data or []):
+            dt = _to_pht(s.get('created_at'))
+            if not dt:
+                continue
+            if dt.date() == today:
                 studied_today = True
                 coins_earned_today += int(s.get('coins_gained') or 0)
-            elif created_at.startswith(yesterday_str):
+            elif dt.date() == yesterday:
                 studied_yesterday = True
 
         # Enforce the 100-coin-per-day limit
@@ -1697,6 +1832,7 @@ def complete_focus_session():
             "coins_gained": coins_gained,
             "nudge_pauses": nudge_pauses,
             "paused_seconds": paused_seconds,
+            "room_id": room_id,
         }).execute()
 
         print(f"[v2.1 EXP SUCCESS] {user['email']}: +{rounded_exp_gained} EXP, +{coins_gained} Coins, Level: {new_level}, Streak: {new_streak}")
@@ -1704,6 +1840,7 @@ def complete_focus_session():
         return jsonify({
             "success": True,
             "expGained": rounded_exp_gained,
+            "coinsGained": coins_gained,
             "currentXP": int(round(new_xp)),
             "totalExp": new_xp,
             "coins": new_coins,
@@ -1720,6 +1857,68 @@ def complete_focus_session():
     except Exception as e:
         print("[v2.1 EXP ERROR]:", str(e))
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/get-room-history', methods=['GET'])
+def get_room_history():
+    """History tab: rooms this user has studied in, with totals from THEIR OWN sessions only."""
+    email = (request.args.get('email') or '').strip()
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
+    try:
+        sess = supabase.table('study_sessions').select('*') \
+            .eq('email', email).order('created_at', desc=True).execute().data or []
+        sess = [s for s in sess if s.get('room_id') is not None]
+
+        room_ids = list({s['room_id'] for s in sess})
+        rooms = {}
+        if room_ids:
+            rr = supabase.table('rooms').select('*').in_('id', room_ids).execute().data or []
+            rooms = {r['id']: r for r in rr}
+
+        grouped = {}
+        for s in sess:   # newest first, so the first row seen per room is its latest session
+            r = rooms.get(s['room_id'])
+            if not r:
+                continue
+            g = grouped.setdefault(r['id'], {
+                'id': r['id'],
+                'name': r['name'],
+                'course': r.get('course') or 'General Studies',
+                'host': r['host'],
+                'privacy': (r.get('privacy') or 'public').lower(),
+                'maxMembers': r.get('max_members') or 4,
+                'technique': r.get('technique') or 'Pomodoro',
+                'breakMinutesPerBreak': r.get('break_time') or 0,
+                'focusMinutes': 0,
+                'sessions': 0,
+                'xp': 0.0,
+                'coins': 0,
+                'tasks': [],
+                'lastAt': s.get('created_at'),
+            })
+            g['focusMinutes'] += int(s.get('duration_minutes') or 0)
+            g['sessions'] += 1
+            g['xp'] += float(s.get('exp_gained') or 0)
+            g['coins'] += int(s.get('coins_gained') or 0)
+            tl = parse_json_field(s.get('tasks_list'), []) or []
+            for t in tl:
+                if isinstance(t, dict):
+                    g['tasks'].append({'text': t.get('text') or t.get('task') or '', 'completed': bool(t.get('completed'))})
+                elif isinstance(t, str):
+                    g['tasks'].append({'text': t, 'completed': False})
+
+        history = list(grouped.values())
+        for g in history:
+            g['xp'] = int(round(g['xp']))
+            # estimate: one break of the room's break length per completed session
+            g['breakMinutes'] = g['breakMinutesPerBreak'] * g['sessions']
+        history.sort(key=lambda g: g['lastAt'] or '', reverse=True)
+
+        return jsonify({"success": True, "history": history}), 200
+    except Exception as e:
+        print("GET ROOM HISTORY ERROR:", str(e))
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route('/api/get-all-sessions', methods=['GET'])
@@ -2426,6 +2625,22 @@ def _start_workers_on_request():
     ensure_room_lifecycle_worker()
 
 
+# Blocks API calls from suspended users (rewards, session save, chat, etc.)
+GUARD_SKIP = ('/api/login', '/api/signup', '/api/google-signup', '/api/forgot-password',
+              '/api/change-password', '/api/itadmin')
+
+@app.before_request
+def block_suspended_users():
+    if request.method == 'OPTIONS' or not request.path.startswith('/api/') or request.path.startswith(GUARD_SKIP):
+        return
+    body = request.get_json(silent=True)
+    body = body if isinstance(body, dict) else {}
+    email = (request.args.get('email') or body.get('email') or body.get('senderEmail')
+             or body.get('userEmail') or body.get('sender_email') or '')
+    if str(email).strip().lower() in suspended_emails:
+        return jsonify({'suspended': True, 'error': 'ACCOUNT SUSPENDED'}), 403
+
+
 @socketio.on('connect')
 def _start_workers_on_connect():
     ensure_room_lifecycle_worker()
@@ -2504,6 +2719,11 @@ def on_join_room(data):
     except Exception as e:
         print("Error fetching user info:", e)
 
+    # Personal room, so warnings / suspension reach this socket too.
+    # (Multiplayer uses a second socket that never emits user_connected.)
+    if user_email:
+        join_room(user_room(user_email))
+
     is_host = False
     room_cfg = None
     try:
@@ -2581,11 +2801,16 @@ def create_room():
     max_members = int(data.get('max_members', 4))
 
     try:
-        # Enforce a 3-room limit only for group rooms (max_members > 1)
+        # Enforce a 3-room limit only for group rooms (max_members > 1).
+        # "Today" is Philippine (Manila) time.
         if max_members > 1:
-            today_str = datetime.now().strftime('%Y-%m-%d')
+            today = datetime.now(PHT).date()
             existing = supabase.table('rooms').select('*').eq('host', host).execute()
-            today_rooms = [r for r in existing.data if r.get('created_at', '').startswith(today_str) and r.get('max_members', 4) > 1]
+            today_rooms = [
+                r for r in existing.data
+                if (_to_pht(r.get('created_at')) or datetime.min.replace(tzinfo=PHT)).date() == today
+                and (r.get('max_members') or 4) > 1
+            ]
 
             if len(today_rooms) >= 3:
                 return jsonify({'success': False, 'error': 'Room limit reached! You can only host a maximum of 3 group rooms per day.'}), 400
@@ -3224,13 +3449,21 @@ def broadcast_presence_to_admins():
 @socketio.on('user_connected')
 def handle_user_connected(data):
     email = (data.get('email') or '').strip().lower()
-    if email:
-        online_users[request.sid] = {'email': email, 'status': 'ONLINE'}
-        try:
-            supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
-        except Exception:
-            pass
-        broadcast_presence_to_admins()
+    if not email:
+        return
+    join_room(user_room(email))          # para maabot siya ng warning/suspend
+
+    if email in suspended_emails:        # suspended pero sumubok pa ring kumonekta
+        emit('account_suspended', {'reason': 'Community Guidelines Violation',
+                                   'liftUntil': 'Please log in again for details.'})
+        return
+
+    online_users[request.sid] = {'email': email, 'status': 'ONLINE'}
+    try:
+        supabase.table('users').update({'status': 'online'}).eq('email', email).execute()
+    except Exception:
+        pass
+    broadcast_presence_to_admins()
 
 @socketio.on('user_start_session')
 def handle_user_start_session(data):
@@ -3405,15 +3638,11 @@ def admin_get_users():
                 flags_count_by_user[u_id] = flags_count_by_user.get(u_id, 0) + 1
 
                 if s.get('is_active'):
-                    suspended_until_str = s.get('suspended_until')
-                    if suspended_until_str:
-                        try:
-                            suspended_until = datetime.fromisoformat(suspended_until_str.replace('Z', '+00:00'))
-                            if now >= suspended_until:
-                                supabase.table('suspensions').update({'is_active': False}).eq('id', s['id']).execute()
-                                continue
-                        except Exception:
-                            pass
+                    until = parse_ts(s.get('suspended_until'))
+                    if until is not None and now >= until:
+                        # expired: lift it (also resets users.status) and don't count it as active
+                        _lift_suspension(s)
+                        continue
                     if u_id not in active_susp_by_user:
                         active_susp_by_user[u_id] = s
 
@@ -3522,15 +3751,43 @@ def admin_get_rooms():
         print("ADMIN GET ROOMS ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/itadmin/rooms/<int:room_id>/close', methods=['POST'])
+@require_admin()
+def admin_close_room(room_id):
+    data = request.get_json() or {}
+    reason = data.get('reason') or 'Community Guidelines Violation'
+    try:
+        res = supabase.table('rooms').select('name, host').eq('id', room_id).execute()
+        if not res.data:
+            return jsonify({'success': False, 'error': 'Room not found.'}), 404
+        room = res.data[0]
+
+        suspend_room(room['name'], reason)
+
+        # Email sa host (hindi dapat mag-fail ang close kahit di ma-send)
+        try:
+            h = supabase.table('users').select('email').eq('username', room['host']).execute()
+            if h.data:
+                mail.send(Message(
+                    subject="StudyCircle: Your room was closed",
+                    recipients=[h.data[0]['email']],
+                    body=f"Hi {room['host']},\n\nYour room \"{room['name']}\" was closed by an administrator.\nReason: {reason}\n\n- StudyCircle Team"
+                ))
+        except Exception as mail_err:
+            print("[ROOM CLOSE MAIL]:", mail_err)
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 def _to_pht(iso_str):
     """ISO timestamp (UTC from Supabase) -> timezone-aware datetime in Philippine time."""
     if not iso_str:
         return None
     try:
-        dt = datetime.fromisoformat(str(iso_str).replace('Z', '+00:00'))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(PHT)
+        return parse_ts(iso_str).astimezone(PHT)
     except Exception:
         return None
 

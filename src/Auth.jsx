@@ -95,6 +95,16 @@ export default function Auth() {
   }, [location.hash]);
 
   useEffect(() => {
+  const raw = sessionStorage.getItem('suspended_notice');
+  if (!raw) return;
+  sessionStorage.removeItem('suspended_notice');
+  try {
+    setSuspendedUserData(JSON.parse(raw));
+    setShowSuspendedModal(true);
+  } catch (e) {}
+}, []);
+
+  useEffect(() => {
     if (localStorage.getItem('passwordChangedSuccess') === 'true') {
       localStorage.removeItem('passwordChangedSuccess');
       triggerToast('Password changed successfully!');

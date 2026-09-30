@@ -262,6 +262,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   // Room closing / closed (auto-close after a finished shared session, empty room, or IT admin closure)
   const [roomClosing, setRoomClosing] = useState(null);         // { reason, endsAt }
   const [roomClosedInfo, setRoomClosedInfo] = useState(null);   // { reason }
+  const [roomWarning, setRoomWarning] = useState(null);
   const [closingCountdown, setClosingCountdown] = useState(0);
   const roomContextRef = useRef(null); // room details captured when a session finishes
 
@@ -495,8 +496,6 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const totalFocusSecs = Math.max(1, durationMins * 60 * Number(savedSession.sessionCount || 1));
   const consumedRatio = Math.max(0, 1 - penalty.pausedSeconds / totalFocusSecs);
 
-  const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult * consumedRatio) * 10) / 10;
-  const calculatedCoins = Math.round(Math.max(1, Math.floor(durationMins * 0.2)) * consumedRatio);
 
   // Tumpak na Host Checking
   const currentHostMember = roomData.members.find(m => m.isHost);
@@ -505,14 +504,27 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
 
+// Reward preview: mirrors the server's v2.1 formula (the daily coin cap can still lower coins)
+const previewRoomSize = isMultiplayer ? (roomData.members.length || 1) : 1;
+const sessMult = previewRoomSize <= 1 ? 1 : isCurrentUserHost ? 1.15 : 1.05;
+const capMult =
+  previewRoomSize <= 1 ? 1 : previewRoomSize === 2 ? 1.05 : previewRoomSize <= 5 ? 1.10 : 1.15;
+const bonusExp = techKey === 'ULTRADIAN' && durationMins >= 90 ? 4 : 0;
+
+const calculatedExp =
+  Math.round(
+    ((durationMins * baseRate * techMult * checklistMult * sessMult * capMult + bonusExp) * consumedRatio) * 10
+  ) / 10;
+const calculatedCoins = Math.round(Math.max(1, Math.round(durationMins * 0.2)) * consumedRatio);
+
   // Host tells the server the whole synced session is done, so the room can close after a short grace period.
   // The room details are remembered first: the room may close before the player presses CLAIM.
   useEffect(() => {
     if (!timer.showRewardModal) return;
 
     roomContextRef.current = isMultiplayer
-      ? { isMultiplayer: true, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1 }
-      : null;
+  ? { isMultiplayer: true, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1, roomId: roomData.roomId }
+  : null;
 
     if (isMultiplayer && isSharedRoom && isCurrentUserHost && socketRef.current) {
       socketRef.current.emit('shared_session_finished', {
@@ -577,9 +589,9 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     const completedTasksCount = tasksToSend.filter(t => t.completed || t.status === 'completed').length;
 
     // Keep the group XP bonus even if the room already closed (isMultiplayer is false by then)
-    const ctx = isMultiplayer
-      ? { isMultiplayer, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1 }
-      : (roomContextRef.current || { isMultiplayer: false, isHost: false, roomSize: 1 });
+const ctx = isMultiplayer
+  ? { isMultiplayer, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1, roomId: roomData.roomId }
+  : (roomContextRef.current || { isMultiplayer: false, isHost: false, roomSize: 1, roomId: null });
 
     // Nudge penalty: the server reduces rewards for unused focus time
     const penalty = timer.getNudgePenalty();
@@ -600,6 +612,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           isMultiplayer: ctx.isMultiplayer,
           isHost: ctx.isHost,
           roomSize: ctx.roomSize,
+          roomId: ctx.roomId,  
           taskStatus: taskStatus,
           productivityLevel: productivityLevel,
           accomplishedText: accomplishedText,
@@ -903,6 +916,10 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         setRoomClosedInfo({ reason: data?.reason || 'This room has been closed.' });
       });
 
+      socketRef.current.on('room_warning', (data) => {
+        setRoomWarning({ reason: data?.reason, notes: data?.notes });
+      });
+
       socketRef.current.on('shared_room_started', (data) => {
         applySyncedSession(data?.session, data?.timer, data?.serverNow);
       });
@@ -1066,6 +1083,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
       setRoomData((prev) => ({
         ...prev,
+        roomId: parsed?.id ?? null,  
         roomName: roomName,
         course: parsed?.course || 'General Studies',
         privacy: parsed?.privacy || 'public',
@@ -3179,6 +3197,26 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           </div>
         </div>
       )}
+
+              {roomWarning && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+              <div className="text-4xl">⚠️</div>
+              <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM WARNING</h3>
+              <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+                An administrator warned this room: <span className="text-theme-primary">{roomWarning.reason}</span>
+              </p>
+              {roomWarning.notes && <p className="font-pixel text-[15px] text-theme-dark/70">{roomWarning.notes}</p>}
+              <p className="font-pixel text-[15px] text-theme-dark/70">The room may be closed if this continues.</p>
+              <button
+                onClick={() => setRoomWarning(null)}
+                className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow cursor-pointer uppercase"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
 
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">

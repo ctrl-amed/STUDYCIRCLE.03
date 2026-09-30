@@ -28,6 +28,12 @@ const COURSE_OPTIONS = [
   'General Studies',
 ];
 
+// Minutes (integer from the backend) -> "2h 05m"
+const formatMinutes = (mins) => {
+  const total = Math.max(0, Math.round(Number(mins) || 0));
+  return `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, '0')}m`;
+};
+
 export default function UserRooms() {
   const { playerData } = usePlayer();
   const navigate = useNavigate();
@@ -35,7 +41,7 @@ export default function UserRooms() {
 
   // --- STATE MANAGEMENT ---
   const [roomsList, setRoomsList] = useState([]);
-  const [sessionHistory, setSessionHistory] = useState([]);
+  const [roomHistory, setRoomHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('all-rooms');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('');
@@ -154,38 +160,41 @@ export default function UserRooms() {
     };
   }, [myUsername]);
 
-  // History: ONLY this account's sessions (from the database, not localStorage)
+  // History: ONLY the rooms THIS account has studied in (from the database).
+  // Reloaded whenever the History tab is opened so it is always fresh.
   useEffect(() => {
     const email = playerData?.email;
-    setSessionHistory([]);
+    setRoomHistory([]);
     if (!email) return undefined;
 
     let cancelled = false;
-    fetch(`http://localhost:5000/api/get-all-sessions?email=${encodeURIComponent(email)}`)
+    fetch(`http://localhost:5000/api/get-room-history?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled || !d.success) return;
-        setSessionHistory(
-          (d.sessions || []).map((s) => {
-            let tasks = s.tasks_list;
-            if (typeof tasks === 'string') {
-              try { tasks = JSON.parse(tasks); } catch (e) { tasks = []; }
-            }
-            return {
-              id: s.id,
-              workType: s.activity_name,
-              techniqueName: s.technique,
-              focusTime: s.duration_minutes,
-              finishedAt: s.created_at,
-              tasks: Array.isArray(tasks) ? tasks : [],
-            };
-          })
+        setRoomHistory(
+          (d.history || []).map((h) => ({
+            id: h.id,
+            name: h.name,
+            course: h.course || 'General Studies',
+            host: h.host,
+            privacy: (h.privacy || 'public').toLowerCase(),
+            maxMembers: h.maxMembers || 4,
+            technique: h.technique || 'Pomodoro',
+            focus: formatMinutes(h.focusMinutes),
+            breakTime: formatMinutes(h.breakMinutes),
+            sessions: h.sessions || 0,
+            tasks: Array.isArray(h.tasks) ? h.tasks : [],
+            xp: h.xp || 0,
+            coins: h.coins || 0,
+            lastAt: h.lastAt,
+          }))
         );
       })
-      .catch((err) => console.error('Failed to load session history:', err));
+      .catch((err) => console.error('Failed to load room history:', err));
 
     return () => { cancelled = true; };
-  }, [playerData?.email]);
+  }, [playerData?.email, activeTab === 'history']);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -217,17 +226,11 @@ export default function UserRooms() {
   };
 
   const getHostedRoomsCount = () => {
-    const todayStr = new Date().toISOString().split('T')[0]; // Example: "2026-09-24"
-
-    return roomsList.filter((r) => {
-      if (r.host !== myUsername) return false;
-
-      // Get the room's creation date (created_at field from the database)
-      const roomDate = r.created_at ? r.created_at.split('T')[0] : '';
-
-      // Only count rooms created today
-      return roomDate === todayStr;
-    }).length;
+    const manilaDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+    const today = manilaDay(new Date());
+    return roomsList.filter(
+      (r) => r.host === myUsername && r.max_members > 1 && r.created_at && manilaDay(r.created_at) === today
+    ).length;
   };
 
   // NOTE: joining the socket room is done by UserHomepage (/dashboard).
@@ -399,22 +402,23 @@ export default function UserRooms() {
 
   // Suspended rooms are hidden everywhere. Inactive rooms are hidden from ALL ROOMS only.
   const visibleRooms = roomsList.filter((r) => !r.isClosed);
-const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'public'));
+  const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'public'));
   const filteredMyRooms = filterRooms(visibleRooms.filter((r) => r.host === myUsername));
 
-  const filteredHistory = sessionHistory.filter((item) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      (item.workType && item.workType.toLowerCase().includes(query)) ||
-      (item.techniqueName && item.techniqueName.toLowerCase().includes(query))
-    );
-  });
+  // History uses the same search + course filter as the room tabs
+  const filteredHistory = filterRooms(roomHistory);
 
   const filteredCourseOptions = COURSE_OPTIONS.filter((c) =>
     c.toLowerCase().includes(newRoomCourse.toLowerCase())
   );
 
   const renderRoomCard = (room, isHistoryTab = false) => {
+    const isPublic = room.privacy.toLowerCase() === 'public';
+    const privacyStyles = isPublic
+      ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
+      : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
+
+    // ---------- HISTORY CARD (a room you studied in) ----------
     if (isHistoryTab) {
       return (
         <div
@@ -423,19 +427,29 @@ const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'p
         >
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted shrink-0 flex items-center justify-center font-pressstart text-[10px] text-theme-dark">
-              ⏳
+              {room.name.charAt(0)}
             </div>
             <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-              <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.workType || 'Focus Session'}</span>
+              <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.name}</span>
               <span className="font-pressstart text-[8px] text-theme-primary truncate">
-                🛠️ {room.techniqueName || 'Pomodoro'}
+                📚 {room.course || 'General Studies'}
               </span>
               <span className="font-pressstart text-[8px] text-theme-dark truncate">
-                Duration: <span className="text-theme-primary">{room.focusTime || 25} mins</span>
+                Hosted by: <span className="text-theme-primary">{room.host}</span>
               </span>
-              <span className="font-pressstart text-[7px] text-theme-dark/60 truncate pt-1">
-                Completed: {room.finishedAt ? new Date(room.finishedAt).toLocaleDateString() : 'Recent'}
-              </span>
+              <div className="flex flex-col gap-1.5 pt-1">
+                <div className="flex items-center">
+                  <span className={`inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] px-2 py-0.5 rounded uppercase ${privacyStyles}`}>
+                    <span>{room.privacy}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
+                  <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16 17v2H2v-2s0-4 7-4s7 4 7 4m-3.5-9.5A3.5 3.5 0 1 0 9 11a3.5 3.5 0 0 0 3.5-3.5m3.44 5.5A5.32 5.32 0 0 1 18 17v2h4v-2s0-3.63-6.06-4M15 4a3.4 3.4 0 0 0-1.93.59a5 5 0 0 1 0 5.82A3.4 3.4 0 0 0 15 11a3.5 3.5 0 0 0 0-7" />
+                  </svg>
+                  <span>Max {room.maxMembers}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -452,11 +466,7 @@ const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'p
       );
     }
 
-    const isPublic = room.privacy.toLowerCase() === 'public';
-    const privacyStyles = isPublic
-      ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
-      : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
-
+    // ---------- NORMAL ROOM CARD ----------
     const roomTaskType = room.taskType || 'individual';
     const isFull = room.currentMembers >= room.maxMembers;
 
@@ -699,7 +709,7 @@ const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'p
                 filteredHistory.map((r) => renderRoomCard(r, true))
               ) : (
                 <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
-                  No session history found.
+                  No room history found.
                 </p>
               )}
             </div>
@@ -1008,47 +1018,107 @@ const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'p
         </div>
       )}
 
-      {/* STATISTICS MODAL FOR HISTORY */}
+      {/* STATISTICS MODAL (ROOM HISTORY) */}
       {showStatsModal && selectedStatsRoom && (
-        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl max-h-[85vh] overflow-y-auto">
-            <h3 className="font-pressstart text-[12px] text-theme-primary uppercase text-center">SESSION STATISTICS</h3>
-
-            <div className="flex flex-col gap-2 font-pressstart text-[9px] text-theme-dark border-b border-theme-dark/20 pb-3">
-              <p>Activity: <span className="text-theme-primary">{selectedStatsRoom.workType || 'Focus Session'}</span></p>
-              <p>Technique: <span className="text-theme-primary">{selectedStatsRoom.techniqueName || 'Pomodoro'}</span></p>
-              <p>Focus Time: <span className="text-theme-primary">{selectedStatsRoom.focusTime || 25} mins</span></p>
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-center relative pb-2">
+              <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide text-center">
+                STATISTICS: {selectedStatsRoom.name}
+              </h3>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <span className="font-pressstart text-[9px] text-theme-dark uppercase">Checklist Tasks:</span>
-              {selectedStatsRoom.tasks && selectedStatsRoom.tasks.length > 0 ? (
-                <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
-                  {selectedStatsRoom.tasks.map((task, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-theme-muted/50 rounded-[6px] border border-theme-dark/20 font-pressstart text-[8px]">
-                      <span className={task.completed ? 'text-green-600' : 'text-amber-600'}>
-                        {task.completed ? '✔' : '⏳'}
-                      </span>
-                      <span className={task.completed ? 'line-through opacity-60 text-theme-dark' : 'text-theme-dark'}>
-                        {typeof task === 'string' ? task : task.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-pressstart text-[8px] text-theme-dark/60 italic">No checklist items recorded for this session.</p>
-              )}
+            <div className="flex flex-col gap-4 font-pressstart text-[9px] text-theme-dark">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">COURSE</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-primary">
+                  {selectedStatsRoom.course || 'General Studies'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">STUDY TECHNIQUE</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.technique}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">FOCUS TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.focus}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">BREAK TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.breakTime}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-solid border-theme-dark/40">
+                <span className="font-pixel text-[20px] text-theme-dark">NUMBER OF SESSIONS</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.sessions} {selectedStatsRoom.sessions === 1 ? 'Session' : 'Sessions'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pt-1">
+                <span className="font-pixel text-[20px] text-theme-dark">TASKS COMPLETED</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.tasks.filter((t) => t.completed).length} /{' '}
+                  {selectedStatsRoom.tasks.length}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 pb-3 border-b-[2px] border-solid border-theme-dark">
+                {selectedStatsRoom.tasks.length > 0 ? (
+                  <ul className="flex flex-col text-[8px] list-none pl-2 m-0 gap-1">
+                    {selectedStatsRoom.tasks.map((t, idx) => (
+                      <li key={idx} className="flex justify-between items-center">
+                        <span className={t.completed ? 'line-through text-theme-dark/60' : ''}>
+                          {typeof t === 'string' ? t : t.text}
+                        </span>
+                        {t.completed && (
+                          <span className="text-theme-primary font-pixel text-[20px]">✓</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="font-pressstart text-[8px] text-theme-dark/60 italic pl-2">
+                    No tasks were recorded in this room.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">XP EARNED</span>
+                <span className="font-pixel text-[20px] text-[#7E57C2]">
+                  {selectedStatsRoom.xp} XP
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="font-pixel text-[20px] text-theme-dark">COINS EARNED</span>
+                <span className="font-pixel text-[20px] text-theme-primary">
+                  {selectedStatsRoom.coins} coins
+                </span>
+              </div>
             </div>
 
-            <button
-              onClick={() => {
-                setShowStatsModal(false);
-                setSelectedStatsRoom(null);
-              }}
-              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full mt-2 cursor-pointer hover:bg-[#d66530]"
-            >
-              CLOSE
-            </button>
+            <div className="flex items-center justify-center pt-2">
+              <button
+                onClick={() => {
+                  setShowStatsModal(false);
+                  setSelectedStatsRoom(null);
+                }}
+                className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
         </div>
       )}
