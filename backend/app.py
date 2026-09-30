@@ -1850,24 +1850,6 @@ def generate_ai_tool():
             except:
                 pass
 
-
-# --- WSM (Weighted Sum Model) constants, used by the technique recommendation engine ---
-
-TASK_WEIGHTS = {
-    "Creation": {"df": 0.8, "fm": 0.1, "cs": 0.1},
-    "Writing": {"df": 0.7, "fm": 0.2, "cs": 0.1},
-    "Practicing": {"df": 0.6, "fm": 0.3, "cs": 0.1},
-    "Reading": {"df": 0.5, "fm": 0.4, "cs": 0.1},
-    "Review": {"df": 0.2, "fm": 0.4, "cs": 0.4},
-    "Memorize": {"df": 0.1, "fm": 0.5, "cs": 0.4}
-}
-
-FRAMEWORK_SCORES = {
-    "Pomodoro": {"df": 2, "fm": 10, "cs": 9},
-    "52-17 Method": {"df": 6, "fm": 6, "cs": 5},
-    "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
-}
-
 # --- Task validation dictionary, used to check whether a task description matches its category ---
 
 TASK_DICTIONARIES = {
@@ -1933,7 +1915,7 @@ TASK_DICTIONARIES = {
         "remembering", "retain", "retention", "recall", "recalling", "memorization", "memorisation",
         "rote learning", "rote memorization", "learn", "master", "mastering", "internalize", "internalise",
         "ingrain", "fix in memory", "store in memory", "flashcards", "flash card", "make flashcards",
-        "review flashcards", "active recall", "recall practice", "selftest", "self testing", "retrieval practice",
+        "review flashcards", "active recall", "recall practice", "self-test", "self testing", "retrieval practice",
         "retrieval", "spaced repetition", "spaced review", "repeat", "repetition", "repeat until remembered",
         "repeat information", "repeat terms", "repeat definitions", "learn terms", "learn definitions",
         "memorize terms", "memorize definitions", "memorize formulas", "memorize equations", "memorize facts",
@@ -1966,53 +1948,104 @@ TASK_DICTIONARIES = {
     ]
 }
 
+TASK_MAX_POINTS = 3  # points needed for a full score (1.0)
+
+CATEGORY_ALIASES = {
+    "practicing": "practice", "practise": "practice",
+    "memorization": "memorize", "memorise": "memorize", "memorizing": "memorize",
+}
+
+# A core word ANYWHERE in a keyword/phrase makes it a strong (exact) signal -> 3 points
+CORE_ROOTS = {
+    "reading":  {"read", "reading", "reread", "re-read", "skim", "scan", "peruse"},
+    "writing":  {"write", "writing", "draft", "drafting", "compose", "composing",
+                 "rewrite", "re-write", "proofread", "proofreading", "outline", "essay"},
+    "review":   {"review", "reviewing", "recap", "revisit", "revise", "revision"},
+    "practice": {"practice", "practise", "practicing", "practising", "drill", "drills",
+                 "exercise", "exercises", "solve", "solving", "rehearse", "rehearsal"},
+    "memorize": {"memorize", "memorise", "memorizing", "memorising", "memorization",
+                 "memorisation", "flashcards", "recall", "recalling", "mnemonic", "mnemonics"},
+    "creation": {"create", "creating", "creation", "build", "building", "design",
+                 "designing", "develop", "developing", "prototype", "wireframe", "brainstorm"},
+}
+
+# Broad words that appear in everyday non-study tasks -> 1 point
+GENERIC_TERMS = {
+    "check", "try", "make", "making", "plan", "planning", "learn", "answer", "answering",
+    "repeat", "apply", "train", "training", "work on", "work through", "go over", "go through",
+    "project", "document", "report", "paper", "letter", "email", "response", "story",
+    "article", "introduction", "conclusion", "proposal", "case study", "produce", "producing",
+    "look up", "consult", "remember", "retain", "retention",
+    "association", "calculate", "compute", "implement", "application", "refresh",
+    "draw", "drawing", "master", "hands on", "browse", "examine", "inspect",
+}
+
+STOPWORDS = {"a", "an", "the", "my", "our", "some", "this", "that", "these", "those"}
+
+
+def normalize(text):
+    """lowercase, strip punctuation, drop articles ('make a poster' -> 'make poster')"""
+    text = re.sub(r"[^\w\s-]", " ", text.lower())
+    return " ".join(w for w in text.split() if w not in STOPWORDS)
+
+
+# Generic words that ARE the main verb of that category -> 2 points instead of 1
+PROMOTED_TERMS = {
+    "reading":  {"go through", "go over", "browse", "examine", "inspect", "consult", "look up", "work through"},
+    "review":   {"go over", "go through", "refresh"},
+    "practice": {"answer", "answering", "apply", "train", "training", "work on", "work through",
+                 "calculate", "compute", "implement", "application"},
+}
+
+
+def keyword_weight(category, kw):
+    if kw in PROMOTED_TERMS.get(category, ()):
+        return 2
+    if kw in GENERIC_TERMS:
+        return 1
+    # a core word ANYWHERE in the phrase makes it a strong signal
+    if any(w in CORE_ROOTS.get(category, set()) for w in kw.split()):
+        return 3
+    return 2  # synonym / related phrase
+
+
+# Built once at startup: (keyword, compiled regex, weight), longest phrases first
+KEYWORD_RULES = {}
+for _cat, _kws in TASK_DICTIONARIES.items():
+    _rules = []
+    for _kw in sorted(set(_kws), key=lambda k: (-len(k), k)):
+        # optional suffix so "solved", "memorized", "created", "designs" still match
+        _pattern = re.compile(rf'\b{re.escape(normalize(_kw))}(?:s|es|ed|d|ing)?\b')
+        _rules.append((_kw, _pattern, keyword_weight(_cat, _kw)))
+    KEYWORD_RULES[_cat] = _rules
+
 
 @app.route('/api/validate-task', methods=['POST'])
 def validate_task():
     data = request.get_json() or {}
     category = str(data.get('category', '')).strip().lower()
-    tasks = data.get('tasks', [])
+    category = CATEGORY_ALIASES.get(category, category)
+    tasks = [str(t).strip() for t in (data.get('tasks') or []) if str(t).strip()]
 
-    if not category or not tasks:
-        return jsonify({'success': False, 'error': 'Category and tasks are required.'}), 400
+    if category not in KEYWORD_RULES:
+        return jsonify({'success': False, 'error': f'Unknown category: {category}'}), 400
+    if not tasks:
+        return jsonify({'success': False, 'error': 'At least one task is required.'}), 400
 
-    keywords = TASK_DICTIONARIES.get(category, [])
-    # Match the longest phrases first (e.g. "read chapter" before "read")
-    sorted_keywords = sorted(keywords, key=len, reverse=True)
+    results, total_score = [], 0.0
 
-    results = []
-    overall_score = 0.0
+    for task_str in tasks:
+        temp_text = f" {normalize(task_str)} "
+        matched, points = [], 0
 
-    for raw_task in tasks:
-        task_str = str(raw_task).strip()
-        # Normalize: strip punctuation and lowercase
-        clean_task = re.sub(r'[^\w\s-]', ' ', task_str.lower())
-        temp_text = f" {clean_task} "
+        for kw, pattern, weight in KEYWORD_RULES[category]:
+            if pattern.search(temp_text):
+                matched.append(kw)
+                points += weight
+                temp_text = pattern.sub(' ', temp_text)   # avoid double-counting
 
-        matched_keywords = []
+        score = min(1.0, points / TASK_MAX_POINTS)
 
-        for kw in sorted_keywords:
-            kw_clean = kw.strip().lower()
-            # \b (word boundary) so only whole words are matched
-            pattern = rf'\b{re.escape(kw_clean)}\b'
-            if re.search(pattern, temp_text):
-                matched_keywords.append(kw_clean)
-                # Remove the matched word from temp_text to avoid double-counting
-                temp_text = re.sub(pattern, ' ', temp_text)
-
-        matched_count = len(matched_keywords)
-
-        # Scoring formula based on the actual number of matches:
-        if matched_count == 0:
-            score = 0.0
-        elif matched_count == 1:
-            score = 0.75  # One clear keyword/phrase match -> Aligned
-        elif matched_count == 2:
-            score = 0.90  # Stronger signal
-        else:
-            score = 1.0  # Many matching keywords
-
-        # Threshold categorization from Section 5 of the thesis
         if score >= 0.70:
             status = "Aligned"
         elif score >= 0.40:
@@ -2021,22 +2054,84 @@ def validate_task():
             status = "Not Aligned"
 
         results.append({
-            'task': task_str,
-            'score': round(score, 2),
-            'status': status,
-            'matchedKeywords': matched_keywords
+            'task': task_str, 'score': round(score, 2), 'points': points,
+            'status': status, 'matchedKeywords': matched
         })
-        overall_score += score
+        total_score += score
 
-    avg_score = round(overall_score / len(tasks), 2) if tasks else 0.0
-    final_status = "Aligned" if avg_score >= 0.70 else ("Needs Review" if avg_score >= 0.40 else "Not Aligned")
+    avg = round(total_score / len(results), 2)
+    final_status = "Aligned" if avg >= 0.70 else ("Needs Review" if avg >= 0.40 else "Not Aligned")
 
     return jsonify({
-        'success': True,
-        'averageScore': avg_score,
-        'status': final_status,
-        'taskBreakdown': results
+        'success': True, 'averageScore': avg, 'status': final_status,
+        'taskBreakdown': results,
+        # lets the frontend flag individual bad tasks even if the average passes
+        'misalignedTasks': [r['task'] for r in results if r['status'] == 'Not Aligned'],
     }), 200
+
+
+# --- WSM (Weighted Sum Model) constants, used by the technique recommendation engine ---
+
+TASK_WEIGHTS = {
+    "Creation": {"df": 0.8, "fm": 0.1, "cs": 0.1},
+    "Writing": {"df": 0.7, "fm": 0.2, "cs": 0.1},
+    "Practicing": {"df": 0.6, "fm": 0.3, "cs": 0.1},
+    "Reading": {"df": 0.5, "fm": 0.4, "cs": 0.1},
+    "Review": {"df": 0.2, "fm": 0.4, "cs": 0.4},
+    "Memorize": {"df": 0.1, "fm": 0.5, "cs": 0.4}
+}
+
+FRAMEWORK_SCORES = {
+    "Pomodoro": {"df": 2, "fm": 10, "cs": 9},
+    "52-17 Method": {"df": 7, "fm": 7, "cs": 6},
+    "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
+}
+
+# --- Helpers for the WSM recommendation engine ---
+
+# Maps whatever the frontend sends ("Practice", "practising", "memorization"...)
+# to the exact keys used in TASK_WEIGHTS.
+WEIGHT_CATEGORY_ALIASES = {
+    "creation": "Creation", "create": "Creation", "creating": "Creation",
+    "writing": "Writing", "write": "Writing",
+    "practicing": "Practicing", "practice": "Practicing",
+    "practising": "Practicing", "practise": "Practicing",
+    "reading": "Reading", "read": "Reading",
+    "review": "Review", "reviewing": "Review",
+    "memorize": "Memorize", "memorise": "Memorize", "memorizing": "Memorize",
+    "memorising": "Memorize", "memorization": "Memorize", "memorisation": "Memorize",
+}
+
+# study_sessions.task_status values that count as a successful session (lowercase)
+SUCCESS_STATUSES = {"completed", "early", "on-time", "on time"}
+
+# Minimum sessions with a technique before its history affects the score (PDF: 5)
+WSM_MIN_ATTEMPTS = 5
+
+
+def resolve_weight_category(value):
+    """'Practice' -> 'Practicing', 'memorization' -> 'Memorize'. None if unknown."""
+    text = str(value or '').strip().lower()
+    if not text:
+        return None
+    if text in WEIGHT_CATEGORY_ALIASES:
+        return WEIGHT_CATEGORY_ALIASES[text]
+    for alias, cat in WEIGHT_CATEGORY_ALIASES.items():
+        if alias in text:
+            return cat
+    return None
+
+
+def resolve_framework_name(technique):
+    """Maps a stored technique name to a FRAMEWORK_SCORES key. None if unknown."""
+    t = str(technique or '').lower()
+    if '52' in t:
+        return "52-17 Method"
+    if '90' in t or 'ultradian' in t or 'deep' in t:
+        return "90m Deep Work"
+    if 'pomodoro' in t or '25' in t:
+        return "Pomodoro"
+    return None
 
 
 @app.route('/api/ai-recommendation', methods=['POST'])
@@ -2051,7 +2146,8 @@ def ai_recommendation():
 
     try:
         # 1. Get history from Supabase for the Historical Modifier (H_f)
-        sessions_res = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).limit(20).execute()
+        sessions_res = supabase.table('study_sessions').select('technique, task_status') \
+            .eq('email', email).order('created_at', desc=True).limit(20).execute()
         user_history = sessions_res.data or []
 
         perf_tracking = {
@@ -2060,31 +2156,29 @@ def ai_recommendation():
             "90m Deep Work": {"attempts": 0, "successes": 0}
         }
         for s in user_history:
-            tech = s.get('technique', 'Pomodoro')
-            if tech in perf_tracking:
-                perf_tracking[tech]["attempts"] += 1
-                if s.get('status') in ['early', 'on-time', 'completed']:
-                    perf_tracking[tech]["successes"] += 1
+            fw = resolve_framework_name(s.get('technique'))
+            if fw in perf_tracking:
+                perf_tracking[fw]["attempts"] += 1
+                if str(s.get('task_status') or '').strip().lower() in SUCCESS_STATUSES:
+                    perf_tracking[fw]["successes"] += 1
 
         def get_historical_modifier(fw_name):
             rec = perf_tracking[fw_name]
-            if rec["attempts"] < 3:
+            if rec["attempts"] < WSM_MIN_ATTEMPTS:
                 return 1.0
-            return max(0.5, rec["successes"] / rec["attempts"])
+            return rec["successes"] / rec["attempts"]
 
-        # 2. WSM session weight calculation (averaging weights across tasks)
+        # 2. WSM session weight calculation (Equation 1: average weights across tasks)
+        session_category = resolve_weight_category(work_type) or "Reading"
+
         matched_categories = []
         for t in tasks:
-            t_lower = str(t).lower()
-            matched = "Reading"
-            for cat in TASK_WEIGHTS.keys():
-                if cat.lower() in t_lower or cat.lower() in work_type.lower():
-                    matched = cat
-                    break
-            matched_categories.append(matched)
+            # if the frontend sends {task, category} objects, respect each task's own category
+            own_cat = resolve_weight_category(t.get('category')) if isinstance(t, dict) else None
+            matched_categories.append(own_cat or session_category)
 
         if not matched_categories:
-            matched_categories = ["Reading"]
+            matched_categories = [session_category]
 
         num_tasks = len(matched_categories)
         total_df = sum(TASK_WEIGHTS[cat]["df"] for cat in matched_categories)
@@ -2097,7 +2191,7 @@ def ai_recommendation():
             "cs": total_cs / num_tasks
         }
 
-        # 3. WSM framework scoring & selection
+        # 3. WSM framework scoring & selection (Equation 2)
         best_framework = "Pomodoro"
         highest_score = -1
         framework_details = {
@@ -2121,19 +2215,27 @@ def ai_recommendation():
 
         config = framework_details[best_framework]
 
-        # 4. Use Gemini for the user-facing explanation/rationale
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel('gemini-3.6-flash')
+        # 4. Use Gemini for the user-facing explanation/rationale.
+        #    If Gemini fails, still return the WSM result with a plain explanation.
+        task_labels = [t.get('task') or t.get('text') or str(t) if isinstance(t, dict) else str(t) for t in tasks]
+        try:
+            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+            model = genai.GenerativeModel('gemini-3.6-flash')
 
-        prompt = f"""
-        You are Kitsu AI, an expert adaptive study coach inside StudyCircle. 
-        A Weighted Sum Model algorithm determined that the user should use the '{best_framework}' technique ({config['focus']}m focus / {config['break']}m break) based on their tasks: {tasks}.
-        Write a short, friendly, and motivating explanation (max 3 sentences) acknowledging their specific tasks and why this technique matches their cognitive profile.
-        Return ONLY the explanation text.
-        """
+            prompt = f"""
+            You are Kitsu AI, an expert adaptive study coach inside StudyCircle. 
+            A Weighted Sum Model algorithm determined that the user should use the '{best_framework}' technique ({config['focus']}m focus / {config['break']}m break) based on their tasks: {task_labels}.
+            Write a short, friendly, and motivating explanation (max 3 sentences) acknowledging their specific tasks and why this technique matches their cognitive profile.
+            Return ONLY the explanation text.
+            """
 
-        response = model.generate_content(prompt)
-        rationale = response.text.strip()
+            response = model.generate_content(prompt)
+            rationale = response.text.strip()
+        except Exception as ai_err:
+            print("Gemini rationale failed, using fallback:", str(ai_err))
+            rationale = (f"Based on your {session_category.lower()} tasks, "
+                         f"{best_framework} ({config['focus']}m focus / {config['break']}m break) "
+                         f"is the best fit for this session. You've got this!")
 
         return jsonify({
             'success': True,
