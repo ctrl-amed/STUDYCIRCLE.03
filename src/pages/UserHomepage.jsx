@@ -8,6 +8,7 @@ import CustomRoom from '../components/CustomRoom';
 import CustomAvatar from '../components/CustomAvatar';
 import EmojiPicker from 'emoji-picker-react';
 import { io } from 'socket.io-client';
+import { forceSuspendedLogout } from '../components/AccountGuard';
 
 const LOFI_TRACKS = [
   { id: 'lofi1', name: 'Midnight Coffee', artist: 'Lofi Girl & Chill', src: 'media/BGM/LOFI1.mp3' },
@@ -919,6 +920,8 @@ const ctx = isMultiplayer
       socketRef.current.on('room_warning', (data) => {
         setRoomWarning({ reason: data?.reason, notes: data?.notes });
       });
+
+      socketRef.current.on('account_suspended', (d) => forceSuspendedLogout(playerData?.email, d));
 
       socketRef.current.on('shared_room_started', (data) => {
         applySyncedSession(data?.session, data?.timer, data?.serverNow);

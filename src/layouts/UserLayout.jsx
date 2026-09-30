@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import AccountGuard from '../components/AccountGuard'; 
 
 export default function UserLayout() {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -52,6 +53,8 @@ export default function UserLayout() {
 
   return (
     <div className="min-h-screen bg-theme-muted relative text-theme-dark flex flex-col">
+      <AccountGuard />   {/* <-- NEW: isang beses lang, nasa taas */}
+
       {/* BACKGROUND TEXTURE LAYERS */}
       <div
         className="fixed inset-0 pointer-events-none z-0"

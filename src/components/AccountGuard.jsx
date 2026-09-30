@@ -3,35 +3,53 @@ import { io } from 'socket.io-client';
 import { usePlayer } from '../context/PlayerContext';
 
 const API = 'http://localhost:5000';
-const LOGIN_PATH = '/auth#login'; // palitan kung iba ang route ng Auth page mo
+const LOGIN_PATH = `${import.meta.env.BASE_URL}auth#login`;
+
+// Ginagamit din ng UserHomepage
+export function forceSuspendedLogout(email, d) {
+  if (sessionStorage.getItem('suspended_notice')) return; // isang beses lang
+  sessionStorage.setItem('suspended_notice', JSON.stringify({
+    email,
+    reason: d?.reason,
+    liftUntil: d?.liftUntil,
+  }));
+  ['active_user_email', 'user_email', 'user', `user_${email}`,
+   'activeRoomSession', 'activeSession', 'completedSessionData']
+    .forEach((k) => localStorage.removeItem(k));
+  window.location.replace(LOGIN_PATH); // full reload = wala nang natirang timer / state
+}
 
 export default function AccountGuard() {
   const { playerData } = usePlayer();
-  const rawEmail = playerData?.email || localStorage.getItem('active_user_email') || '';
+  const email = playerData?.email || localStorage.getItem('active_user_email') || '';
   const [warning, setWarning] = useState(null);
 
   useEffect(() => {
-    if (!rawEmail) return undefined;
+    if (!email) return undefined;
     const socket = io(API);
 
-    socket.on('connect', () => socket.emit('user_connected', { email: rawEmail }));
-
-    socket.on('account_suspended', (d) => {
-      sessionStorage.setItem('suspended_notice', JSON.stringify({
-        email: rawEmail,
-        reason: d?.reason,
-        liftUntil: d?.liftUntil,
-      }));
-      ['active_user_email', `user_${rawEmail}`, 'activeRoomSession', 'activeSession', 'completedSessionData']
-        .forEach((k) => localStorage.removeItem(k));
-      socket.disconnect();
-      window.location.replace(LOGIN_PATH); // full reload = wala nang natirang state / timer
-    });
-
+    socket.on('connect', () => socket.emit('user_connected', { email }));
+    socket.on('account_suspended', (d) => forceSuspendedLogout(email, d));
     socket.on('account_warning', (d) => setWarning(d));
 
-    return () => socket.disconnect();
-  }, [rawEmail]);
+    // Fallback: kahit mag-fail ang socket, mahuhuli pa rin ang suspension
+    const check = async () => {
+      try {
+        const r = await fetch(`${API}/api/account-status?email=${encodeURIComponent(email)}`);
+        const d = await r.json();
+        if (d.suspended) forceSuspendedLogout(email, d);
+      } catch (e) { /* offline, subukan ulit mamaya */ }
+    };
+    check();
+    const timer = setInterval(check, 10000);
+    window.addEventListener('focus', check);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', check);
+      socket.disconnect();
+    };
+  }, [email]);
 
   if (!warning) return null;
   return (

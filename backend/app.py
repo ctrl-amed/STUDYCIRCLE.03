@@ -293,7 +293,11 @@ def admin_update_report(report_id):
                 else:
                     target = find_report_target_user(details)
                     if target:
-                        socketio.emit('account_warning', payload, room=user_room(target['email']))
+                        sent = emit_to_user(target['email'], 'account_warning', payload, target.get('username'))
+                        if not sent:   # offline: ipakita pagka-connect niya
+                            pending_warnings.setdefault(target['email'].strip().lower(), []).append(payload)
+                    else:
+                        print(f"[REPORT WARNING] target user not found: {details}")
             except Exception as warn_err:
                 print(f"[REPORT WARNING ERROR] report {report_id}:", warn_err)
 
@@ -491,6 +495,22 @@ def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, ad
 # ---------- Live enforcement helpers ----------
 suspended_emails = set()   # lowercase emails na currently suspended (in memory)
 
+def is_email_suspended(email):
+    """Ang set ay cache lang. Kapag nandoon ang email, i-verify sa DB
+    at linisin kung wala na palang active na suspension."""
+    email_l = (email or '').strip().lower()
+    if email_l not in suspended_emails:
+        return False
+    try:
+        u = supabase.table('users').select('id').eq('email', email_l).execute()
+        if u.data and get_active_suspension(u.data[0]['id']):
+            return True
+    except Exception as e:
+        print("is_email_suspended check error:", e)
+        return True   # kapag hindi ma-verify, huwag munang alisin
+    suspended_emails.discard(email_l)
+    return False
+
 def user_room(email):
     """Personal socket room ng user, para maabot siya kahit saang page."""
     return f"user:{(email or '').strip().lower()}"
@@ -501,6 +521,23 @@ try:
 except Exception as e:
     print("Could not preload suspended emails:", e)
 
+sid_email = {}          # socket id -> lowercase email (lahat ng socket ng user)
+pending_warnings = {}   # email -> [payload] para sa warning na hindi na-deliver
+
+def sids_for_user(email, username=None):
+    email_l = (email or '').strip().lower()
+    sids = {sid for sid, e in sid_email.items() if e == email_l}
+    sids |= {sid for sid, info in online_users.items() if (info.get('email') or '') == email_l}
+    if username:
+        sids |= {sid for sid, (room, uname) in sid_to_room.items() if uname == username}
+    return sids
+
+def emit_to_user(email, event, payload, username=None):
+    """Ipapadala sa LAHAT ng socket ng user. Returns kung ilang socket ang naabot."""
+    sids = sids_for_user(email, username)
+    for sid in sids:
+        socketio.emit(event, payload, room=sid)
+    return len(sids)
 
 def find_report_target_user(details):
     username = (details.get('username') or details.get('reportedUsername') or details.get('sender') or '').strip()
@@ -517,22 +554,22 @@ def find_report_target_user(details):
 
 
 def force_logout_user(email, reason, lift_display):
-    """Pinapa-logout agad ang user: tinatanggal sa study room, presence, at pinapadalhan ng event."""
     email_l = (email or '').strip().lower()
     if not email_l:
         return
     suspended_emails.add(email_l)
 
-    # 1. Sabihan ang client(s) niya (kahit anong page / tab)
-    socketio.emit('account_suspended', {'reason': reason, 'liftUntil': lift_display}, room=user_room(email_l))
-
-    # 2. Tanggalin sa study room(s) at i-sync ang iba
     try:
         u = supabase.table('users').select('username').eq('email', email_l).execute()
         username = u.data[0]['username'] if u.data else None
     except Exception:
         username = None
 
+    # 1. Sabihan MUNA ang lahat ng socket niya (bago siya tanggalin sa room maps)
+    emit_to_user(email_l, 'account_suspended',
+                 {'reason': reason, 'liftUntil': lift_display}, username)
+
+    # 2. Tanggalin sa study room(s)
     if username:
         for sid, (room, uname) in list(sid_to_room.items()):
             if uname == username:
@@ -548,7 +585,7 @@ def force_logout_user(email, reason, lift_display):
                 broadcast_room_counts(room)
                 note_if_room_empty(room)
 
-    # 3. Presence (IT dashboard)
+    # 3. Presence
     for sid, info in list(online_users.items()):
         if (info.get('email') or '') == email_l:
             online_users.pop(sid, None)
@@ -700,6 +737,7 @@ def google_signup():
             active_susp = get_active_suspension(user['id'])
             if active_susp:
                 return suspended_response(active_susp)
+            suspended_emails.discard(user['email'].strip().lower()) 
 
             raw_inv = user.get('inventory')
             if isinstance(raw_inv, str):
@@ -801,10 +839,12 @@ def login():
 
         user = users[0]
 
-        # --- CHECK ACTIVE SUSPENSION FROM 'suspensions' TABLE ---
+        # --- CHECK ACTIVE SUSPENSION ---
         active_susp = get_active_suspension(user['id'])
         if active_susp:
             return suspended_response(active_susp)
+
+        suspended_emails.discard(user['email'].strip().lower())   # NEW
 
         # Normal password check
         if not bcrypt.check_password_hash(user['password'], password):
@@ -835,7 +875,6 @@ def login():
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
@@ -2627,7 +2666,24 @@ def _start_workers_on_request():
 
 # Blocks API calls from suspended users (rewards, session save, chat, etc.)
 GUARD_SKIP = ('/api/login', '/api/signup', '/api/google-signup', '/api/forgot-password',
-              '/api/change-password', '/api/itadmin')
+              '/api/change-password', '/api/itadmin', '/api/account-status')   # <-- may bago
+
+@app.route('/api/account-status', methods=['GET'])
+def account_status():
+    email = (request.args.get('email') or '').strip()
+    if not email:
+        return jsonify({'suspended': False}), 200
+    try:
+        res = supabase.table('users').select('id').eq('email', email).execute()
+        if res.data:
+            susp = get_active_suspension(res.data[0]['id'])
+            if susp:
+                lift = format_pht(susp['suspended_until']) if susp.get('suspended_until') \
+                    else 'Permanent, until reviewed by IT administration'
+                return jsonify({'suspended': True, 'reason': susp.get('reason'), 'liftUntil': lift}), 200
+    except Exception as e:
+        print("account-status error:", e)
+    return jsonify({'suspended': False}), 200
 
 @app.before_request
 def block_suspended_users():
@@ -2637,7 +2693,7 @@ def block_suspended_users():
     body = body if isinstance(body, dict) else {}
     email = (request.args.get('email') or body.get('email') or body.get('senderEmail')
              or body.get('userEmail') or body.get('sender_email') or '')
-    if str(email).strip().lower() in suspended_emails:
+    if email and is_email_suspended(str(email)):
         return jsonify({'suspended': True, 'error': 'ACCOUNT SUSPENDED'}), 403
 
 
@@ -2722,6 +2778,7 @@ def on_join_room(data):
     # Personal room, so warnings / suspension reach this socket too.
     # (Multiplayer uses a second socket that never emits user_connected.)
     if user_email:
+        sid_email[request.sid] = user_email.strip().lower()
         join_room(user_room(user_email))
 
     is_host = False
@@ -3451,9 +3508,10 @@ def handle_user_connected(data):
     email = (data.get('email') or '').strip().lower()
     if not email:
         return
-    join_room(user_room(email))          # para maabot siya ng warning/suspend
+    sid_email[request.sid] = email
+    join_room(user_room(email))
 
-    if email in suspended_emails:        # suspended pero sumubok pa ring kumonekta
+    if is_email_suspended(email):
         emit('account_suspended', {'reason': 'Community Guidelines Violation',
                                    'liftUntil': 'Please log in again for details.'})
         return
@@ -3464,6 +3522,9 @@ def handle_user_connected(data):
     except Exception:
         pass
     broadcast_presence_to_admins()
+
+    for w in pending_warnings.pop(email, []):
+        emit('account_warning', w)
 
 @socketio.on('user_start_session')
 def handle_user_start_session(data):
@@ -3493,7 +3554,9 @@ def handle_user_end_session(data):
 
 @socketio.on('disconnect')
 def handle_disconnect():
+
     # --- 1. Remove the user from their study room if the tab was closed ---
+    sid_email.pop(request.sid, None)
     info = sid_to_room.pop(request.sid, None)
     if info:
         room, username = info
