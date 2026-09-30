@@ -3255,78 +3255,87 @@ def claim_reward():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
+STREAK_REWARDS = {
+    1:   {"coins": 5,   "xp": 0},
+    3:   {"coins": 10,  "xp": 0},
+    7:   {"coins": 20,  "xp": 0},
+    14:  {"coins": 0,   "xp": 75},
+    21:  {"coins": 0,   "xp": 100},
+    30:  {"coins": 0,   "xp": 200},
+    45:  {"coins": 100, "xp": 0},
+    60:  {"coins": 120, "xp": 0},
+    90:  {"coins": 150, "xp": 0},
+    120: {"coins": 0,   "xp": 300},
+    180: {"coins": 0,   "xp": 500},
+    365: {"coins": 0,   "xp": 750},
+}
+
+
 @app.route('/api/claim-streak-reward', methods=['POST'])
 def claim_streak_reward():
-    data = request.json
-    email = data.get('email')
-    days = data.get('days')
-
-    if not email or days is None:
-        return jsonify({"success": False, "message": "Email and days are required"}), 400
+    data = request.json or {}
+    email = (data.get('email') or '').strip()
 
     try:
-        # 1. Get the user's data (inventory, coins, current_xp) from the database
-        user_res = supabase.table('users').select('inventory, coins, current_xp, max_xp, level').eq('email', email).execute()
+        days = int(data.get('days'))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "A valid streak day is required"}), 400
+
+    if not email:
+        return jsonify({"success": False, "message": "Email is required"}), 400
+
+    reward = STREAK_REWARDS.get(days)
+    if not reward:
+        return jsonify({"success": False, "message": "Unknown streak reward."}), 400
+
+    try:
+        user_res = supabase.table('users') \
+            .select('inventory, coins, current_xp, level, streak').eq('email', email).execute()
         if not user_res.data:
             return jsonify({"success": False, "message": "User not found"}), 404
 
         user = user_res.data[0]
-        current_inventory = user.get('inventory') or []
-        if isinstance(current_inventory, str):
-            try:
-                current_inventory = json.loads(current_inventory)
-            except:
-                current_inventory = []
+
+        # the server decides whether the streak really reached this tier
+        if int(user.get('streak') or 0) < days:
+            return jsonify({"success": False, "message": f"Reach a {days}-day streak first."}), 403
+
+        inventory = parse_json_field(user.get('inventory'), [])
+        if not isinstance(inventory, list):
+            inventory = []
 
         reward_key = f"streak_{days}_reward"
-        if reward_key in current_inventory:
+        if reward_key in inventory:
             return jsonify({"success": False, "message": "Reward already claimed."}), 400
 
-        # 2. Determine the reward based on the number of days
-        # 1 day = 5 coins, 3 days = 10 coins, 7 days = 20 coins, 14 days = 75 XP, 21 days = 100 XP
-        coins_to_add = 0
-        xp_to_add = 0
-
-        if days == 1:
-            coins_to_add = 5
-        elif days == 3:
-            coins_to_add = 10
-        elif days == 7:
-            coins_to_add = 20
-        elif days == 14:
-            xp_to_add = 75
-        elif days == 21:
-            xp_to_add = 100
-
-        current_coins = user.get('coins', 100)
-        current_xp = user.get('current_xp', 0)
-
-        new_coins = current_coins + coins_to_add
-        new_xp = current_xp + xp_to_add
-
-        # Add the reward key to the inventory
-        current_inventory.append(reward_key)
+        new_coins = int(user.get('coins') or 0) + reward["coins"]
+        new_xp = int(user.get('current_xp') or 0) + reward["xp"]
+        inventory.append(reward_key)
 
         update_payload = {
-            "inventory": current_inventory,
+            "inventory": inventory,
             "coins": new_coins,
-            "current_xp": new_xp
+            "current_xp": new_xp,
         }
 
-        # If XP was added, also recalculate the level using the shared level helper
-        if xp_to_add > 0:
+        if reward["xp"] > 0:
             new_level, new_max_xp = calculate_level_from_total_xp(new_xp)
             update_payload["level"] = new_level
             update_payload["max_xp"] = new_max_xp
 
-        # 3. Update the Supabase database
-        supabase.table('users').update(update_payload).eq('email', email).execute()
+        res = supabase.table('users').update(update_payload).eq('email', email).execute()
+        if not res.data:
+            print("[STREAK REWARD] update returned no rows (RLS or wrong email?)")
+            return jsonify({"success": False, "message": "Could not save reward."}), 500
 
+        saved = res.data[0]
         return jsonify({
             "success": True,
-            "inventory": current_inventory,
-            "coins": new_coins,
-            "currentXP": new_xp
+            "inventory": parse_json_field(saved.get('inventory'), inventory),
+            "coins": saved.get('coins'),
+            "currentXP": saved.get('current_xp'),
+            "level": saved.get('level'),
+            "maxXP": saved.get('max_xp'),
         }), 200
 
     except Exception as e:
