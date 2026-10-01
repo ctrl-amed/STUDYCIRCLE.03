@@ -29,6 +29,9 @@ const DEFAULT_AVATAR_CONFIG = {
   accessories: '',
 };
 
+// Fallback room when a player has no saved room/furniture config
+const DEFAULT_ROOM_CONFIG = { room: 'ROOM1' };
+
 const avatarConfig = {
   scale: 0.85,
   bottom: '15%',
@@ -146,13 +149,16 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   };
 
   // ---------------------------------------------------------------------------
-  // REAL AVATAR (from the logged-in account / database)
+  // REAL AVATAR + ROOM (from the logged-in account / database)
   // myAvatarConfig  = this player's saved avatar
+  // myRoomConfig    = this player's saved room / furniture setup
   // avatarReady     = true once we finished asking the database (we wait for this
   //                   before joining a room, so other players get the real avatar)
   // ---------------------------------------------------------------------------
   const [myAvatarConfig, setMyAvatarConfig] = useState(playerData?.avatarConfig || null);
   const [avatarReady, setAvatarReady] = useState(false);
+  const [myRoomConfig, setMyRoomConfig] = useState(playerData?.roomConfig || null);
+  const resolvedMyRoom = myRoomConfig || DEFAULT_ROOM_CONFIG;
   const resolvedMyAvatar = myAvatarConfig || DEFAULT_AVATAR_CONFIG;
 
   useEffect(() => {
@@ -172,9 +178,17 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
           }
           const finalCfg = cfg && typeof cfg === 'object' && Object.keys(cfg).length > 0 ? cfg : null;
+
+          let rcfg = d.profile?.roomConfig || null;
+          if (typeof rcfg === 'string') {
+            try { rcfg = JSON.parse(rcfg); } catch (e) { rcfg = null; }
+          }
+          const finalRoom = rcfg && typeof rcfg === 'object' && rcfg.room ? rcfg : null;
+
           setMyAvatarConfig(finalCfg);
+          setMyRoomConfig(finalRoom);
           // keep the shared player data in sync (same as the sidebar)
-          setPlayerData((prev) => ({ ...prev, avatarConfig: finalCfg }));
+          setPlayerData((prev) => ({ ...prev, avatarConfig: finalCfg, roomConfig: finalRoom }));
         }
       })
       .catch((err) => console.error('Failed to load avatar from database:', err))
@@ -190,6 +204,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     const handleAvatarUpdate = (e) => setMyAvatarConfig(e.detail || null);
     window.addEventListener('avatar-updated', handleAvatarUpdate);
     return () => window.removeEventListener('avatar-updated', handleAvatarUpdate);
+  }, []);
+
+  // instant room update after saving furniture in the Customizer
+  useEffect(() => {
+    const handleRoomUpdate = (e) => setMyRoomConfig(e.detail || null);
+    window.addEventListener('furniture-updated', handleRoomUpdate);
+    return () => window.removeEventListener('furniture-updated', handleRoomUpdate);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1420,7 +1441,7 @@ const ctx = isMultiplayer
                 }}
               />
 
-              <CustomRoom />
+              <CustomRoom config={isMultiplayer ? (roomData.roomConfig || resolvedMyRoom) : resolvedMyRoom} />
 
               {isMultiplayer ? (
                 roomData.members.map((member, index) => {
@@ -3201,25 +3222,25 @@ const ctx = isMultiplayer
         </div>
       )}
 
-              {roomWarning && (
-          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
-              <div className="text-4xl">⚠️</div>
-              <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM WARNING</h3>
-              <p className="font-pixel text-[18px] text-theme-dark leading-snug">
-                An administrator warned this room: <span className="text-theme-primary">{roomWarning.reason}</span>
-              </p>
-              {roomWarning.notes && <p className="font-pixel text-[15px] text-theme-dark/70">{roomWarning.notes}</p>}
-              <p className="font-pixel text-[15px] text-theme-dark/70">The room may be closed if this continues.</p>
-              <button
-                onClick={() => setRoomWarning(null)}
-                className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow cursor-pointer uppercase"
-              >
-                OK
-              </button>
-            </div>
+      {roomWarning && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">⚠️</div>
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM WARNING</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              An administrator warned this room: <span className="text-theme-primary">{roomWarning.reason}</span>
+            </p>
+            {roomWarning.notes && <p className="font-pixel text-[15px] text-theme-dark/70">{roomWarning.notes}</p>}
+            <p className="font-pixel text-[15px] text-theme-dark/70">The room may be closed if this continues.</p>
+            <button
+              onClick={() => setRoomWarning(null)}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow cursor-pointer uppercase"
+            >
+              OK
+            </button>
           </div>
-        )}
+        </div>
+      )}
 
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
@@ -3265,7 +3286,7 @@ const ctx = isMultiplayer
         </div>
       )}
 
-            {/* CANCEL SESSION CONFIRMATION MODAL */}
+      {/* CANCEL SESSION CONFIRMATION MODAL */}
       {timer.showCancelModal && (
         <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs animate-fade-in">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">

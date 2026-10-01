@@ -1432,7 +1432,7 @@ def get_profile():
         return jsonify({'success': False, 'message': 'Email is required.'}), 400
     try:
         res = supabase.table('users').select(
-            'username, email, level, current_xp, max_xp, coins, streak, best_streak, rooms_created, avatar_config, inventory'
+            'username, email, level, current_xp, max_xp, coins, streak, best_streak, rooms_created, avatar_config, room_config, inventory'
         ).eq('email', email).execute()
         if not res.data:
             return jsonify({'success': False, 'message': 'User not found.'}), 404
@@ -1458,6 +1458,7 @@ def get_profile():
                 'roomsCreated': int(u.get('rooms_created') or 0),
                 'avatarConfig': parse_json_field(u.get('avatar_config')),
                 'inventory': parse_json_field(u.get('inventory'), []),
+                'roomConfig': parse_json_field(u.get('room_config')),
             }
         }), 200
     except Exception as e:
