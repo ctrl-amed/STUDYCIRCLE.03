@@ -285,17 +285,25 @@ def admin_update_report(report_id):
                     'reason': reason or 'Community Guidelines Violation',
                     'notes': notes or '',
                     'targetType': target_type,
+                    'reportId': str(report_id),
                 }
                 if target_type == 'room':
                     room_name = details.get('roomName')
                     if room_name:
-                        socketio.emit('room_warning', {**payload, 'room': room_name}, room=room_name)
+                        room_payload = {**payload, 'room': room_name}
+                        room_warnings[room_name] = {
+                            'payload': room_payload,
+                            'ts': time.time(),
+                            'seen': {m['username'] for m in room_members.get(room_name, [])},
+                        }
+                        socketio.emit('room_warning', room_payload, room=room_name)
                 else:
                     target = find_report_target_user(details)
                     if target:
-                        sent = emit_to_user(target['email'], 'account_warning', payload, target.get('username'))
-                        if not sent:   # offline: ipakita pagka-connect niya
-                            pending_warnings.setdefault(target['email'].strip().lower(), []).append(payload)
+                        # the report row is already updated above, so this count includes it
+                        payload['warningCount'] = get_active_warning_count(target['username'])
+                        emit_to_user(target['email'], 'account_warning', payload, target.get('username'))
+                        # offline? No queue needed: get_pending_warnings() reads it from the DB on next connect
                     else:
                         print(f"[REPORT WARNING] target user not found: {details}")
             except Exception as warn_err:
@@ -353,6 +361,90 @@ DURATION_DELTAS = {
     '90 days': timedelta(days=90), '3 months': timedelta(days=90),
 }
 
+# ---------- Warnings (derived from the reports table, no schema change) ----------
+WARNING_RESET_DAYS = 30      # warning count resets 30 days after the last warning
+WARNING_DELIVER_DAYS = 7     # only re-deliver unseen warnings newer than this
+room_warnings = {}           # room -> {'payload', 'ts', 'seen': set(usernames)}
+
+def _warning_reports_for_user(username):
+    res = supabase.table('reports') \
+        .select('id, target_type, target_details, reason, action_notes, action_taken, updated_at') \
+        .in_('target_type', ['user', 'message']) \
+        .ilike('action_taken', '%warn%') \
+        .order('updated_at', desc=True).limit(1000).execute()
+    uname = (username or '').strip().lower()
+    out = []
+    for r in (res.data or []):
+        d = parse_json_field(r.get('target_details'), {}) or {}
+        n = (d.get('username') or d.get('reportedUsername') or d.get('sender') or '').strip().lower()
+        if n == uname:
+            out.append(r)
+    return out
+
+
+def get_active_warning_count(username):
+    """Warnings in the current 'chain'. If the last warning is 30+ days old the count is 0.
+    Each earlier warning only counts if it was within 30 days of the next one."""
+    times = sorted(t for t in (parse_ts(r.get('updated_at')) for r in _warning_reports_for_user(username)) if t)
+    if not times:
+        return 0
+    gap = timedelta(days=WARNING_RESET_DAYS)
+    if datetime.now(timezone.utc) - times[-1] >= gap:
+        return 0
+    count = 1
+    for i in range(len(times) - 2, -1, -1):
+        if times[i + 1] - times[i] < gap:
+            count += 1
+        else:
+            break
+    return count
+
+
+def get_pending_warnings(email):
+    """Warnings the user has not acknowledged yet (so they still see them after being offline)."""
+    try:
+        u = supabase.table('users').select('username, inventory').eq('email', email).execute()
+        if not u.data:
+            return []
+        username = u.data[0]['username']
+        inv = parse_json_field(u.data[0].get('inventory'), []) or []
+        seen = {x for x in inv if isinstance(x, str)}
+        cutoff = datetime.now(timezone.utc) - timedelta(days=WARNING_DELIVER_DAYS)
+        count = get_active_warning_count(username)
+        out = []
+        for r in _warning_reports_for_user(username):
+            ts = parse_ts(r.get('updated_at'))
+            if ts and ts >= cutoff and f"warn_seen_{r['id']}" not in seen:
+                out.append({
+                    'reason': r.get('reason') or 'Community Guidelines Violation',
+                    'notes': r.get('action_notes') or '',
+                    'targetType': r.get('target_type'),
+                    'reportId': str(r['id']),
+                    'warningCount': count,
+                })
+        return out
+    except Exception as e:
+        print("get_pending_warnings error:", e)
+        return []
+
+
+@socketio.on('ack_warning')
+def handle_ack_warning(data):
+    email = (data.get('email') or '').strip()
+    rid = data.get('reportId')
+    if not email or not rid:
+        return
+    try:
+        u = supabase.table('users').select('id, inventory').eq('email', email).execute()
+        if not u.data:
+            return
+        inv = parse_json_field(u.data[0].get('inventory'), []) or []
+        key = f"warn_seen_{rid}"
+        if key not in inv:
+            inv.append(key)
+            supabase.table('users').update({'inventory': inv}).eq('id', u.data[0]['id']).execute()
+    except Exception as e:
+        print("ack_warning error:", e)
 
 def calculate_suspension_expiration(duration_str, custom_datetime_str=None):
     """
@@ -2825,7 +2917,7 @@ def on_join_room(data):
             'totalFocusTime': total_focus_formatted
         })
 
-    # log only when it's a NEW member
+        # log only when it's a NEW member
     emit('room_update', {
         'members': room_members[room],
         'room_config': room_cfg,
@@ -2834,6 +2926,12 @@ def on_join_room(data):
         'server_now': now_iso(),
         'logs': [new_log(username, 'joined the room')] if is_new else []
     }, room=room)
+
+    # Late joiner: show them the room warning that was issued earlier
+    rw = room_warnings.get(room)
+    if rw and time.time() - rw['ts'] < 3600 and username not in rw['seen']:
+        rw['seen'].add(username)
+        emit('room_warning', rw['payload'])   # only to the person who just joined
 
     broadcast_room_counts(room)
 
@@ -3532,7 +3630,7 @@ def handle_user_connected(data):
         pass
     broadcast_presence_to_admins()
 
-    for w in pending_warnings.pop(email, []):
+    for w in get_pending_warnings(email):
         emit('account_warning', w)
 
 @socketio.on('user_start_session')

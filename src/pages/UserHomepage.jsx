@@ -783,22 +783,22 @@ const ctx = isMultiplayer
   const socketRef = useRef(null);
 
   useEffect(() => {
-    const userEmail = getUserEmail();
-    if (!userEmail) return;
+  const userEmail = getUserEmail();
+  if (!userEmail) return;
 
-    if (!socketRef.current) {
-      socketRef.current = io('http://localhost:5000');
+  if (!socketRef.current) {
+    socketRef.current = io('http://localhost:5000');
+  }
+
+  socketRef.current.emit('user_connected', { email: userEmail });
+
+  return () => {
+    if (!isMultiplayer && socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
     }
-
-    socketRef.current.emit('user_connected', { email: userEmail });
-
-    return () => {
-      if (!isMultiplayer && socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-  }, [player.email]);
+  };
+}, [player.email]);
 
   useEffect(() => {
     const userEmail = getUserEmail();
@@ -3265,6 +3265,34 @@ const ctx = isMultiplayer
         </div>
       )}
 
+            {/* CANCEL SESSION CONFIRMATION MODAL */}
+      {timer.showCancelModal && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">🛑</div>
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">
+              CANCEL SESSION?
+            </h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+              Are you sure you want to cancel the active session? Your progress and rewards for this session will be lost.
+            </p>
+            <div className="flex gap-3 w-full mt-2">
+              <button
+                onClick={timer.dismissCancelModal}
+                className="flex-1 font-pressstart text-[9px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 retro-shadow hover:bg-theme-muted cursor-pointer uppercase"
+              >
+                KEEP STUDYING
+              </button>
+              <button
+                onClick={timer.confirmCancelSession}
+                className="flex-1 font-pressstart text-[9px] text-theme-white bg-red-600 border-2 border-theme-dark py-2.5 retro-shadow hover:bg-red-700 cursor-pointer uppercase"
+              >
+                YES, CANCEL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {timer.activeSession && (
         <div className="fixed bottom-6 right-6 z-[99999]">
           <button

@@ -134,6 +134,7 @@ export function useTimer() {
   const [pausedSeconds, setPausedSeconds] = useState(0);
   const [isSelfPaused, setIsSelfPaused] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   const sharedMemberRef = useRef(false); // true for non-host players in a private-shared room
   const selfPausedRef = useRef(false);
@@ -871,24 +872,33 @@ export function useTimer() {
     );
   };
 
+    // Step 1: the Cancel button only opens the modal
   const cancelSession = () => {
-    if (window.confirm('Are you sure you want to cancel the active session?')) {
-      if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
-      setIsTimerRunning(false);
-      setActiveSession(null);
-      localStorage.removeItem('activeSession');
-      localStorage.removeItem(TIMER_STATE_KEY);
-      resetTelemetry();
-      setShowNudgeModal(false);
-      setIsWidgetFloating(false);
-      setIsWidgetFullscreen(false);
-      setIsPipActive(false);
+    if (!liveRef.current.activeSession) return;
+    setShowCancelModal(true);
+  };
 
-      if (pipWindowRef.current && !pipWindowRef.current.closed) {
-        pipWindowRef.current.close();
-      }
+  // Step 2: the modal's "YES, CANCEL" button does the real cancelling
+  const confirmCancelSession = () => {
+    setShowCancelModal(false);
+    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+    setIsTimerRunning(false);
+    setActiveSession(null);
+    localStorage.removeItem('activeSession');
+    localStorage.removeItem(TIMER_STATE_KEY);
+    resetTelemetry();
+    setShowNudgeModal(false);
+    setIsWidgetFloating(false);
+    setIsWidgetFullscreen(false);
+    setIsPipActive(false);
+
+    if (pipWindowRef.current && !pipWindowRef.current.closed) {
+      pipWindowRef.current.close();
     }
   };
+
+  // "KEEP STUDYING" just closes the modal
+  const dismissCancelModal = () => setShowCancelModal(false);
 
   const closeRewardModal = () => {
     // Save the session details first so the Feedback Modal can still use them
@@ -1099,6 +1109,9 @@ export function useTimer() {
     toggleTimer,
     toggleTaskCompletion,
     cancelSession,
+    showCancelModal,
+    confirmCancelSession,
+    dismissCancelModal,
     toggleDocumentPiP,
     toggleFullscreen,
     triggerInstantComplete,
