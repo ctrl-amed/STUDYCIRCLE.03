@@ -8,6 +8,7 @@ import CustomRoom from '../components/CustomRoom';
 import CustomAvatar from '../components/CustomAvatar';
 import EmojiPicker from 'emoji-picker-react';
 import { io } from 'socket.io-client';
+import { forceSuspendedLogout } from '../components/AccountGuard';
 
 const LOFI_TRACKS = [
   { id: 'lofi1', name: 'Midnight Coffee', artist: 'Lofi Girl & Chill', src: 'media/BGM/LOFI1.mp3' },
@@ -15,6 +16,18 @@ const LOFI_TRACKS = [
   { id: 'lofi3', name: 'Pixel Sunset', artist: 'Kitsu BGM', src: 'media/BGM/LOFI3.mp3' },
   { id: 'lofi4', name: 'Cosmic Chillout', artist: 'StudyCircle Sound', src: 'media/BGM/LOFI4.mp3' },
 ];
+
+// Same fallback the Sidebar uses, so a player with no saved avatar looks the same everywhere
+// (and never inherits another account's avatar from this browser).
+const DEFAULT_AVATAR_CONFIG = {
+  body: 'BODY1',
+  face: 'FACE1',
+  tops: 'TOP7',
+  bottoms: 'BOTTOM6',
+  shoes: '',
+  hair: '',
+  accessories: '',
+};
 
 const avatarConfig = {
   scale: 0.85,
@@ -118,7 +131,7 @@ const activityIcons = {
 };
 
 export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false }) {
-  const { playerData } = usePlayer();
+  const { playerData, setPlayerData } = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -132,10 +145,60 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     maxXP: playerData?.maxXP ?? 10000,
   };
 
+  // ---------------------------------------------------------------------------
+  // REAL AVATAR (from the logged-in account / database)
+  // myAvatarConfig  = this player's saved avatar
+  // avatarReady     = true once we finished asking the database (we wait for this
+  //                   before joining a room, so other players get the real avatar)
+  // ---------------------------------------------------------------------------
+  const [myAvatarConfig, setMyAvatarConfig] = useState(playerData?.avatarConfig || null);
+  const [avatarReady, setAvatarReady] = useState(false);
+  const resolvedMyAvatar = myAvatarConfig || DEFAULT_AVATAR_CONFIG;
+
+  useEffect(() => {
+    const email = playerData?.email;
+    if (!email) return undefined;
+
+    let cancelled = false;
+    setAvatarReady(false);
+
+    fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        if (d.success) {
+          let cfg = d.profile?.avatarConfig || null;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = null; }
+          }
+          const finalCfg = cfg && typeof cfg === 'object' && Object.keys(cfg).length > 0 ? cfg : null;
+          setMyAvatarConfig(finalCfg);
+          // keep the shared player data in sync (same as the sidebar)
+          setPlayerData((prev) => ({ ...prev, avatarConfig: finalCfg }));
+        }
+      })
+      .catch((err) => console.error('Failed to load avatar from database:', err))
+      .finally(() => {
+        if (!cancelled) setAvatarReady(true);
+      });
+
+    return () => { cancelled = true; };
+  }, [playerData?.email, setPlayerData]);
+
+  // instant update after saving in the Customizer (same event the sidebar listens to)
+  useEffect(() => {
+    const handleAvatarUpdate = (e) => setMyAvatarConfig(e.detail || null);
+    window.addEventListener('avatar-updated', handleAvatarUpdate);
+    return () => window.removeEventListener('avatar-updated', handleAvatarUpdate);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+
   const [recentActivities, setRecentActivities] = useState([]);
   const [userActivities, setUserActivities] = useState({});
 
   const timer = useTimer();
+  const syncedStartRef = useRef(null);
   const activeCardRef = useRef(null);
 
   const [greetingText, setGreetingText] = useState('Good Afternoon');
@@ -196,6 +259,30 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   // Kick Modal State
   const [showKickModal, setShowKickModal] = useState(false);
+
+  // Room closing / closed (auto-close after a finished shared session, empty room, or IT admin closure)
+  const [roomClosing, setRoomClosing] = useState(null);         // { reason, endsAt }
+  const [roomClosedInfo, setRoomClosedInfo] = useState(null);   // { reason }
+  const [roomWarning, setRoomWarning] = useState(null);
+  const [closingCountdown, setClosingCountdown] = useState(0);
+  const roomContextRef = useRef(null); // room details captured when a session finishes
+
+  const leaveClosedRoom = () => {
+    localStorage.removeItem('activeRoomSession');
+    setRoomClosing(null);
+    setRoomClosedInfo(null);
+    setIsMultiplayer(false);
+    navigate('/dashboard');
+  };
+
+  useEffect(() => {
+    if (!roomClosing) return undefined;
+    const tick = () =>
+      setClosingCountdown(Math.max(0, Math.ceil((roomClosing.endsAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [roomClosing]);
 
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -404,8 +491,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const techMult = techMultipliers[techKey] || 1.0;
   const checklistMult = 1.0 + Math.min(completedTasks * 0.05, 0.25);
   const baseRate = 0.4;
-  const calculatedExp = Math.round((durationMins * baseRate * techMult * checklistMult) * 10) / 10;
-  const calculatedCoins = Math.max(1, Math.floor(durationMins * 0.2));
+
+  // Reward preview: reduced for focus time lost to nudge pauses
+  const penalty = timer.getNudgePenalty();
+  const totalFocusSecs = Math.max(1, durationMins * 60 * Number(savedSession.sessionCount || 1));
+  const consumedRatio = Math.max(0, 1 - penalty.pausedSeconds / totalFocusSecs);
+
 
   // Tumpak na Host Checking
   const currentHostMember = roomData.members.find(m => m.isHost);
@@ -414,15 +505,58 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
   const isSharedRoom = roomData.privacy === 'private' && roomData.taskType === 'shared';
 
+// Reward preview: mirrors the server's v2.1 formula (the daily coin cap can still lower coins)
+const previewRoomSize = isMultiplayer ? (roomData.members.length || 1) : 1;
+const sessMult = previewRoomSize <= 1 ? 1 : isCurrentUserHost ? 1.15 : 1.05;
+const capMult =
+  previewRoomSize <= 1 ? 1 : previewRoomSize === 2 ? 1.05 : previewRoomSize <= 5 ? 1.10 : 1.15;
+const bonusExp = techKey === 'ULTRADIAN' && durationMins >= 90 ? 4 : 0;
+
+const calculatedExp =
+  Math.round(
+    ((durationMins * baseRate * techMult * checklistMult * sessMult * capMult + bonusExp) * consumedRatio) * 10
+  ) / 10;
+const calculatedCoins = Math.round(Math.max(1, Math.round(durationMins * 0.2)) * consumedRatio);
+
+  // Host tells the server the whole synced session is done, so the room can close after a short grace period.
+  // The room details are remembered first: the room may close before the player presses CLAIM.
   useEffect(() => {
-    const onMsg = (e) => {
-      if (e?.data?.type === 'SESSION_CREATED' && e.data.session && isMultiplayer && isSharedRoom && isCurrentUserHost) {
-        handleHostStartSession(e.data.session);
-      }
-    };
-    window.addEventListener('message', onMsg);
-    return () => window.removeEventListener('message', onMsg);
-  }, [isMultiplayer, isSharedRoom, isCurrentUserHost, roomData.roomName, player.username]);                        
+    if (!timer.showRewardModal) return;
+
+    roomContextRef.current = isMultiplayer
+  ? { isMultiplayer: true, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1, roomId: roomData.roomId }
+  : null;
+
+    if (isMultiplayer && isSharedRoom && isCurrentUserHost && socketRef.current) {
+      socketRef.current.emit('shared_session_finished', {
+        room: roomData.roomName,
+        username: player.username,
+      });
+    }
+  }, [timer.showRewardModal]);                       
+
+  // Solo / public / private-individual: everyone controls their own timer.
+  // Private-shared: only the host does.
+  const canControlTimer = !isMultiplayer || !isSharedRoom || isCurrentUserHost;
+
+  // Shared-room members follow the host, so the "still here?" nudge must not pause them
+  useEffect(() => {
+    // host controls the timer, so the host is never nudge-paused; members are
+    timer.nudgeDisabledRef.current = isMultiplayer && isSharedRoom && isCurrentUserHost;
+    timer.sharedMemberRef.current = isMultiplayer && isSharedRoom && !isCurrentUserHost;
+  }, [isMultiplayer, isSharedRoom, isCurrentUserHost]);
+
+  // HOST -> everyone: send the timer state after every pause / resume / phase change
+  // (only once the session has actually started)
+  useEffect(() => {
+    if (!isMultiplayer || !isSharedRoom || !isCurrentUserHost || !timer.activeSession) return;
+    if (!roomData.isStarted || !socketRef.current) return;
+    socketRef.current.emit('host_timer_update', {
+      room: roomData.roomName,
+      username: player.username,
+      timer: timer.getTimerSnapshot(),
+    });
+  }, [timer.isTimerRunning, timer.isFocusPhase, timer.currentSessionCount, timer.activeSession, roomData.isStarted]);
 
   const handleClaimAndSaveToDB = async () => {
     const userEmail = getUserEmail();
@@ -455,6 +589,15 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     const tasksToSend = getSessionTasks();
     const completedTasksCount = tasksToSend.filter(t => t.completed || t.status === 'completed').length;
 
+    // Keep the group XP bonus even if the room already closed (isMultiplayer is false by then)
+const ctx = isMultiplayer
+  ? { isMultiplayer, isHost: isCurrentUserHost, roomSize: roomData.members.length || 1, roomId: roomData.roomId }
+  : (roomContextRef.current || { isMultiplayer: false, isHost: false, roomSize: 1, roomId: null });
+
+    // Nudge penalty: the server reduces rewards for unused focus time
+    const penalty = timer.getNudgePenalty();
+    const totalFocusSeconds = finalDuration * 60 * Number(currentActiveSession.sessionCount || 1);
+
     try {
       const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
         method: 'POST',
@@ -467,17 +610,24 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           totalTasks: tasksToSend.length,
           tasksList: tasksToSend,
           activity: finalActivity,
-          isMultiplayer: isMultiplayer,
-          isHost: isCurrentUserHost,
-          roomSize: roomData.members.length || 1,
+          isMultiplayer: ctx.isMultiplayer,
+          isHost: ctx.isHost,
+          roomSize: ctx.roomSize,
+          roomId: ctx.roomId,  
           taskStatus: taskStatus,
           productivityLevel: productivityLevel,
-          accomplishedText: accomplishedText
+          accomplishedText: accomplishedText,
+          nudgePauses: penalty.nudgePauses,
+          pausedSeconds: penalty.pausedSeconds,
+          totalFocusSeconds,
         })
       });
 
       const data = await response.json();
       if (data.success) {
+        roomContextRef.current = null;
+        timer.resetNudgePenalty();
+
         const storedUser = JSON.parse(localStorage.getItem(`user_${userEmail}`) || '{}');
         storedUser.coins = data.coins;
         storedUser.currentXP = data.currentXP;
@@ -517,6 +667,24 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
   };
 
+  // Host, shared room, session set up but not started: the button starts it for everyone.
+  const awaitingSharedStart =
+    isMultiplayer && isSharedRoom && isCurrentUserHost && Boolean(timer.activeSession) && !roomData.isStarted;
+
+  const handleToggleTimer = () => {
+    if (awaitingSharedStart) {
+      handleHostStartSession(timer.activeSession);  // server echoes shared_room_started to everyone, host included
+      return;
+    }
+    timer.toggleTimer();
+  };
+
+  // Member who got nudge-paused: re-sync to the host's current timer
+  const handleMemberResume = () => {
+    timer.beginResync();
+    socketRef.current?.emit('request_timer_state', { room: roomData.roomName });
+  };
+
   const getLeaderboardAvatarConfig = (item) => {
     if (!item) return null;
     const rawConfig = item.avatar_config || item.avatarConfig || item.config;
@@ -528,6 +696,15 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       return rawConfig;
     }
     return null;
+  };
+
+  // The avatar to draw for a room member:
+  //  - me      -> my real avatar (loaded from my account / database)
+  //  - others  -> the avatar the server read from THEIR account when they joined
+  //  - nothing saved -> the default avatar (never a leftover from another account)
+  const getMemberAvatar = (member) => {
+    if (member?.username === player.username) return resolvedMyAvatar;
+    return getLeaderboardAvatarConfig(member) || DEFAULT_AVATAR_CONFIG;
   };
 
   const handleHostDecision = (approved) => {
@@ -662,8 +839,28 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     fetchTodayStatsAndStreak();
   }, [player.email, playerData]);
 
+  // Keep my status in the room in sync: ONLINE <-> IN SESSION
   useEffect(() => {
-    if (isMultiplayer) {
+    if (!isMultiplayer || !socketRef.current) return;
+    socketRef.current.emit('update_status', {
+      room: roomData.roomName,
+      username: player.username,
+      status: timer.activeSession ? 'IN SESSION' : 'ONLINE',
+    });
+  }, [isMultiplayer, timer.activeSession, roomData.roomName, player.username]);
+
+  const applySyncedSession = (session, timerState, serverNow) => {
+    if (!session) return;
+    // room_update fires on every join/leave: only apply a given session once
+    if (syncedStartRef.current === session.startedAt) return;
+    syncedStartRef.current = session.startedAt;
+    setRoomData((prev) => ({ ...prev, isStarted: true }));
+    timer.startSyncedSession(session, timerState, serverNow);
+  };
+
+  useEffect(() => {
+    // Wait until we know the player's real avatar, so the room receives the right one
+    if (isMultiplayer && avatarReady) {
       socketRef.current = io('http://localhost:5000');
       
       const currentStatus = timer.activeSession ? "IN SESSION" : "ONLINE";
@@ -673,48 +870,68 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         username: player.username,
         level: player.level,
         status: currentStatus,
-        avatar_config: playerData?.avatar_config || playerData?.config || playerData?.avatarConfig || null
+        avatar_config: resolvedMyAvatar
       });
 
       socketRef.current.on('room_update', (data) => {
+        // late joiners / people returning to the page get the running session here
+        if (data?.active_session) {
+          applySyncedSession(data.active_session, data.timer_state, data.server_now);
+        }
+
+        // IMPORTANT: this callback MUST always return the new state object.
+        // Returning undefined makes roomData undefined and crashes the page (white screen).
         setRoomData((prev) => {
-          const updated = { ...prev };
-          if (data.members) {
-            updated.members = data.members.map(newM => {
-              const existing = prev.members.find(oldM => oldM.username === newM.username);
-              return {
-                ...newM,
-                isSpeaking: existing ? existing.isSpeaking : false
-              };
-            });
+          const incomingMembers = Array.isArray(data?.members) ? data.members : prev.members;
+          const hostMember = incomingMembers.find((m) => m.isHost);
+
+          let cfg = data?.room_config ?? prev.roomConfig ?? null;
+          if (typeof cfg === 'string') {
+            try { cfg = JSON.parse(cfg); } catch (e) { cfg = prev.roomConfig ?? null; }
           }
-          
-          if (data.logs && data.logs.length > 0) {
-            const existingLogKeys = new Set(prev.auditLogs.map(l => `${l.user}-${l.action}`));
-            const uniqueNewLogs = data.logs.filter(l => !existingLogKeys.has(`${l.user}-${l.action}`));
-            
-            if (uniqueNewLogs.length > 0) {
-              updated.auditLogs = [...uniqueNewLogs, ...prev.auditLogs];
-            }
-          }
-          
-          if (data.room_config) {
-            try {
-              updated.roomConfig = typeof data.room_config === 'string' 
-                ? JSON.parse(data.room_config) 
-                : data.room_config;
-            } catch (e) {
-              console.error("Failed to parse room config", e);
-            }
-          }
-          return updated;
+
+          const seen = new Set((prev.auditLogs || []).map((l) => l.id));
+          const newLogs = (Array.isArray(data?.logs) ? data.logs : []).filter((l) => !seen.has(l.id));
+
+          return {
+            ...prev,
+            members: incomingMembers,
+            hostId: hostMember?.username || prev.hostId,
+            roomConfig: cfg,
+            auditLogs: [...newLogs, ...(prev.auditLogs || [])].slice(0, 100),
+          };
         });
       });
 
-      socketRef.current.on('shared_room_started', (data) => {
-        setRoomData((prev) => ({ ...prev, isStarted: true }));
-        if (data?.session) timer.startSyncedSession(data.session);
+      // the shared session finished: the room will close after a short grace period
+      socketRef.current.on('room_closing', (data) => {
+        setRoomClosing({
+          reason: data?.reason || 'This room is about to close.',
+          endsAt: Date.now() + (data?.seconds ?? 30) * 1000,
+        });
       });
+
+      // the room is gone (auto-closed, or closed by IT administration)
+      socketRef.current.on('room_closed', (data) => {
+        setRoomClosing(null);
+        setRoomClosedInfo({ reason: data?.reason || 'This room has been closed.' });
+      });
+
+      socketRef.current.on('room_warning', (data) => {
+        setRoomWarning({ reason: data?.reason, notes: data?.notes });
+      });
+
+      socketRef.current.on('account_suspended', (d) => forceSuspendedLogout(playerData?.email, d));
+
+      socketRef.current.on('shared_room_started', (data) => {
+        applySyncedSession(data?.session, data?.timer, data?.serverNow);
+      });
+
+      // host paused / resumed / changed phase
+      socketRef.current.on('timer_state', (data) => {
+        if (data?.timer) timer.applyTimerSnapshot(data.timer, data.serverNow);
+      });
+
       socketRef.current.on('room_join_rejected', (data) => {
         alert(data?.reason || "You can't join this room.");
         localStorage.removeItem('activeRoomSession');
@@ -755,7 +972,26 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         }
       };
     }
-  }, [isMultiplayer, roomData.roomName, player.username, isCurrentUserHost]);
+  }, [isMultiplayer, avatarReady, roomData.roomName, player.username]);
+
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 15000);
+    return () => clearInterval(t);
+  }, []);
+
+  const timeAgo = (ts) => {
+    if (!ts) return '';
+    const diff = Math.max(0, Math.floor((nowTick - new Date(ts).getTime()) / 1000));
+    if (diff < 30) return 'Just now';
+    if (diff < 60) return `${diff}s ago`;
+    const mins = Math.floor(diff / 60);
+    if (mins < 60) return `${mins} min${mins > 1 ? 's' : ''} ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  };
 
   const handleSendRoomMessage = (e) => {
     e.preventDefault();
@@ -850,6 +1086,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
       setRoomData((prev) => ({
         ...prev,
+        roomId: parsed?.id ?? null,  
         roomName: roomName,
         course: parsed?.course || 'General Studies',
         privacy: parsed?.privacy || 'public',
@@ -858,7 +1095,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         taskType: parsed?.task_type || parsed?.taskType || 'individual',
         isStarted: parsed?.is_started || parsed?.isStarted || false,
         roomConfig: finalRoomConfig,
-        auditLogs: [{ id: Date.now(), user: player.username, action: "joined the room", time: "Just now" }]
+        auditLogs: [],  
       }));
     } else {
       setIsMultiplayer(false);
@@ -929,7 +1166,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
           id: Date.now(),
           user: player.username,
           action: `kicked ${memberUsername} from the room`,
-          time: 'Just now',
+          ts: new Date().toISOString(),
         },
         ...prev.auditLogs,
       ],
@@ -1193,7 +1430,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const isFriendRequestSent = sentFriendRequests.includes(memberKey);
 
                   const isMe = member.username === player.username;
-                  const memberAvatarConfig = getLeaderboardAvatarConfig(member) || member.avatar_config || member.config;
+                  // real avatar: mine from my account, others from THEIR account
+                  const memberAvatarConfig = getMemberAvatar(member);
 
                   return (
                     <div
@@ -1248,20 +1486,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         >
                           <div className="relative shrink-0 flex items-center justify-center">
                             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              {memberAvatarConfig ? (
-                                <div 
-                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
-                                  style={{ transform: 'scale(0.38) translateY(12px)' }}
-                                >
-                                  <CustomAvatar config={memberAvatarConfig} state="idle" />
-                                </div>
-                              ) : (
-                                <img
-                                  src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
-                                  alt="Player Avatar"
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
+                              <div 
+                                className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                style={{ transform: 'scale(0.38) translateY(12px)' }}
+                              >
+                                <CustomAvatar config={memberAvatarConfig} state="idle" />
+                              </div>
                             </div>
                             <div className="absolute -bottom-1 -right-1 bg-theme-primary border-[2px] border-theme-dark px-1 py-0.5 text-center flex items-center justify-center min-w-[18px] rounded-[4px] leading-none z-10">
                               <span className="font-pressstart text-[8px] text-theme-dark">
@@ -1374,7 +1604,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                       {player.username}
                     </span>
                   </div>
-                  <CustomAvatar state="idle" />
+                  <CustomAvatar config={resolvedMyAvatar} state="idle" />
                 </div>
               )}
             </div>
@@ -1389,7 +1619,11 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
             isFocusPhase={timer.isFocusPhase}
             currentSessionCount={timer.currentSessionCount}
             totalSessions={timer.totalSessions}
-            toggleTimer={timer.toggleTimer}
+            toggleTimer={canControlTimer ? handleToggleTimer : () => {}}
+            awaitingSharedStart={awaitingSharedStart}
+            isSelfPaused={timer.isSelfPaused}
+            onSelfResume={handleMemberResume}
+            canControlTimer={canControlTimer}
             cancelSession={timer.cancelSession}
             toggleDocumentPiP={timer.toggleDocumentPiP}
             toggleFullscreen={timer.toggleFullscreen}
@@ -1458,7 +1692,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                         <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                         <span className="font-pixel text-[14px] text-theme-dark truncate">{log.action}</span>
                       </div>
-                      <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
+                      <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{timeAgo(log.ts)}</span>
                     </div>
                   ))
                 )}
@@ -1629,7 +1863,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
             <div className="flex flex-col gap-2 overflow-y-auto max-h-[250px] pr-1">
               {roomData.members.map((member, idx) => {
-                const memberAvatarConfig = getLeaderboardAvatarConfig(member);
+                const memberAvatarConfig = getMemberAvatar(member);
                 const isMe = member.username === player.username;
 
                 return (
@@ -1643,20 +1877,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="relative shrink-0 w-7 h-7 rounded-[4px] border border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                        {memberAvatarConfig ? (
-                          <div 
-                            className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
-                            style={{ transform: 'scale(0.38) translateY(12px)' }}
-                          >
-                            <CustomAvatar config={memberAvatarConfig} state="idle" />
-                          </div>
-                        ) : (
-                          <img
-                            src={member.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${member.username}`}
-                            alt={member.username}
-                            className="w-full h-full object-cover"
-                          />
-                        )}
+                        <div 
+                          className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                          style={{ transform: 'scale(0.38) translateY(12px)' }}
+                        >
+                          <CustomAvatar config={memberAvatarConfig} state="idle" />
+                        </div>
                       </div>
                       <div className="flex flex-col min-w-0">
                         <div className="flex items-center gap-1">
@@ -2218,7 +2444,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const targetDetails = {
                     roomName: roomData.roomName,
                     host: roomData.hostId || (roomData.members.find(m => m.isHost)?.username) || 'Unknown',
-                    dateCreated: roomData.createdAt || new Date().toLocaleDateString() // <--- Add this
+                    dateCreated: roomData.createdAt || new Date().toLocaleDateString()
                   };
                   handleSubmitReport('room', targetDetails, reportReason, reportNotes, setShowReportSuccessModal, setShowReportModal);
                   setReportNotes('');
@@ -2465,7 +2691,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     <svg key="4" xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16" className="w-5 h-5">
                       <path d="M0 0h16v16H0z" fill="none" />
                       <g fill="currentColor">
-                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118q.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
+                        <path d="M5.338 1.59a61 61 0 0 0-2.837.856a.48.48 0 0 0-.328.39c-.554 4.157.726 7.19 2.253 9.188a10.7 10.7 0 0 0 2.287 2.233c.346.244.652.42.893.533q.18.085.293.118a1 1 0 0 0 .101.025a1 1 0 0 0 .1-.025q.114-.034.294-.118c.24-.113.547-.29.893-.533a10.7 10.7 0 0 0 2.287-2.233c1.527-1.997 2.807-5.031 2.253-9.188a.48.48 0 0 0-.328-.39c-.651-.213-1.75-.56-2.837-.855C9.552 1.29 8.531 1.067 8 1.067c-.53 0-1.552.223-2.662.524zM5.072.56C6.157.265 7.31 0 8 0s1.843.265 2.928.56c1.11.3 2.229.655 2.887.87a1.54 1.54 0 0 1 1.044 1.262c.596 4.477-.787 7.795-2.465 9.99a11.8 11.8 0 0 1-2.517 2.453a7 7 0 0 1-1.048.625c-.28.132-.581.24-.829.24s-.548-.108-.829-.24a7 7 0 0 1-1.048-.625a11.8 11.8 0 0 1-2.517-2.453C1.928 10.487.545 7.169 1.141 2.692A1.54 1.54 0 0 1 2.185 1.43A63 63 0 0 1 5.072.56" />
                         <path d="M7.001 11a1 1 0 1 1 2 0a1 1 0 0 1-2 0M7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.553.553 0 0 1-1.1 0z" />
                       </g>
                     </svg>
@@ -2535,7 +2761,8 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                   const targetDetails = {
                     username: reportedMessage?.sender || 'Unknown',
                     content: reportedMessage?.text || '',
-                    time: reportedMessage?.time || ''
+                    time: reportedMessage?.time || '',
+                    room: roomData.roomName   // lets IT open the chat log for this message
                   };
                   handleSubmitReport('message', targetDetails, reportMessageReason, reportMessageNotes, setShowReportMessageSuccessModal, setShowReportMessageModal);
                   setReportMessageNotes('');
@@ -2681,7 +2908,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                     <span className="font-pressstart text-[9px] text-theme-primary">{log.user}</span>
                     <span className="font-pixel text-[15px] text-theme-dark truncate">{log.action}</span>
                   </div>
-                  <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{log.time}</span>
+                  <span className="font-pressstart text-[8px] text-theme-dark/50 shrink-0">{timeAgo(log.ts)}</span>
                 </div>
               ))}
             </div>
@@ -2936,6 +3163,64 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         </div>
       )}
 
+      {/* ROOM CLOSING (grace period after a shared session finished) */}
+      {roomClosing && !roomClosedInfo && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">⏳</div>
+            <h3 className="font-pressstart text-[14px] text-theme-primary uppercase">ROOM CLOSING</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">{roomClosing.reason}</p>
+            <div className="bg-theme-muted border-2 border-theme-dark px-4 py-2 rounded-[8px] w-full flex items-center justify-center gap-2 dark:bg-zinc-800">
+              <span className="font-pressstart text-[10px] text-theme-dark/70">Closing in:</span>
+              <span className="font-pressstart text-[14px] text-theme-danger">{closingCountdown}s</span>
+            </div>
+            <button
+              onClick={leaveClosedRoom}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              LEAVE ROOM
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ROOM CLOSED (auto-closed, or closed by IT administration) */}
+      {roomClosedInfo && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">🚪</div>
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM CLOSED</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">{roomClosedInfo.reason}</p>
+            <button
+              onClick={leaveClosedRoom}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              GO TO HOMEPAGE
+            </button>
+          </div>
+        </div>
+      )}
+
+              {roomWarning && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+              <div className="text-4xl">⚠️</div>
+              <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">ROOM WARNING</h3>
+              <p className="font-pixel text-[18px] text-theme-dark leading-snug">
+                An administrator warned this room: <span className="text-theme-primary">{roomWarning.reason}</span>
+              </p>
+              {roomWarning.notes && <p className="font-pixel text-[15px] text-theme-dark/70">{roomWarning.notes}</p>}
+              <p className="font-pixel text-[15px] text-theme-dark/70">The room may be closed if this continues.</p>
+              <button
+                onClick={() => setRoomWarning(null)}
+                className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow cursor-pointer uppercase"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
+
       {timer.showRewardModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-xs">
           <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-md p-6 shadow-2xl flex flex-col items-center text-center gap-4 animate-bounce-short dark:bg-zinc-900">
@@ -2960,6 +3245,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
                 <span className="font-pixel text-[14px] text-theme-dark/70">BONOS</span>
               </div>
             </div>
+
+            {penalty.nudgePauses > 0 && (
+              <p className="font-pixel text-[14px] text-theme-danger">
+                Timer stopped {penalty.nudgePauses}x. Rewards reduced for the unused focus time.
+              </p>
+            )}
 
             <button
               onClick={() => {

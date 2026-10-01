@@ -11,22 +11,18 @@ const MAX_ROOM_NAME_LENGTH = 50;
 
 // Standard course list suggestions
 const COURSE_OPTIONS = [
-  'Computer Science',
-  'Software Engineering',
-  'Mathematics & Calculus',
-  'Physics',
-  'Chemistry',
-  'Biology',
-  'Business & Administration',
-  'Economics',
-  'Psychology',
-  'Literature & Language',
-  'History & Social Sciences',
-  'Graphic Design & Art',
-  'Philosophy',
-  'Engineering',
-  'General Studies',
+  'Bachelor of Science in Information Technology (Information and Network Security Elective Track)',
+  'Bachelor of Science in Computer Science (Computational and Data Sciences Elective Track)',
+  'Bachelor of Science in Computer Science (Application Development Elective Track)',
+  'Diploma in Application Development',
+  'Diploma in Computer Network Administration',
 ];
+
+// Minutes (integer from the backend) -> "2h 05m"
+const formatMinutes = (mins) => {
+  const total = Math.max(0, Math.round(Number(mins) || 0));
+  return `${Math.floor(total / 60)}h ${String(total % 60).padStart(2, '0')}m`;
+};
 
 export default function UserRooms() {
   const { playerData } = usePlayer();
@@ -35,7 +31,7 @@ export default function UserRooms() {
 
   // --- STATE MANAGEMENT ---
   const [roomsList, setRoomsList] = useState([]);
-  const [sessionHistory, setSessionHistory] = useState([]);
+  const [roomHistory, setRoomHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('all-rooms');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCourseFilter, setSelectedCourseFilter] = useState('');
@@ -47,6 +43,10 @@ export default function UserRooms() {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
+
+  // NEW: message shown inside the LIMIT modal (comes from the backend) and a generic notice modal
+  const [limitMessage, setLimitMessage] = useState('');
+  const [notice, setNotice] = useState(null); // { title, message }
 
   // Modal Form Inputs & Selected Items
   const [privateCodeInput, setPrivateCodeInput] = useState('');
@@ -72,83 +72,123 @@ export default function UserRooms() {
   const filterDropdownRef = useRef(null);
   const socketRef = useRef(null);
 
-  // Fetch real rooms from Supabase database and session history from local storage with deduplication
+  // Keep the latest pending room in a ref so socket listeners never read a stale value
+  const pendingJoinRoomRef = useRef(null);
   useEffect(() => {
-    const fetchRealRooms = async () => {
-      try {
-        const response = await fetch('http://localhost:5000/api/rooms');
-        const data = await response.json();
-        if (data.success && data.rooms) {
-          const formattedRooms = data.rooms.map(r => ({
-            ...r,
-            privacy: (r.privacy || 'public').toLowerCase(),
-            breakTime: r.break_time || '0h 15m',
-            currentMembers: r.current_members || 1,
-            maxMembers: r.max_members || 4,
-            tasks: r.tasks || [],
-            taskType: r.taskType || (r.privacy === 'private' ? 'individual' : 'individual')
-          }));
-          setRoomsList(formattedRooms);
-        }
-      } catch (err) {
-        console.error("Failed to fetch rooms from database:", err);
-      }
-    };
+    pendingJoinRoomRef.current = pendingJoinRoom;
+  }, [pendingJoinRoom]);
 
+  // --- FETCH ROOMS (member counts are LIVE from the backend) ---
+  const fetchRealRooms = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/rooms');
+      const data = await response.json();
+      if (data.success && data.rooms) {
+        const formattedRooms = data.rooms.map((r) => ({
+          ...r,
+          privacy: (r.privacy || 'public').toLowerCase(),
+          breakTime: r.break_time || '0h 15m',
+          currentMembers: r.current_members ?? 0,
+          maxMembers: r.max_members || 4,
+          tasks: r.tasks || [],
+          taskType: r.task_type || 'individual',
+          isClosed: Boolean(r.is_closed) || ['suspended', 'closed'].includes(r.status),
+          isActive: r.is_active !== false,
+        }));
+        setRoomsList(formattedRooms);
+      }
+    } catch (err) {
+      console.error('Failed to fetch rooms from database:', err);
+    }
+  };
+
+  // Runs ONCE per user: loads rooms, opens a single socket connection, polls for the 5-min inactive rule
+  useEffect(() => {
     fetchRealRooms();
 
-    // Load session history and remove duplicates using a Map based on 'finishedAt' or unique signature
-    try {
-      const savedHistory = JSON.parse(localStorage.getItem('completed_sessions_history') || '[]');
-      const uniqueHistory = Array.from(
-        new Map(savedHistory.map(item => [item.finishedAt || `${item.workType}-${item.focusTime}-${item.techniqueName}`, item])).values()
+    const socket = io('http://localhost:5000');
+    socketRef.current = socket;
+
+    // REALTIME: server tells us how many people are inside each room
+    socket.on('rooms_counts', (counts) => {
+      setRoomsList((prev) =>
+        prev.map((r) => {
+          const n = counts[r.name] ?? 0;
+          return { ...r, currentMembers: n, isActive: n > 0 ? true : r.isActive };
+        })
       );
-      setSessionHistory(uniqueHistory);
-    } catch (err) {
-      console.error("Failed to parse session history:", err);
-    }
-
-    socketRef.current = io('http://localhost:5000');
-
-    socketRef.current.on('join_request_decision', (data) => {
-      if (data.username === myUsername) {
-        if (data.approved) {
-          setRequestState('ACCEPTED');
-        } else {
-          setRequestState('REJECTED');
-        }
-      }
     });
 
+    // A room was created / changed / suspended, so refresh the list
+    socket.on('rooms_changed', fetchRealRooms);
+
     // Listen for incoming join requests if current user is the host
-    socketRef.current.on('incoming_join_request', (data) => {
+    socket.on('incoming_join_request', (data) => {
       if (data.host === myUsername) {
         setIncomingJoinRequest(data);
       }
     });
 
-    socketRef.current.on('join_request_decision', (data) => {
-      if (data.username === myUsername) {
-        if (data.approved) {
-          setRequestState('ACCEPTED');
-          setTimeout(() => {
-            setShowRequestModal(false);
-            if (pendingJoinRoom) {
-              enterRoomSession(pendingJoinRoom);
-            }
-          }, 1000);
-        } else {
-          setRequestState('REJECTED');
-        }
+    socket.on('join_request_decision', (data) => {
+      if (data.username !== myUsername) return;
+
+      if (data.approved) {
+        setRequestState('ACCEPTED');
+        setTimeout(() => {
+          setShowRequestModal(false);
+          if (pendingJoinRoomRef.current) {
+            enterRoomSession(pendingJoinRoomRef.current);
+          }
+        }, 1000);
+      } else {
+        setRequestState('REJECTED');
       }
     });
 
+    // "Inactive" is time-based, so re-check with the server every minute
+    const poll = setInterval(fetchRealRooms, 60000);
+
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-      }
+      clearInterval(poll);
+      socket.disconnect();
     };
-  }, [roomsList, myUsername]);
+  }, [myUsername]);
+
+  // History: ONLY the rooms THIS account has studied in (from the database).
+  // Reloaded whenever the History tab is opened so it is always fresh.
+  useEffect(() => {
+    const email = playerData?.email;
+    setRoomHistory([]);
+    if (!email) return undefined;
+
+    let cancelled = false;
+    fetch(`http://localhost:5000/api/get-room-history?email=${encodeURIComponent(email)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled || !d.success) return;
+        setRoomHistory(
+          (d.history || []).map((h) => ({
+            id: h.id,
+            name: h.name,
+            course: h.course || 'General Studies',
+            host: h.host,
+            privacy: (h.privacy || 'public').toLowerCase(),
+            maxMembers: h.maxMembers || 4,
+            technique: h.technique || 'Pomodoro',
+            focus: formatMinutes(h.focusMinutes),
+            breakTime: formatMinutes(h.breakMinutes),
+            sessions: h.sessions || 0,
+            tasks: Array.isArray(h.tasks) ? h.tasks : [],
+            xp: h.xp || 0,
+            coins: h.coins || 0,
+            lastAt: h.lastAt,
+          }))
+        );
+      })
+      .catch((err) => console.error('Failed to load room history:', err));
+
+    return () => { cancelled = true; };
+  }, [playerData?.email, activeTab === 'history']);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -180,26 +220,16 @@ export default function UserRooms() {
   };
 
   const getHostedRoomsCount = () => {
-    const todayStr = new Date().toISOString().split('T')[0]; // Halimbawa: "2026-09-24"
-    
-    return roomsList.filter((r) => {
-      if (r.host !== myUsername) return false;
-      
-      // Kunin ang petsa ng paggawa ng room (kung may created_at o date field sa database)
-      const roomDate = r.created_at ? r.created_at.split('T')[0] : '';
-      
-      // Bilangin lamang kung ang room ay ginawa ngayong araw
-      return roomDate === todayStr;
-    }).length;
+    const manilaDay = (d) => new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+    const today = manilaDay(new Date());
+    return roomsList.filter(
+      (r) => r.host === myUsername && r.max_members > 1 && r.created_at && manilaDay(r.created_at) === today
+    ).length;
   };
 
+  // NOTE: joining the socket room is done by UserHomepage (/dashboard).
+  // Doing it here too would double-count the member.
   const enterRoomSession = (room) => {
-    if (socketRef.current) {
-      socketRef.current.emit('join_room', {
-        room: room.name,
-        username: myUsername,
-      });
-    }
     localStorage.setItem('activeRoomSession', JSON.stringify(room));
     navigate('/dashboard', { state: { isMultiplayer: true, room } });
   };
@@ -224,21 +254,30 @@ export default function UserRooms() {
     };
   }, [showRequestModal, requestState]);
 
+  // Opens the LIMIT modal (optionally with the exact message sent by the backend)
+  const openLimitModal = (message = '') => {
+    setShowCreateModal(false);
+    setLimitMessage(message);
+    setShowLimitModal(true);
+  };
+
   const handleConfirmCreate = async () => {
     if (!newRoomName.trim() || !newRoomMaxMembers) {
-      alert("Please fill in the room name and select maximum members.");
+      setNotice({
+        title: 'MISSING INFO',
+        message: 'Please fill in the room name and select maximum members.',
+      });
       return;
     }
 
     if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
-      setShowCreateModal(false);
-      setShowLimitModal(true);
+      openLimitModal();
       return;
     }
 
     const effectiveTaskType = newRoomPrivacy === 'public' ? 'individual' : newRoomTaskType;
 
-    // Kunin ang kasalukuyang active session galing sa localStorage (kung saan pinili ni host ang technique at focus time)
+    // Get the current active session from localStorage (where the host picked the technique and focus time)
     const activeSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
 
     const payload = {
@@ -247,7 +286,7 @@ export default function UserRooms() {
       host: myUsername,
       privacy: newRoomPrivacy,
       code: newRoomPrivacy === 'private' ? generateRoomCode() : null,
-      current_members: 1,
+      current_members: 0, // the host is counted for real once they enter the room
       max_members: parseInt(newRoomMaxMembers, 10),
       task_type: effectiveTaskType,
       technique: activeSession.techniqueName || 'Pomodoro',
@@ -261,20 +300,23 @@ export default function UserRooms() {
       const response = await fetch('http://localhost:5000/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
-      
+
       if (data.success && data.room) {
         const createdRoom = {
           ...data.room,
-          currentMembers: data.room.current_members || 1,
+          privacy: (data.room.privacy || 'public').toLowerCase(),
+          currentMembers: 0,
           maxMembers: data.room.max_members || 4,
           taskType: data.room.task_type || effectiveTaskType,
           technique: data.room.technique || 'Pomodoro',
           focusTime: data.room.focus_time || 25,
           breakTime: data.room.break_time || 5,
           isStarted: data.room.is_started || false,
+          isClosed: false,
+          isActive: true,
         };
 
         setRoomsList((prev) => [createdRoom, ...prev]);
@@ -288,14 +330,23 @@ export default function UserRooms() {
 
         enterRoomSession(createdRoom);
       } else {
-        alert(data.error || "Failed to create room.");
+        // Backend said no (for example the daily room limit)
+        const msg = data.error || data.message || 'Failed to create room.';
+        if (/limit reached/i.test(msg)) {
+          openLimitModal(msg);
+        } else {
+          setNotice({ title: 'ERROR', message: msg });
+        }
       }
     } catch (err) {
-      console.error("Error creating room:", err);
-      alert("Network error. Make sure your Python backend is running.");
+      console.error('Error creating room:', err);
+      setNotice({
+        title: 'NETWORK ERROR',
+        message: 'Cannot reach the server. Make sure your Python backend is running.',
+      });
     }
   };
-  
+
   const handleConfirmPrivateJoin = () => {
     const code = privateCodeInput.trim().toUpperCase();
     if (!code) {
@@ -304,11 +355,16 @@ export default function UserRooms() {
     }
 
     const matchedRoom = roomsList.find(
-      (r) => r.privacy === 'private' && r.code && r.code.toUpperCase() === code
+      (r) => r.privacy === 'private' && !r.isClosed && r.code && r.code.toUpperCase() === code
     );
 
     if (!matchedRoom) {
       setPrivateCodeErr('Invalid room code. Please check and try again.');
+      return;
+    }
+
+    if (matchedRoom.currentMembers >= matchedRoom.maxMembers) {
+      setPrivateCodeErr('This room is already full.');
       return;
     }
 
@@ -334,7 +390,7 @@ export default function UserRooms() {
       socketRef.current.emit('host_room_response', {
         room: incomingJoinRequest.room,
         username: incomingJoinRequest.username,
-        approved: approved
+        approved: approved,
       });
     }
     setIncomingJoinRequest(null);
@@ -356,42 +412,56 @@ export default function UserRooms() {
     });
   };
 
-  const filteredAllRooms = filterRooms(roomsList.filter((r) => r.privacy.toLowerCase() === 'public'));
-  const filteredMyRooms = filterRooms(roomsList.filter((r) => r.host === myUsername));
-  const filteredHistory = sessionHistory.filter((item) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      (item.workType && item.workType.toLowerCase().includes(query)) ||
-      (item.techniqueName && item.techniqueName.toLowerCase().includes(query))
-    );
-  });
+  // Suspended rooms are hidden everywhere. Inactive rooms are hidden from ALL ROOMS only.
+  const visibleRooms = roomsList.filter((r) => !r.isClosed);
+  const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'public'));
+  const filteredMyRooms = filterRooms(visibleRooms.filter((r) => r.host === myUsername));
+
+  // History uses the same search + course filter as the room tabs
+  const filteredHistory = filterRooms(roomHistory);
 
   const filteredCourseOptions = COURSE_OPTIONS.filter((c) =>
     c.toLowerCase().includes(newRoomCourse.toLowerCase())
   );
 
   const renderRoomCard = (room, isHistoryTab = false) => {
+    const isPublic = room.privacy.toLowerCase() === 'public';
+    const privacyStyles = isPublic
+      ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
+      : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
+
+    // ---------- HISTORY CARD (a room you studied in) ----------
     if (isHistoryTab) {
       return (
         <div
-          key={room.id || Math.random()}
+          key={room.id}
           className="bg-theme-surface border-[2px] border-theme-dark rounded-[10px] p-4 flex flex-col gap-3 shadow-sm justify-between"
         >
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full border-[2px] border-theme-dark bg-theme-muted shrink-0 flex items-center justify-center font-pressstart text-[10px] text-theme-dark">
-              ⏳
+              {room.name.charAt(0)}
             </div>
             <div className="flex-1 flex flex-col gap-1 overflow-hidden">
-              <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.workType || 'Focus Session'}</span>
+              <span className="font-pressstart text-[11px] text-theme-dark truncate">{room.name}</span>
               <span className="font-pressstart text-[8px] text-theme-primary truncate">
-                🛠️ {room.techniqueName || 'Pomodoro'}
+                📚 {room.course || 'General Studies'}
               </span>
               <span className="font-pressstart text-[8px] text-theme-dark truncate">
-                Duration: <span className="text-theme-primary">{room.focusTime || 25} mins</span>
+                Hosted by: <span className="text-theme-primary">{room.host}</span>
               </span>
-              <span className="font-pressstart text-[7px] text-theme-dark/60 truncate pt-1">
-                Completed: {room.finishedAt ? new Date(room.finishedAt).toLocaleDateString() : 'Recent'}
-              </span>
+              <div className="flex flex-col gap-1.5 pt-1">
+                <div className="flex items-center">
+                  <span className={`inline-flex items-center gap-1 font-pressstart text-[7px] border-[1.5px] px-2 py-0.5 rounded uppercase ${privacyStyles}`}>
+                    <span>{room.privacy}</span>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
+                  <svg className="w-3 h-3 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16 17v2H2v-2s0-4 7-4s7 4 7 4m-3.5-9.5A3.5 3.5 0 1 0 9 11a3.5 3.5 0 0 0 3.5-3.5m3.44 5.5A5.32 5.32 0 0 1 18 17v2h4v-2s0-3.63-6.06-4M15 4a3.4 3.4 0 0 0-1.93.59a5 5 0 0 1 0 5.82A3.4 3.4 0 0 0 15 11a3.5 3.5 0 0 0 0-7" />
+                  </svg>
+                  <span>Max {room.maxMembers}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -408,12 +478,9 @@ export default function UserRooms() {
       );
     }
 
-    const isPublic = room.privacy.toLowerCase() === 'public';
-    const privacyStyles = isPublic
-      ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
-      : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
-
-    const roomTaskType = room.taskType || (room.privacy === 'private' ? 'individual' : 'individual');
+    // ---------- NORMAL ROOM CARD ----------
+    const roomTaskType = room.taskType || 'individual';
+    const isFull = room.currentMembers >= room.maxMembers;
 
     return (
       <div
@@ -441,26 +508,26 @@ export default function UserRooms() {
                   <span>Tasks: {roomTaskType}</span>
                 </span>
               </div>
-              <div className="flex items-center gap-1 font-pressstart text-[8px] text-theme-dark">
+              <div className={`flex items-center gap-1 font-pressstart text-[8px] ${isFull ? 'text-theme-danger' : 'text-theme-dark'}`}>
                 <span>
                   {room.currentMembers}/{room.maxMembers}
                 </span>
+                {isFull && <span>FULL</span>}
               </div>
             </div>
           </div>
         </div>
 
         <button
-          onClick={() => {
-            const activeSessionRoom = {
-              ...room,
-              currentMembers: Math.min(room.currentMembers + 1, room.maxMembers),
-            };
-            enterRoomSession(activeSessionRoom);
-          }}
-          className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+          disabled={isFull}
+          onClick={() => enterRoomSession(room)}
+          className={`font-pressstart text-[9px] sm:text-[10px] text-theme-white rounded-none border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow w-full ${
+            isFull
+              ? 'bg-gray-400 opacity-60 cursor-not-allowed'
+              : 'bg-theme-primary cursor-pointer hover:bg-[#d66530]'
+          }`}
         >
-          JOIN ROOM
+          {isFull ? 'ROOM FULL' : 'JOIN ROOM'}
         </button>
       </div>
     );
@@ -487,7 +554,7 @@ export default function UserRooms() {
         <button
           onClick={() => {
             if (getHostedRoomsCount() >= MAX_ROOM_LIMIT) {
-              setShowLimitModal(true);
+              openLimitModal();
             } else {
               setShowCreateModal(true);
             }
@@ -654,7 +721,7 @@ export default function UserRooms() {
                 filteredHistory.map((r) => renderRoomCard(r, true))
               ) : (
                 <p className="font-pressstart text-[9px] text-theme-dark/70 col-span-full py-4">
-                  No session history found.
+                  No room history found.
                 </p>
               )}
             </div>
@@ -884,13 +951,30 @@ export default function UserRooms() {
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
             <h3 className="font-pressstart text-[11px] text-theme-danger uppercase">LIMIT REACHED</h3>
             <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">
-              Room limit reached! You can only host a maximum of {MAX_ROOM_LIMIT} rooms at a time.
+              {limitMessage ||
+                `Room limit reached! You can only host a maximum of ${MAX_ROOM_LIMIT} group rooms per day.`}
             </p>
             <button
               onClick={() => setShowLimitModal(false)}
               className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full"
             >
               GOT IT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* GENERIC NOTICE MODAL (replaces the browser alert()) */}
+      {notice && (
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
+            <h3 className="font-pressstart text-[11px] text-theme-danger uppercase">{notice.title}</h3>
+            <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">{notice.message}</p>
+            <button
+              onClick={() => setNotice(null)}
+              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full"
+            >
+              OK
             </button>
           </div>
         </div>
@@ -904,11 +988,13 @@ export default function UserRooms() {
               {requestState === 'WAITING' && 'REQUEST SENT'}
               {requestState === 'ACCEPTED' && 'ACCEPTED!'}
               {requestState === 'REJECTED' && 'REJECTED'}
+              {requestState === 'EXPIRED' && 'REQUEST EXPIRED'}
             </h3>
             <p className="font-pressstart text-[10px] text-theme-dark leading-relaxed">
-              {requestState === 'WAITING' && `Waiting for approval from host (${pendingJoinRoom?.host || 'Host'})...`}
+              {requestState === 'WAITING' && `Waiting for approval from host (${pendingJoinRoom?.host || 'Host'})... ${requestTimer}s`}
               {requestState === 'ACCEPTED' && 'Host accepted your request! Joining room...'}
               {requestState === 'REJECTED' && 'Host rejected your request.'}
+              {requestState === 'EXPIRED' && 'The host did not respond in time.'}
             </p>
             {requestState === 'ACCEPTED' && (
               <button
@@ -961,47 +1047,107 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* STATISTICS MODAL FOR HISTORY */}
+      {/* STATISTICS MODAL (ROOM HISTORY) */}
       {showStatsModal && selectedStatsRoom && (
-        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl max-h-[85vh] overflow-y-auto">
-            <h3 className="font-pressstart text-[12px] text-theme-primary uppercase text-center">SESSION STATISTICS</h3>
-            
-            <div className="flex flex-col gap-2 font-pressstart text-[9px] text-theme-dark border-b border-theme-dark/20 pb-3">
-              <p>Activity: <span className="text-theme-primary">{selectedStatsRoom.workType || 'Focus Session'}</span></p>
-              <p>Technique: <span className="text-theme-primary">{selectedStatsRoom.techniqueName || 'Pomodoro'}</span></p>
-              <p>Focus Time: <span className="text-theme-primary">{selectedStatsRoom.focusTime || 25} mins</span></p>
+        <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-center relative pb-2">
+              <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide text-center">
+                STATISTICS: {selectedStatsRoom.name}
+              </h3>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <span className="font-pressstart text-[9px] text-theme-dark uppercase">Checklist Tasks:</span>
-              {selectedStatsRoom.tasks && selectedStatsRoom.tasks.length > 0 ? (
-                <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto">
-                  {selectedStatsRoom.tasks.map((task, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-theme-muted/50 rounded-[6px] border border-theme-dark/20 font-pressstart text-[8px]">
-                      <span className={task.completed ? "text-green-600" : "text-amber-600"}>
-                        {task.completed ? "✔" : "⏳"}
-                      </span>
-                      <span className={task.completed ? "line-through opacity-60 text-theme-dark" : "text-theme-dark"}>
-                        {typeof task === 'string' ? task : task.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="font-pressstart text-[8px] text-theme-dark/60 italic">No checklist items recorded for this session.</p>
-              )}
+            <div className="flex flex-col gap-4 font-pressstart text-[9px] text-theme-dark">
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">COURSE</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-primary">
+                  {selectedStatsRoom.course || 'General Studies'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">STUDY TECHNIQUE</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.technique}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">FOCUS TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.focus}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">BREAK TIME</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.breakTime}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-solid border-theme-dark/40">
+                <span className="font-pixel text-[20px] text-theme-dark">NUMBER OF SESSIONS</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.sessions} {selectedStatsRoom.sessions === 1 ? 'Session' : 'Sessions'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center pt-1">
+                <span className="font-pixel text-[20px] text-theme-dark">TASKS COMPLETED</span>
+                <span className="font-pixel text-[20px] text-theme-dark">
+                  {selectedStatsRoom.tasks.filter((t) => t.completed).length} /{' '}
+                  {selectedStatsRoom.tasks.length}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 pb-3 border-b-[2px] border-solid border-theme-dark">
+                {selectedStatsRoom.tasks.length > 0 ? (
+                  <ul className="flex flex-col text-[8px] list-none pl-2 m-0 gap-1">
+                    {selectedStatsRoom.tasks.map((t, idx) => (
+                      <li key={idx} className="flex justify-between items-center">
+                        <span className={t.completed ? 'line-through text-theme-dark/60' : ''}>
+                          {typeof t === 'string' ? t : t.text}
+                        </span>
+                        {t.completed && (
+                          <span className="text-theme-primary font-pixel text-[20px]">✓</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="font-pressstart text-[8px] text-theme-dark/60 italic pl-2">
+                    No tasks were recorded in this room.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
+                <span className="font-pixel text-[20px] text-theme-dark">XP EARNED</span>
+                <span className="font-pixel text-[20px] text-[#7E57C2]">
+                  {selectedStatsRoom.xp} XP
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="font-pixel text-[20px] text-theme-dark">COINS EARNED</span>
+                <span className="font-pixel text-[20px] text-theme-primary">
+                  {selectedStatsRoom.coins} coins
+                </span>
+              </div>
             </div>
 
-            <button
-              onClick={() => {
-                setShowStatsModal(false);
-                setSelectedStatsRoom(null);
-              }}
-              className="font-pressstart text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 w-full mt-2 cursor-pointer hover:bg-[#d66530]"
-            >
-              CLOSE
-            </button>
+            <div className="flex items-center justify-center pt-2">
+              <button
+                onClick={() => {
+                  setShowStatsModal(false);
+                  setSelectedStatsRoom(null);
+                }}
+                className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
+              >
+                CLOSE
+              </button>
+            </div>
           </div>
         </div>
       )}

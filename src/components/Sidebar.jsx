@@ -4,6 +4,19 @@ import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
 import { LEVEL_MATRIX, calculateLevelFromXP, getPlayerTitle } from '../utils/levelUtils';
 
+// Fallback avatar. If you already have DEFAULT_AVATAR_CONFIG in '../constants/defaults',
+// delete this constant and import it instead:
+// import { DEFAULT_AVATAR_CONFIG } from '../constants/defaults';
+const DEFAULT_AVATAR_CONFIG = {
+  body: 'BODY1',
+  face: 'FACE1',
+  tops: 'TOP7',
+  bottoms: 'BOTTOM6',
+  shoes: '',
+  hair: '',
+  accessories: '',
+};
+
 // LEVEL REWARDS DATA PARA SA MGA TIERS NA NAKABASE SA SPEC DOC
 const LEVEL_REWARDS_DATA = [
   { level: 1, label: "Lvl. 1", img: "media/xp_starter.png", text: "Sprout Initiate: Take it one focused step at a time." },
@@ -38,7 +51,7 @@ export default function Sidebar({
   setIsMobileOpen,
   onOpenKitsu,
 }) {
-  const { playerData } = usePlayer();
+  const { playerData, setPlayerData } = usePlayer();
   const location = useLocation();
   const [appearanceRotated, setAppearanceRotated] = useState(false);
 
@@ -59,49 +72,55 @@ export default function Sidebar({
   }, [isDarkMode]);
 
   // --- DYNAMIC AVATAR CONFIG ---
-  const userEmailKey = playerData?.email ? playerData.email.replace(/[^a-zA-Z0-9]/g, '_') : 'default';
-
-  const [avatarConfig, setAvatarConfig] = useState(() => {
-    try {
-      const saved = localStorage.getItem(`user_avatar_config_${userEmailKey}`);
-      return saved
-        ? JSON.parse(saved)
-        : playerData?.avatarConfig || { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    } catch {
-      return { body: 'BODY1', face: 'FACE1', tops: 'TOP7', bottoms: 'BOTTOM6', shoes: '', hair: '', accessories: '' };
-    }
-  });
+  const [avatarConfig, setAvatarConfig] = useState(playerData?.avatarConfig || DEFAULT_AVATAR_CONFIG);
 
   useEffect(() => {
-    const handleAvatarUpdate = (e) => setAvatarConfig(e.detail);
+    // follows the logged-in account
+    setAvatarConfig(playerData?.avatarConfig || DEFAULT_AVATAR_CONFIG);
+  }, [playerData?.email, playerData?.avatarConfig]);
+
+  useEffect(() => {
+    // instant update after saving in the Customizer
+    const handleAvatarUpdate = (e) => setAvatarConfig(e.detail || DEFAULT_AVATAR_CONFIG);
     window.addEventListener('avatar-updated', handleAvatarUpdate);
     return () => window.removeEventListener('avatar-updated', handleAvatarUpdate);
-  }, [userEmailKey]);
+  }, []);
 
   // Modal State for Level Rewards
   const [showLevelModal, setShowLevelModal] = useState(false);
   const [levelPageIndex, setLevelPageIndex] = useState(0);
 
   // Helper function para i-parse ang inventory galing sa database patungo sa level numbers
+  // (no more forced Level 1 — it can now be claimed like every other tier)
   const parseClaimedLevels = (inventory) => {
-    if (!inventory || !Array.isArray(inventory)) return [1];
+    if (!Array.isArray(inventory)) return [];
     const levels = inventory
-      .filter(item => typeof item === 'string' && item.startsWith('level_') && item.endsWith('_reward'))
-      .map(item => {
-        const parts = item.split('_');
-        return parseInt(parts[1], 10);
-      });
-    return [...new Set([1, ...levels])];
+      .filter((item) => typeof item === 'string' && /^level_\d+_reward$/.test(item))
+      .map((item) => parseInt(item.split('_')[1], 10));
+    return [...new Set(levels)];
   };
 
   const [claimedLevels, setClaimedLevels] = useState(() => parseClaimedLevels(playerData?.inventory));
+  const [claimingLevel, setClaimingLevel] = useState(null);
 
-  // I-sync kapag nagbago o nag-load ang playerData inventory galing sa DB
+  // single source of truth: whatever is in playerData.inventory
   useEffect(() => {
-    if (playerData?.inventory) {
-      setClaimedLevels(parseClaimedLevels(playerData.inventory));
-    }
+    setClaimedLevels(parseClaimedLevels(playerData?.inventory));
   }, [playerData?.inventory]);
+
+  // on every load / account switch, ask the DATABASE what was really claimed
+  useEffect(() => {
+    if (!playerData?.email) return undefined;
+    let cancelled = false;
+    fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(playerData.email)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled || !d.success) return;
+        setPlayerData((prev) => ({ ...prev, inventory: d.profile.inventory ?? [] }));
+      })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [playerData?.email, setPlayerData]);
 
   // Modal State for Feedback
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -111,14 +130,27 @@ export default function Sidebar({
 
   // Kalkulasyon ng kasalukuyang Level at Title batay sa spec
   const currentXP = playerData?.currentXP ?? 0;
-  const calculatedLevel = calculateLevelFromXP(currentXP);
+  const calculatedLevel = playerData?.level ?? calculateLevelFromXP(currentXP);
   const currentTitle = getPlayerTitle(calculatedLevel);
   const maxXP = playerData?.maxXP ?? 100;
   const xpPercent = Math.min(100, Math.max(0, (currentXP / maxXP) * 100));
 
+  // Saves the new inventory to live state AND to the cached user object,
+  // so it survives a page refresh.
+  const persistInventory = (inventory) => {
+    setPlayerData((prev) => ({ ...prev, inventory }));
+    try {
+      const key = `user_${playerData.email}`;
+      const cached = JSON.parse(localStorage.getItem(key) || '{}');
+      localStorage.setItem(key, JSON.stringify({ ...cached, inventory }));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleClaimLevelReward = async (item) => {
-    if (claimedLevels.includes(item.level)) return;
-    
+    if (claimedLevels.includes(item.level) || claimingLevel === item.level) return;
+    setClaimingLevel(item.level);
     try {
       const response = await fetch('http://localhost:5000/api/claim-reward', {
         method: 'POST',
@@ -126,12 +158,15 @@ export default function Sidebar({
         body: JSON.stringify({ email: playerData.email, level: item.level }),
       });
       const data = await response.json();
-
       if (data.success) {
-        setClaimedLevels(parseClaimedLevels(data.inventory));
+        persistInventory(data.inventory);
+      } else {
+        alert(data.message || 'Could not claim this reward.');
       }
     } catch (err) {
-      console.error("Failed to claim reward:", err);
+      console.error('Failed to claim reward:', err);
+    } finally {
+      setClaimingLevel(null);
     }
   };
 
@@ -187,19 +222,6 @@ export default function Sidebar({
       ),
     },
     {
-      path: '/profile',
-      label: 'Profile',
-      icon: (
-        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-          <path d="M0 0h24v24H0z" fill="none" />
-          <g fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
-            <circle cx="12" cy="7" r="3" />
-          </g>
-        </svg>
-      ),
-    },
-    {
       path: '/rooms',
       label: 'Rooms',
       icon: (
@@ -227,6 +249,19 @@ export default function Sidebar({
         <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
           <path d="M0 0h24v24H0z" fill="none" />
           <path fill="currentColor" d="M14.883 3.007L14.978 3l.112.004l.113.017l.113.03l6 2a1 1 0 0 1 .677.833L22 6v5a1 1 0 0 1-.883.993L21 12h-2v7a2 2 0 0 1-1.85 1.995L17 21H7a2 2 0 0 1-1.995-1.85L5 19v-7H3a1 1 0 0 1-.993-.883L2 11V6a1 1 0 0 1 .576-.906l.108-.043l6-2A1 1 0 0 1 10 4a2 2 0 0 0 3.995.15l.009-.24l.017-.113l.037-.134l.044-.103l.05-.092l.068-.093l.069-.08q.083-.08.175-.14l.096-.053l.103-.044l.108-.032l.112-.02z" />
+        </svg>
+      ),
+    },
+    {
+      path: '/profile',
+      label: 'Profile',
+      icon: (
+        <svg className="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+          <path d="M0 0h24v24H0z" fill="none" />
+          <g fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path strokeLinejoin="round" d="M4 18a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+            <circle cx="12" cy="7" r="3" />
+          </g>
         </svg>
       ),
     },
@@ -518,7 +553,8 @@ export default function Sidebar({
                         <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
                           <button
                             onClick={() => handleClaimLevelReward(item)}
-                            className="w-full bg-theme-primary text-theme-surface border-[1.5px] sm:border-[2px] border-theme-dark py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase"
+                            disabled={claimingLevel === item.level}
+                            className="w-full bg-theme-primary text-theme-surface border-[1.5px] sm:border-[2px] border-theme-dark py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:bg-[#d0622c] cursor-pointer transition-colors uppercase disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             CLAIM
                           </button>

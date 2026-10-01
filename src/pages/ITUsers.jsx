@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { io } from 'socket.io-client';
+import { adminFetch } from '../utils/adminApi';
 
 export default function ITUsers() {
   // Search and Filter State (Default dateRange set to 'All time')
@@ -25,7 +26,7 @@ export default function ITUsers() {
   const [customDurationInput, setCustomDurationInput] = useState('');
   const [internalNotes, setInternalNotes] = useState('');
   const [isSubmittingSuspend, setIsSubmittingSuspend] = useState(false);
-  
+
   // Success State
   const [suspendSuccessData, setSuspendSuccessData] = useState(null);
 
@@ -39,11 +40,12 @@ export default function ITUsers() {
     reportedUsers: { value: '0', changeNum: '—', positive: false },
   });
 
-  // Fetch real users and metrics from backend database via IT Admin API
-  const fetchITUsersData = async () => {
-    setIsLoadingUsers(true);
+  // Fetch real users and metrics from backend database via IT Admin API.
+  // `silent` = refresh in the background without flashing the loading row.
+  const fetchITUsersData = async (silent = false) => {
+    if (!silent) setIsLoadingUsers(true);
     try {
-      const response = await fetch('http://localhost:5000/api/itadmin/users');
+      const response = await adminFetch('http://localhost:5000/api/itadmin/users');
       const data = await response.json();
 
       if (data.success && data.users) {
@@ -60,7 +62,7 @@ export default function ITUsers() {
     } catch (err) {
       console.error("Failed to fetch IT Users data from backend:", err);
     } finally {
-      setIsLoadingUsers(false);
+      if (!silent) setIsLoadingUsers(false);
     }
   };
 
@@ -70,6 +72,11 @@ export default function ITUsers() {
 
     // 2. Connect to Flask socket
     const socket = io('http://localhost:5000');
+
+    // A suspension was created somewhere else (e.g. from the Reports page): refresh the list
+    socket.on('users_changed', () => {
+      fetchITUsersData(true);
+    });
 
     socket.on('admin_presence_update', (presence) => {
       const { active_users_count, currently_studying_count, online_map } = presence;
@@ -214,17 +221,21 @@ export default function ITUsers() {
     if (!userToSuspend) return;
     setIsSubmittingSuspend(true);
 
-    const durationText = suspendDuration === 'Custom Date/Time' ? customDurationInput || 'Custom Duration' : suspendDuration;
+    // Text shown in the success popup only
+    const durationText =
+      suspendDuration === 'Custom Date/Time'
+        ? (customDurationInput ? `until ${customDurationInput.replace('T', ' ')}` : 'a custom duration')
+        : suspendDuration;
 
     try {
-      const response = await fetch('http://localhost:5000/api/itadmin/suspend-user', {
+      const response = await adminFetch('http://localhost:5000/api/itadmin/suspend-user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: userToSuspend.email,
           reason: suspendReason,
-          duration: durationText,
-          customDatetime: customDurationInput,
+          // the backend needs the exact dropdown label to compute the expiry
+          duration: suspendDuration,
+          customDatetime: suspendDuration === 'Custom Date/Time' ? customDurationInput : null,
           notes: internalNotes
         })
       });
@@ -244,12 +255,20 @@ export default function ITUsers() {
           )
         );
 
+        setMetricsData((prev) => ({
+          ...prev,
+          reportedUsers: {
+            ...prev.reportedUsers,
+            value: ((parseInt(String(prev.reportedUsers.value).replace(/,/g, ''), 10) || 0) + 1).toLocaleString()
+          }
+        }));
+
         setSuspendSuccessData({
           username: userToSuspend.username,
           duration: durationText,
         });
       } else {
-        alert(data.message || 'Failed to suspend user.');
+        alert(data.message || data.error || 'Failed to suspend user.');
       }
     } catch (e) {
       console.error(e);
@@ -280,10 +299,10 @@ export default function ITUsers() {
 
   return (
     <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto">
-      
+
       {/* ROW 1: COMBINED SEARCH BAR AND DROPDOWNS */}
       <div className="w-full flex flex-col md:flex-row items-center gap-3">
-        
+
         {/* Search Bar Container */}
         <div className="w-full md:flex-1 flex items-center gap-3 bg-theme-surface border-2 border-theme-dark px-4 py-1 rounded-[12px] shadow-md">
           <svg className="w-6 h-6 text-theme-dark/60 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -304,7 +323,7 @@ export default function ITUsers() {
 
         {/* Filters Group */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          
+
           {/* Status Dropdown */}
           <select
             value={statusFilter}
@@ -316,6 +335,7 @@ export default function ITUsers() {
           >
             <option value="All Status">All Status</option>
             <option value="Active">Active</option>
+            <option value="Studying">Studying</option>
             <option value="Inactive">Inactive</option>
             <option value="Suspended">Suspended</option>
           </select>
@@ -340,7 +360,7 @@ export default function ITUsers() {
 
       {/* ROW 2: 4 METRIC CARDS OVERVIEW */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+
         {/* CARD 1: Total Users */}
         <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-5 shadow-md flex items-start gap-4 relative">
           <div className="w-12 h-12 rounded-full bg-theme-muted border border-theme-dark flex items-center justify-center shrink-0 text-theme-primary self-start">
@@ -438,7 +458,7 @@ export default function ITUsers() {
 
       {/* USER MANAGEMENT DATA TABLE */}
       <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] shadow-md flex flex-col justify-between gap-6">
-        
+
         {/* Table Wrapper */}
         <div className="overflow-x-auto w-full rounded-[12px]">
           <table className="w-full text-center border-collapse min-w-[750px]">
@@ -559,7 +579,7 @@ export default function ITUsers() {
       {showSuspendModal && userToSuspend && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50 backdrop-blur-xs">
           <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-lg w-full shadow-xl flex flex-col">
-            
+
             {!suspendSuccessData ? (
               <>
                 <div className="flex items-center border-b-2 border-theme-dark/10 pb-3">
@@ -578,7 +598,7 @@ export default function ITUsers() {
                 </p>
 
                 <div className="flex flex-col gap-3 mt-3">
-                  
+
                   {/* Reason Dropdown */}
                   <div className="flex flex-col gap-1">
                     <label className="font-pixel text-[18px] sm:text-[24px] text-theme-dark">Reason:</label>
@@ -657,7 +677,7 @@ export default function ITUsers() {
                   </button>
                   <button
                     type="button"
-                    disabled={isSubmittingSuspend}
+                    disabled={isSubmittingSuspend || (suspendDuration === 'Custom Date/Time' && !customDurationInput)}
                     onClick={confirmSuspendUser}
                     className="bg-[#8B0000] text-white border-2 border-theme-dark px-4 py-2.5 rounded-[8px] font-pressstart text-[9px] cursor-pointer transition-all duration-150 retro-shadow disabled:opacity-50"
                   >

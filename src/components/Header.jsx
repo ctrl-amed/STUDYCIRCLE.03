@@ -15,7 +15,7 @@ const STREAK_REWARDS_DATA = [
   { days: 45, text: "45 days", type: "coins", valueText: "+100 coins", img: "media/streak_coins.png", coins: 100, xp: 0 },
   { days: 60, text: "60 days", type: "coins", valueText: "+120 coins", img: "media/streak_coins.png", coins: 120, xp: 0 },
   { days: 90, text: "90 days", type: "coins", valueText: "+150 coins", img: "media/streak_coins.png", coins: 150, xp: 0 },
-  { days: 120, text: "120 days", type: "xp", valueText: "+1.75x xp", img: "media/streak_xp.png", coins: 0, xp: 300 },
+  { days: 120, text: "120 days", type: "xp", valueText: "+300 xp", img: "media/streak_xp.png", coins: 0, xp: 300 },
   { days: 180, text: "180 days", type: "xp", valueText: "+500 xp", img: "media/streak_xp.png", coins: 0, xp: 500 },
   { days: 365, text: "365 days", type: "xp", valueText: "+750 xp", img: "media/streak_xp.png", coins: 0, xp: 750 },
 ];
@@ -27,7 +27,7 @@ const PAGES_TIERS = [
 ];
 
 export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propIsRoomState = false }) {
-  const { playerData, updateCoins, setPlayerData } = usePlayer();
+  const { playerData, setPlayerData } = usePlayer();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -53,14 +53,11 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const [streakPageIndex, setStreakPageIndex] = useState(0);
 
   const parseClaimedStreaks = (inventory) => {
-    if (!inventory || !Array.isArray(inventory)) return [1];
+    if (!inventory || !Array.isArray(inventory)) return [];
     const days = inventory
-      .filter(item => typeof item === 'string' && item.startsWith('streak_') && item.endsWith('_reward'))
-      .map(item => {
-        const parts = item.split('_');
-        return parseInt(parts[1], 10);
-      });
-    return [...new Set([1, ...days])];
+      .filter((item) => typeof item === 'string' && item.startsWith('streak_') && item.endsWith('_reward'))
+      .map((item) => parseInt(item.split('_')[1], 10));
+    return [...new Set(days)];
   };
 
   const [claimedStreakDays, setClaimedStreakDays] = useState(() => parseClaimedStreaks(playerData?.inventory));
@@ -136,7 +133,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         setNotifications((prevNotifs) => {
           return friendsList.map((f) => {
             const existing = prevNotifs.find((n) => n.email === f.email);
-            const isOnline = f.status ? f.status !== "OFFLINE" : true; 
+            const isOnline = f.status ? f.status !== "OFFLINE" : true;
             return {
               id: f.email,
               email: f.email,
@@ -221,13 +218,13 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     try {
       const response = await fetch(`http://localhost:5000/api/messages?user1=${playerData.email}&user2=${friendEmail}`);
       const data = await response.json();
-      
+
       if (data.success) {
         const formattedMessages = data.messages.map(m => ({
           sender: m.sender_email === playerData.email ? 'me' : 'them',
           text: m.message
         }));
-        
+
         if (formattedMessages.length > (chatHistory[friendEmail]?.length || 0)) {
           const lastMsg = formattedMessages[formattedMessages.length - 1];
           if (lastMsg.sender === 'them' && !showChatModal) {
@@ -354,7 +351,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     }
   };
 
- const handleConfirmRemoveFriend = () => {
+  const handleConfirmRemoveFriend = () => {
     if (!pendingRemoveFriend) return;
     const targetEmail = pendingRemoveFriend.email;
 
@@ -366,9 +363,9 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         await fetch('http://localhost:5000/api/remove-friend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            userEmail: playerData.email, 
-            friendEmail: targetEmail 
+          body: JSON.stringify({
+            userEmail: playerData.email,
+            friendEmail: targetEmail
           })
         });
         fetchFriendsData();
@@ -383,7 +380,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   // Functional API call para i-save sa database inventory ang claimed streak reward at i-update ang coins / XP
   const handleClaimStreakReward = async (item) => {
     if (claimedStreakDays.includes(item.days)) return;
-    
+
     try {
       const response = await fetch('http://localhost:5000/api/claim-streak-reward', {
         method: 'POST',
@@ -392,25 +389,38 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
       });
       const data = await response.json();
 
-      if (data.success) {
-        setClaimedStreakDays(parseClaimedStreaks(data.inventory));
-        
-        // I-update ang global playerData state sa frontend para mag-reflect kaagad ang coins/XP
-        if (setPlayerData) {
-          setPlayerData(prev => ({
-            ...prev,
-            inventory: data.inventory,
-            coins: data.coins !== undefined ? data.coins : prev.coins,
-            currentXP: data.currentXP !== undefined ? data.currentXP : prev.currentXP,
-            level: data.level !== undefined ? data.level : prev.level,
-            maxXP: data.maxXP !== undefined ? data.maxXP : prev.maxXP
-          }));
-        } else if (item.coins > 0 && updateCoins) {
-          updateCoins(data.coins);
-        }
+      if (!data.success) {
+        alert(data.message || 'Could not claim reward.');
+        return;
       }
+
+      setClaimedStreakDays(parseClaimedStreaks(data.inventory));
+
+      const patch = {
+        inventory: data.inventory,
+        coins: data.coins,
+        currentXP: data.currentXP,
+        level: data.level,
+        maxXP: data.maxXP,
+      };
+
+      setPlayerData((prev) => ({ ...prev, ...patch }));
+
+      // isulat din sa localStorage para hindi bumalik ang lumang value pag nag-refresh
+      try {
+        const key = `user_${playerData.email}`;
+        const stored = JSON.parse(localStorage.getItem(key) || '{}');
+        localStorage.setItem(key, JSON.stringify({
+          ...stored,
+          ...patch,
+          current_xp: data.currentXP,
+          max_xp: data.maxXP,
+        }));
+        window.dispatchEvent(new Event('player-data-updated'));
+      } catch (e) { /* ignore */ }
     } catch (err) {
-      console.error("Failed to claim streak reward:", err);
+      console.error('Failed to claim streak reward:', err);
+      alert('Network error while claiming reward.');
     }
   };
 
@@ -500,8 +510,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                 <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                                   {friend.avatarConfig ? (
-                                    <div 
-                                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                    <div
+                                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                                       style={{ transform: 'scale(0.35) translateY(18px)' }}
                                     >
                                       <CustomAvatar config={friend.avatarConfig} state="idle" />
@@ -554,32 +564,6 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             </span>
           </button>
 
-          {/* LEAVE ROOM MODAL */}
-      {showLeaveRoomModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
-            <h3 className="font-pressstart text-[12px] text-theme-dark">Leave Room</h3>
-            <p className="font-pressstart text-[9px] text-theme-dark/80 leading-normal">
-              Are you sure you want to leave this study room?
-            </p>
-            <div className="flex gap-3 justify-center mt-2">
-              <button 
-                onClick={handleLeaveRoom} 
-                className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
-              >
-                Yes
-              </button>
-              <button 
-                onClick={() => setShowLeaveRoomModal(false)} 
-                className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}    
-
           {/* DYNAMIC ROOM STATE ACTION BUTTONS */}
           {isRoomState ? (
             <>
@@ -622,11 +606,37 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         </div>
       </header>
 
+      {/* LEAVE ROOM MODAL */}
+      {showLeaveRoomModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
+          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
+            <h3 className="font-pressstart text-[12px] text-theme-dark">Leave Room</h3>
+            <p className="font-pressstart text-[9px] text-theme-dark/80 leading-normal">
+              Are you sure you want to leave this study room?
+            </p>
+            <div className="flex gap-3 justify-center mt-2">
+              <button
+                onClick={handleLeaveRoom}
+                className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setShowLeaveRoomModal(false)}
+                className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STREAK REWARDS MODAL */}
       {showStreakModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-theme-dark/50">
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden transition-colors duration-200">
-            
+
             <button
               onClick={() => setShowStreakModal(false)}
               className="absolute top-3 right-3 sm:top-4 sm:right-4 text-theme-dark hover:text-theme-danger font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
@@ -680,7 +690,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                         <img
                           src={`${baseUrl}${item.img}`}
                           alt={item.valueText}
-                          className="w-20 h-20 sm:w-30 sm:h-30 object-contain"
+                          className="w-20 h-20 sm:w-[120px] sm:h-[120px] object-contain"
                           onError={(e) => { e.target.style.display = 'none'; }}
                         />
                         <span className="font-pixel text-[13px] sm:text-[15px] text-theme-dark text-center leading-tight">
@@ -755,11 +765,11 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             <h3 className="font-pressstart text-[14px] text-theme-dark">Sign Out</h3>
             <p className="font-pressstart text-[10px] text-theme-dark/80 leading-normal">Are you sure you want to sign out?</p>
             <div className="flex gap-3 justify-center mt-2">
-              <button 
+              <button
                 onClick={() => {
                   localStorage.removeItem('active_user_email');
                   navigate('/auth#login');
-                }} 
+                }}
                 className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
               >
                 Yes
@@ -814,8 +824,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                       const isOnline = friend.status ? friend.status !== "OFFLINE" : true;
 
                       return (
-                        <div 
-                          key={friend.email} 
+                        <div
+                          key={friend.email}
                           className={`flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-0 items-center bg-theme-surface border-2 border-theme-dark p-2.5 transition-all duration-300 ${
                             isRemoving ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
                           }`}
@@ -823,8 +833,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                           <div className="flex items-center gap-2.5 min-w-0 w-full">
                             <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                               {avatarCfg ? (
-                                <div 
-                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                <div
+                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                                   style={{ transform: 'scale(0.35) translateY(18px)' }}
                                 >
                                   <CustomAvatar config={avatarCfg} state="idle" />
@@ -874,8 +884,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
                               <div className="relative shrink-0 w-8 h-8 rounded-full border-[1.5px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                                 {avatarCfg ? (
-                                  <div 
-                                    className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                  <div
+                                    className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                                     style={{ transform: 'scale(0.3) translateY(18px)' }}
                                   >
                                     <CustomAvatar config={avatarCfg} state="idle" />
@@ -918,8 +928,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                               {avatarCfg ? (
-                                <div 
-                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                                <div
+                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                                   style={{ transform: 'scale(0.3) translateY(18px)' }}
                                 >
                                   <CustomAvatar config={avatarCfg} state="idle" />
@@ -956,8 +966,8 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                   {getFriendAvatarConfig(currentChatFriend) ? (
-                    <div 
-                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]" 
+                    <div
+                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                       style={{ transform: 'scale(0.3) translateY(18px)' }}
                     >
                       <CustomAvatar config={getFriendAvatarConfig(currentChatFriend)} state="idle" />
