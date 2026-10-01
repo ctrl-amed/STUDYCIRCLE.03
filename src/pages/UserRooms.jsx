@@ -227,8 +227,6 @@ export default function UserRooms() {
     ).length;
   };
 
-  // NOTE: joining the socket room is done by UserHomepage (/dashboard).
-  // Doing it here too would double-count the member.
   const enterRoomSession = (room) => {
     localStorage.setItem('activeRoomSession', JSON.stringify(room));
     navigate('/dashboard', { state: { isMultiplayer: true, room } });
@@ -254,7 +252,6 @@ export default function UserRooms() {
     };
   }, [showRequestModal, requestState]);
 
-  // Opens the LIMIT modal (optionally with the exact message sent by the backend)
   const openLimitModal = (message = '') => {
     setShowCreateModal(false);
     setLimitMessage(message);
@@ -276,8 +273,6 @@ export default function UserRooms() {
     }
 
     const effectiveTaskType = newRoomPrivacy === 'public' ? 'individual' : newRoomTaskType;
-
-    // Get the current active session from localStorage (where the host picked the technique and focus time)
     const activeSession = JSON.parse(localStorage.getItem('activeSession') || '{}');
 
     const payload = {
@@ -286,7 +281,7 @@ export default function UserRooms() {
       host: myUsername,
       privacy: newRoomPrivacy,
       code: newRoomPrivacy === 'private' ? generateRoomCode() : null,
-      current_members: 0, // the host is counted for real once they enter the room
+      current_members: 0,
       max_members: parseInt(newRoomMaxMembers, 10),
       task_type: effectiveTaskType,
       technique: activeSession.techniqueName || 'Pomodoro',
@@ -330,7 +325,6 @@ export default function UserRooms() {
 
         enterRoomSession(createdRoom);
       } else {
-        // Backend said no (for example the daily room limit)
         const msg = data.error || data.message || 'Failed to create room.';
         if (/limit reached/i.test(msg)) {
           openLimitModal(msg);
@@ -412,12 +406,9 @@ export default function UserRooms() {
     });
   };
 
-  // Suspended rooms are hidden everywhere. Inactive rooms are hidden from ALL ROOMS only.
   const visibleRooms = roomsList.filter((r) => !r.isClosed);
   const filteredAllRooms = filterRooms(visibleRooms.filter((r) => r.privacy === 'public'));
   const filteredMyRooms = filterRooms(visibleRooms.filter((r) => r.host === myUsername));
-
-  // History uses the same search + course filter as the room tabs
   const filteredHistory = filterRooms(roomHistory);
 
   const filteredCourseOptions = COURSE_OPTIONS.filter((c) =>
@@ -430,7 +421,6 @@ export default function UserRooms() {
       ? 'border-[#315B8C] bg-[#EAF3FF] text-[#315B8C]'
       : 'border-[#6846A5] bg-[#F1EDFF] text-[#6846A5]';
 
-    // ---------- HISTORY CARD (a room you studied in) ----------
     if (isHistoryTab) {
       return (
         <div
@@ -478,7 +468,6 @@ export default function UserRooms() {
       );
     }
 
-    // ---------- NORMAL ROOM CARD ----------
     const roomTaskType = room.taskType || 'individual';
     const isFull = room.currentMembers >= room.maxMembers;
 
@@ -764,7 +753,6 @@ export default function UserRooms() {
             </div>
 
             <div className="flex flex-col gap-4">
-              {/* 1. ROOM NAME */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between">
                   <label className="font-pressstart text-[9px] text-theme-dark">ROOM NAME</label>
@@ -782,7 +770,6 @@ export default function UserRooms() {
                 />
               </div>
 
-              {/* 2. COURSE */}
               <div className="flex flex-col gap-1.5 relative" ref={courseDropdownRef}>
                 <label className="font-pressstart text-[9px] text-theme-dark">COURSE</label>
                 <div className="relative w-full">
@@ -832,7 +819,6 @@ export default function UserRooms() {
                 )}
               </div>
 
-              {/* 3. PRIVACY */}
               <div className="flex flex-col gap-1.5">
                 <label className="font-pressstart text-[9px] text-theme-dark">PRIVACY</label>
                 <div className="flex gap-3">
@@ -840,7 +826,7 @@ export default function UserRooms() {
                     type="button"
                     onClick={() => {
                       setNewRoomPrivacy('public');
-                      setNewRoomTaskType('individual'); // Public rooms default automatically to individual tasks
+                      setNewRoomTaskType('individual');
                     }}
                     className={`flex-1 flex items-center justify-center gap-2 font-pressstart text-[9px] py-2.5 rounded-[8px] cursor-pointer transition-all ${
                       newRoomPrivacy === 'public'
@@ -865,7 +851,6 @@ export default function UserRooms() {
                 </div>
               </div>
 
-              {/* 4. CONDITIONAL TASKS SELECTOR DROPDOWN (ONLY FOR PRIVATE ROOMS) */}
               {newRoomPrivacy === 'private' && (
                 <div className="flex flex-col gap-1.5">
                   <label className="font-pressstart text-[9px] text-theme-dark">TASKS BEHAVIOR</label>
@@ -891,7 +876,6 @@ export default function UserRooms() {
                 </div>
               )}
 
-              {/* 5. MAXIMUM MEMBERS */}
               <div className="flex flex-col gap-1.5">
                 <label className="font-pressstart text-[9px] text-theme-dark">MAXIMUM MEMBERS</label>
                 <div className="relative flex items-center">
@@ -964,7 +948,7 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* GENERIC NOTICE MODAL (replaces the browser alert()) */}
+      {/* GENERIC NOTICE MODAL */}
       {notice && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center">
@@ -1047,91 +1031,134 @@ export default function UserRooms() {
         </div>
       )}
 
-      {/* STATISTICS MODAL (ROOM HISTORY) */}
+{/* STATISTICS MODAL (REVISED TO OLD STYLE) */}
       {showStatsModal && selectedStatsRoom && (
         <div className="fixed inset-0 bg-theme-dark/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-6 sm:p-8 w-full max-w-lg shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-center relative pb-2">
-              <h3 className="font-pressstart text-[14px] text-theme-primary tracking-wide text-center">
+              <h3 className="font-pressstart text-[10px] sm:text-[15px] text-theme-primary tracking-wide uppercase">
                 STATISTICS: {selectedStatsRoom.name}
               </h3>
             </div>
 
             <div className="flex flex-col gap-4 font-pressstart text-[9px] text-theme-dark">
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
-                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">COURSE</span>
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5">
+                      <path d="M20 15c0 1.864 0 2.796-.304 3.53a4 4 0 0 1-2.165 2.165C16.796 21 15.864 21 14 21h-3c-3.772 0-5.658 0-6.83-1.172C3 18.657 3 16.771 3 13V7a4 4 0 0 1 4-4" />
+                      <path d="m10 8.5l.434 3.969a.94.94 0 0 0 .552.753c.686.295 1.971.778 3.014.778s2.328-.483 3.014-.778a.94.94 0 0 0 .553-.753L18 8.5m2.5-1v3.77M14 4L7 7l7 3l7-3z" />
+                    </g>
+                  </svg>
+                  COURSE
+                </span>
                 <span className="font-pixel text-[18px] sm:text-[20px] text-theme-primary">
                   {selectedStatsRoom.course || 'General Studies'}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
-                <span className="font-pixel text-[20px] text-theme-dark">STUDY TECHNIQUE</span>
-                <span className="font-pixel text-[20px] text-theme-dark">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <g fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2">
+                      <path strokeLinejoin="round" d="M15.5 4H18a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2.5" />
+                      <path strokeLinejoin="round" d="M8.621 3.515A2 2 0 0 1 10.561 2h2.877a2 2 0 0 1 1.94 1.515L16 6H8z" />
+                      <path d="M9 12h6m-6 4h6" />
+                    </g>
+                  </svg>
+                  STUDY TECHNIQUE
+                </span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">
                   {selectedStatsRoom.technique}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
-                <span className="font-pixel text-[20px] text-theme-dark">FOCUS TIME</span>
-                <span className="font-pixel text-[20px] text-theme-dark">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                    <path d="M0 0h512v512H0z" fill="none" />
+                    <path fill="none" stroke="currentColor" strokeMiterlimit="10" strokeWidth="32" d="M256 64C150 64 64 150 64 256s86 192 192 192s192-86 192-192S362 64 256 64Z" />
+                    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="32" d="M256 128v144h96" />
+                  </svg>
+                  FOCUS TIME
+                </span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">
                   {selectedStatsRoom.focus}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
-                <span className="font-pixel text-[20px] text-theme-dark">BREAK TIME</span>
-                <span className="font-pixel text-[20px] text-theme-dark">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 20h6.943m0 0h.114m-.114 0h.114m-.114 0A7 7 0 0 1 4 13V8.923c0-.51.413-.923.923-.923h12.154c.51 0 .923.413.923.923V9m-6.943 11H18m-6.943 0A7 7 0 0 0 18 13m0-4h1.5a2.5 2.5 0 0 1 0 5H18v-1m0-4v4M15 3l-1 2m-2-2l-1 2M9 3L8 5" />
+                  </svg>
+                  BREAK TIME
+                </span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">
                   {selectedStatsRoom.breakTime}
                 </span>
               </div>
 
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-solid border-theme-dark/40">
-                <span className="font-pixel text-[20px] text-theme-dark">NUMBER OF SESSIONS</span>
-                <span className="font-pixel text-[20px] text-theme-dark">
-                  {selectedStatsRoom.sessions} {selectedStatsRoom.sessions === 1 ? 'Session' : 'Sessions'}
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+                    <path d="M0 0h32v32H0z" fill="none" />
+                    <path fill="currentColor" d="m27 25.586l-2-2V21h-2v3.414L25.586 27z" />
+                    <path fill="currentColor" d="M24 31c-3.86 0-7-3.14-7-7s3.14-7 7-7s7 3.14 7 7s-3.14 7-7 7m0-12c-2.757 0-5 2.243-5 5s2.243 5 5 5s5-2.243 5-5s-2.243-5-5-5m4-4h2V5c0-1.103-.897-2-2-2h-3v2h3z" />
+                    <circle cx="9" cy="13" r="2" fill="currentColor" />
+                    <circle cx="16" cy="13" r="2" fill="currentColor" />
+                    <circle cx="23" cy="13" r="2" fill="currentColor" />
+                    <path fill="currentColor" d="M7 23H4c-1.103 0-2-.897-2-2V5c0-1.103.897-2 2-2h3v2H4v16h3z" />
+                  </svg>
+                  NUMBER OF SESSIONS
+                </span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">
+                  {selectedStatsRoom.sessions} Sessions
                 </span>
               </div>
 
               <div className="flex justify-between items-center pt-1">
-                <span className="font-pixel text-[20px] text-theme-dark">TASKS COMPLETED</span>
-                <span className="font-pixel text-[20px] text-theme-dark">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark flex items-center gap-2">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-theme-primary shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 4h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3m0 3h6m-3 5h3m-6 0h.01M12 16h3m-6 0h.01M10 3v4h4V3z" />
+                  </svg>
+                  TASKS COMPLETED
+                </span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-dark">
                   {selectedStatsRoom.tasks.filter((t) => t.completed).length} /{' '}
                   {selectedStatsRoom.tasks.length}
                 </span>
               </div>
 
               <div className="flex flex-col gap-2 pb-3 border-b-[2px] border-solid border-theme-dark">
-                {selectedStatsRoom.tasks.length > 0 ? (
-                  <ul className="flex flex-col text-[8px] list-none pl-2 m-0 gap-1">
-                    {selectedStatsRoom.tasks.map((t, idx) => (
-                      <li key={idx} className="flex justify-between items-center">
-                        <span className={t.completed ? 'line-through text-theme-dark/60' : ''}>
-                          {typeof t === 'string' ? t : t.text}
-                        </span>
-                        {t.completed && (
-                          <span className="text-theme-primary font-pixel text-[20px]">✓</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="font-pressstart text-[8px] text-theme-dark/60 italic pl-2">
-                    No tasks were recorded in this room.
-                  </p>
-                )}
+                <ul className="flex flex-col font-pixel text-[18px] sm:text-[20px] list-none pl-2 m-0 gap-1">
+                  {selectedStatsRoom.tasks.map((t, idx) => (
+                    <li key={idx} className="flex justify-between items-center">
+                      <span className={t.completed ? 'line-through text-theme-dark/60' : ''}>
+                        {t.text}
+                      </span>
+                      {t.completed && (
+                        <span className="text-theme-primary font-pixel text-[18px] sm:text-[20px]">✓</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
 
               <div className="flex justify-between items-center pb-3 border-b-[1.5px] border-dashed border-theme-dark/30">
-                <span className="font-pixel text-[20px] text-theme-dark">XP EARNED</span>
-                <span className="font-pixel text-[20px] text-[#7E57C2]">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark">XP EARNED</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-[#7E57C2]">
                   {selectedStatsRoom.xp} XP
                 </span>
               </div>
 
               <div className="flex justify-between items-center">
-                <span className="font-pixel text-[20px] text-theme-dark">COINS EARNED</span>
-                <span className="font-pixel text-[20px] text-theme-primary">
+                <span className="font-pressstart text-[10px] sm:text-[13px] text-theme-dark">COINS EARNED</span>
+                <span className="font-pixel text-[18px] sm:text-[20px] text-theme-primary">
                   {selectedStatsRoom.coins} coins
                 </span>
               </div>
@@ -1139,10 +1166,7 @@ export default function UserRooms() {
 
             <div className="flex items-center justify-center pt-2">
               <button
-                onClick={() => {
-                  setShowStatsModal(false);
-                  setSelectedStatsRoom(null);
-                }}
+                onClick={() => setShowStatsModal(false)}
                 className="font-pressstart text-[9px] sm:text-[10px] text-theme-white bg-theme-primary border-[2px] border-theme-dark px-8 py-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-[#d66530] w-full"
               >
                 CLOSE
