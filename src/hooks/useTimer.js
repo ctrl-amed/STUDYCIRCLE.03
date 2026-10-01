@@ -2,24 +2,59 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
 const TIMER_STATE_KEY = 'timerState';
+const TELEMETRY_KEY = 'nudgeTelemetry';
 
+// How long the "Are you still here?" modal waits for a click before it closes
+const NUDGE_COUNTDOWN_SEC = 30;
+
+// FRD Section 2 / Table 2.1
+//   gracePeriodMs    = no idle detection during the first N ms of a focus block
+//   idleThresholdMs  = consecutive ms with no mouse / keyboard = "idle"
+//   cooldownMs       = spacing after a nudge is RENDERED
+//   maxCap           = max nudges per focus block
 const TECHNIQUE_CONFIGS = {
   POMODORO: {
-    gracePeriodMs: 3 * 60 * 1000, // 3 minutes grace period
+    gracePeriodMs: 3 * 60 * 1000,
+    idleThresholdMs: 120 * 1000,
     cooldownMs: 5 * 60 * 1000,
     maxCap: 2,
   },
   MEDIUM: {
-    gracePeriodMs: 5 * 60 * 1000, // 5 minutes grace period
+    gracePeriodMs: 5 * 60 * 1000,
+    idleThresholdMs: 120 * 1000,
     cooldownMs: 10 * 60 * 1000,
     maxCap: 3,
   },
   ULTRADIAN: {
-    gracePeriodMs: 10 * 60 * 1000, // 10 minutes grace period
+    gracePeriodMs: 10 * 60 * 1000,
+    idleThresholdMs: 120 * 1000,
     cooldownMs: 15 * 60 * 1000,
     maxCap: 4,
   },
 };
+
+// DEMO ONLY: short timings so the nudge shows within seconds while recording.
+// Turn on from the browser console BEFORE pressing Start:
+//   localStorage.setItem('nudgeDemo', '1')      (turn off: localStorage.removeItem('nudgeDemo'))
+const DEMO_CONFIG = {
+  gracePeriodMs: 10 * 1000,
+  idleThresholdMs: 10 * 1000,
+  cooldownMs: 20 * 1000,
+  maxCap: 2,
+};
+
+// DEVIATION FROM FRD SECTION 3 (document this in the thesis):
+// The FRD holds the nudge in an invisible "Waiting Queue" until the next
+// mouse/keyboard event or 00:00. Here the modal is shown the moment the idle
+// threshold is reached (after the grace period). The timer pauses while the
+// modal is open, so time spent away is never credited as focus time.
+//
+// The 30s countdown runs for EVERYONE (solo players and shared-room members):
+//   - solo player / host-free session: the clock is already paused when the modal
+//     opens, so when the countdown hits 0 the modal just closes and the timer
+//     stays paused until the player presses resume.
+//   - shared-room member: the clock follows the host, so at 0 the member is
+//     self-paused and must press RESUME to re-sync with the host.
 
 const parseNum = (val, fallback) => {
   const num = parseInt(val, 10);
@@ -43,6 +78,38 @@ const readSavedTimerState = (sid) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// FRD Table 2.2 telemetry (kept per session, survives a page refresh)
+// ---------------------------------------------------------------------------
+const emptyTelemetry = () => ({
+  idleEvents: 0, // times the 120s inactivity threshold was reached
+  nudgesTriggered: 0, // modal renders
+  nudgesAccepted: 0, // YES clicks
+  idleStartTimestamp: null, // epoch ms when inactivity was registered
+  nudgeRenderTimestamp: null, // epoch ms when the modal mounted
+  latencyTotalMs: 0, // sum of render -> YES click times
+});
+
+const readSavedTelemetry = (sid) => {
+  try {
+    const raw = localStorage.getItem(TELEMETRY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.sid === sid ? { ...emptyTelemetry(), ...parsed } : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+// Maps the technique name to the study_technique ENUM in FRD Table 2.2
+// ('POMODORO', 'MEDIUM_75_33', 'ULTRADIAN_90'). 52-17 and 75-33 are both "Medium".
+const techniqueEnum = (name) => {
+  const t = String(name || '').toUpperCase();
+  if (t.includes('52') || t.includes('75') || t.includes('MEDIUM')) return 'MEDIUM_75_33';
+  if (t.includes('90') || t.includes('ULTRADIAN')) return 'ULTRADIAN_90';
+  return 'POMODORO';
+};
+
 export function useTimer() {
   const { addFocusTime, incrementTotalSessions, addUserActivity } = usePlayer() || {};
   const [activeSession, setActiveSession] = useState(null);
@@ -61,7 +128,7 @@ export function useTimer() {
   // Nudge States
   const [isIdle, setIsIdle] = useState(false);
   const [showNudgeModal, setShowNudgeModal] = useState(false);
-  const [nudgeCountdown, setNudgeCountdown] = useState(30);
+  const [nudgeCountdown, setNudgeCountdown] = useState(NUDGE_COUNTDOWN_SEC);
   const [isCooldownActive, setIsCooldownActive] = useState(false);
   const [nudgeCount, setNudgeCount] = useState(0);
   const [pausedSeconds, setPausedSeconds] = useState(0);
@@ -72,9 +139,10 @@ export function useTimer() {
   const selfPausedRef = useRef(false);
   const selfPauseStartRef = useRef(null);
 
-  const sessionStartTimeRef = useRef(null);
   const pipWindowRef = useRef(null);
   const nudgeIntervalRef = useRef(null);
+  const cooldownTimeoutRef = useRef(null);
+  const toastTimeoutRef = useRef(null);
   const [nudgePauseCount, setNudgePauseCount] = useState(0);
 
   // The timer is driven by a wall-clock end time, NOT by counting ticks.
@@ -83,8 +151,10 @@ export function useTimer() {
   const phaseEndsAtRef = useRef(0);
 
   // When true, the idle "Are you still here?" nudge never pauses this player
-  // (used for members of a host-controlled shared room)
+  // (used for hosts of a shared room)
   const nudgeDisabledRef = useRef(false);
+
+  const telemetryRef = useRef(emptyTelemetry());
 
   // Always-fresh copy of the latest state, readable from stable callbacks
   const liveRef = useRef({});
@@ -101,15 +171,20 @@ export function useTimer() {
     pausedSeconds,
   };
 
-  const showRetroToast = (msg) => {
+  const showRetroToast = useCallback((msg) => {
     setToastMessage(msg);
-    setTimeout(() => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => {
       setToastMessage('');
     }, 4000);
-  };
+  }, []);
 
   const getTechniqueConfig = useCallback(() => {
     if (!activeSession) return TECHNIQUE_CONFIGS.POMODORO;
+
+    // demo shortcut (see DEMO_CONFIG at the top)
+    if (localStorage.getItem('nudgeDemo') === '1') return DEMO_CONFIG;
+
     const techName = (activeSession.techniqueName || '').toUpperCase();
 
     if (techName.includes('52') || techName.includes('75') || techName.includes('MEDIUM')) {
@@ -120,6 +195,42 @@ export function useTimer() {
     }
     return TECHNIQUE_CONFIGS.POMODORO;
   }, [activeSession]);
+
+  // ---------------------------------------------------------------------------
+  // TELEMETRY HELPERS
+  // ---------------------------------------------------------------------------
+  const updateTelemetry = useCallback((mutate) => {
+    mutate(telemetryRef.current);
+    try {
+      localStorage.setItem(
+        TELEMETRY_KEY,
+        JSON.stringify({ sid: sessionIdOf(liveRef.current.activeSession), ...telemetryRef.current })
+      );
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, []);
+
+  const resetTelemetry = useCallback(() => {
+    telemetryRef.current = emptyTelemetry();
+    localStorage.removeItem(TELEMETRY_KEY);
+  }, []);
+
+  // What the frontend sends to the server when the session is saved
+  const getNudgeTelemetry = useCallback(() => {
+    const t = telemetryRef.current;
+    const avgLatency = t.nudgesAccepted ? Math.round(t.latencyTotalMs / t.nudgesAccepted) : null;
+    return {
+      idleEvents: t.idleEvents,
+      nudgesTriggered: t.nudgesTriggered,
+      nudgesAccepted: t.nudgesAccepted,
+      idleStartTimestamp: t.idleStartTimestamp,
+      nudgeRenderTimestamp: t.nudgeRenderTimestamp,
+      resumptionLatencyMs: avgLatency,
+      returnSpeedMs: avgLatency, // return_speed: legacy field in Table 2.2
+      studyTechnique: techniqueEnum(liveRef.current.activeSession?.techniqueName),
+    };
+  }, []);
 
   const calculateDailyFocusText = useCallback(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -225,7 +336,6 @@ export function useTimer() {
       localStorage.setItem('activeSession', JSON.stringify(synced));
       setActiveSession(synced);
       setTotalSessions(parseNum(s.sessionCount, 1));
-      sessionStartTimeRef.current = Date.now();
       setIsIdle(false);
       setShowNudgeModal(false);
       setIsCooldownActive(false);
@@ -233,6 +343,7 @@ export function useTimer() {
       // keep already-ticked tasks / nudge count if we're just re-syncing the same session
       if (!sameSession) {
         setNudgeCount(0);
+        resetTelemetry();
         setTasksList(
           (s.tasks || []).map((t) => (typeof t === 'string' ? { text: t, completed: false } : t))
         );
@@ -254,7 +365,7 @@ export function useTimer() {
       };
       applySnapshotCore(snapshot, serverNow);
     },
-    [applySnapshotCore]
+    [applySnapshotCore, resetTelemetry]
   );
 
   // ---------------------------------------------------------------------------
@@ -292,7 +403,9 @@ export function useTimer() {
           breakTime: breakMins,
         });
 
-        sessionStartTimeRef.current = Date.now();
+        // restore telemetry for this exact session (or start fresh)
+        telemetryRef.current = readSavedTelemetry(sid) || emptyTelemetry();
+
         // restore the nudge count so refreshing / leaving the page can't reset the cap
         setNudgeCount(saved ? Number(saved.nudgeCount) || 0 : 0);
         setIsIdle(false);
@@ -507,42 +620,66 @@ export function useTimer() {
     setPausedSeconds(0);
   }, []);
 
-  // Helper to trigger Nudge Modal with active visual 30s countdown
+  // Mounts the "Are you still here?" modal (FRD Section 1).
+  // Called as soon as the idle threshold is reached (no waiting queue).
   const triggerNudgeModal = useCallback(() => {
     // count the nudge when it is SHOWN (not when it is confirmed),
     // so ignoring a nudge still uses up the cap
     setNudgeCount((c) => c + 1);
+    updateTelemetry((t) => {
+      t.nudgesTriggered += 1;
+      t.nudgeRenderTimestamp = Date.now();
+    });
+
+    // FRD Section 2: the cooldown starts the moment a nudge is RENDERED
+    setIsCooldownActive(true);
+    if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
+    cooldownTimeoutRef.current = setTimeout(
+      () => setIsCooldownActive(false),
+      getTechniqueConfig().cooldownMs
+    );
 
     const isSharedMember = sharedMemberRef.current;
 
+    // Pause the clock so the time you are away is not credited as focus time.
+    // (Members of a shared room follow the host's clock, so theirs is not paused here.)
     if (!isSharedMember) {
       setRemainingTimeSec(secondsLeftUntil(phaseEndsAtRef.current));
       setIsTimerRunning(false);
     }
+
+    // Reset the countdown BEFORE showing the modal, so the "reached 0" effect
+    // below can never see a stale 0 from the previous nudge.
+    setNudgeCountdown(NUDGE_COUNTDOWN_SEC);
     setShowNudgeModal(true);
-    setIsIdle(false);
-    setNudgeCountdown(30);
+
+    // The visible 30s countdown ALWAYS ticks (solo players and shared members).
+    // It only decrements; what happens at 0 is handled by the effect below.
+    if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+    nudgeIntervalRef.current = setInterval(() => {
+      setNudgeCountdown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+  }, [updateTelemetry, getTechniqueConfig]);
+
+  // When the 30s countdown reaches 0 and the user ignored the modal
+  useEffect(() => {
+    if (!showNudgeModal || nudgeCountdown > 0) return;
 
     if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+    setShowNudgeModal(false);
+    setIsIdle(false);
 
-    nudgeIntervalRef.current = setInterval(() => {
-      setNudgeCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(nudgeIntervalRef.current);
-          setShowNudgeModal(false);
-          if (sharedMemberRef.current) {
-            selfPause();
-            showRetroToast('Your timer stopped. Press RESUME to sync back with the host.');
-          } else {
-            setIsTimerRunning(false);
-            showRetroToast('Session paused due to inactivity.');
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, [selfPause]);
+    if (sharedMemberRef.current) {
+      // member of a shared room: stop only THIS player's clock; they resume by re-syncing to the host
+      selfPause();
+      showRetroToast('Your timer stopped. Press RESUME to sync back with the host.');
+    } else {
+      // solo player: the clock was already paused when the modal opened,
+      // so just close the modal and leave the timer paused until they resume
+      setIsTimerRunning(false);
+      showRetroToast('Session paused due to inactivity. Press resume when you are back.');
+    }
+  }, [showNudgeModal, nudgeCountdown, selfPause, showRetroToast]);
 
   // 1. COUNTDOWN TICKER (wall-clock based, so background tabs / throttling can't slow it)
   useEffect(() => {
@@ -553,9 +690,6 @@ export function useTimer() {
       setRemainingTimeSec(left);
       if (left <= 0) {
         setIsTimerRunning(false);
-        if (liveRef.current.isIdle) {
-          triggerNudgeModal();
-        }
       }
     };
 
@@ -568,58 +702,100 @@ export function useTimer() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', tick);
     };
-  }, [isTimerRunning, triggerNudgeModal]);
+  }, [isTimerRunning]);
 
-  // 2. BOUNDARY-QUEUED IDLE VERIFICATION LOGIC
+  // 2. IDLE VERIFICATION (FRD Section 2)
+  //
+  //   a) No idle detection during the grace period of the focus block.
+  //   b) Once grace is over, 120s with no mouse / keyboard = idle.
+  //      The idle clock only starts counting after the grace period ends,
+  //      so the earliest nudge is (grace + 120s) after the focus block started.
+  //   c) The "Are you still here?" modal is shown right away and the timer pauses
+  //      until the user clicks YES. A nudge is never shown during cooldown or
+  //      after the cap for this block has been reached.
   useEffect(() => {
     if (!isTimerRunning || !activeSession || !isFocusPhase) {
       setIsIdle(false);
-      return;
+      return undefined;
     }
     const config = getTechniqueConfig();
-    if (isCooldownActive || nudgeCount >= config.maxCap) return;
+    if (isCooldownActive || nudgeCount >= config.maxCap) return undefined;
+
+    const focusTotalSec = parseNum(activeSession.focusTime, 25) * 60;
     let idleTimer;
-    const startIdleTimer = () => {
+
+    // Grace is measured from the FOCUS time already elapsed in this block, so it
+    // starts when the timer starts (not when the session was created) and pausing,
+    // resuming or refreshing cannot reset it.
+    const graceRemainingMs = () => {
+      const elapsedMs = (focusTotalSec - secondsLeftUntil(phaseEndsAtRef.current)) * 1000;
+      return Math.max(0, config.gracePeriodMs - elapsedMs);
+    };
+
+    const armIdleTimer = () => {
       clearTimeout(idleTimer);
-      const graceLeft = Math.max(
-        0,
-        config.gracePeriodMs - (Date.now() - (sessionStartTimeRef.current || Date.now()))
-      );
+      // fires 120s after the LATER of: the last activity, or the end of the grace period
       idleTimer = setTimeout(() => {
         if (nudgeDisabledRef.current) return; // shared-room hosts are never nudged
-        setIsIdle(true);
-        triggerNudgeModal();
-      }, Math.max(120000, graceLeft));
+        setIsIdle(true); // FRD Section 3: is_idle = true
+        updateTelemetry((t) => {
+          t.idleEvents += 1;
+          t.idleStartTimestamp = Date.now();
+        });
+        triggerNudgeModal(); // show now (no waiting queue)
+      }, graceRemainingMs() + config.idleThresholdMs);
     };
-    startIdleTimer();
-    window.addEventListener('mousemove', startIdleTimer);
-    window.addEventListener('keydown', startIdleTimer);
+
+    // any mouse / keyboard activity restarts the 120s idle clock
+    const onActivity = () => {
+      armIdleTimer();
+    };
+
+    armIdleTimer();
+    window.addEventListener('mousemove', onActivity);
+    window.addEventListener('keydown', onActivity);
     return () => {
       clearTimeout(idleTimer);
-      window.removeEventListener('mousemove', startIdleTimer);
-      window.removeEventListener('keydown', startIdleTimer);
+      window.removeEventListener('mousemove', onActivity);
+      window.removeEventListener('keydown', onActivity);
     };
-  }, [isTimerRunning, activeSession, isFocusPhase, isCooldownActive, nudgeCount, getTechniqueConfig, triggerNudgeModal]);
+  }, [
+    isTimerRunning,
+    activeSession,
+    isFocusPhase,
+    isCooldownActive,
+    nudgeCount,
+    getTechniqueConfig,
+    triggerNudgeModal,
+    updateTelemetry,
+  ]);
 
-  // Handler when user clicks "YES, I'M HERE" before timer reaches 0
+  // Handler when user clicks "YES, I'M HERE"
   const handleConfirmNudge = useCallback(() => {
     if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
-    const config = getTechniqueConfig();
+
+    // FRD telemetry: nudges_accepted + resumption_latency (render -> YES click)
+    updateTelemetry((t) => {
+      t.nudgesAccepted += 1;
+      if (t.nudgeRenderTimestamp) t.latencyTotalMs += Date.now() - t.nudgeRenderTimestamp;
+    });
 
     setShowNudgeModal(false);
+    setIsIdle(false);
+    setNudgeCountdown(NUDGE_COUNTDOWN_SEC);
 
     if (!sharedMemberRef.current) {
       startTimerClock(liveRef.current.remainingTimeSec);
     }
+    // (the cooldown already started when the modal was rendered)
+  }, [startTimerClock, updateTelemetry]);
 
-    setIsCooldownActive(true);
-    setTimeout(() => setIsCooldownActive(false), config.cooldownMs);
-  }, [getTechniqueConfig, startTimerClock]);
-
-  // Cleanup intervals on unmount
+  // Cleanup intervals / timeouts on unmount
   useEffect(() => {
     return () => {
       if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+      if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
+      if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
   }, []);
 
@@ -653,6 +829,11 @@ export function useTimer() {
             pipWindowRef.current.close();
           }
         } else {
+          // New focus block: FRD limits are per block, so the nudge cap and the
+          // cooldown start fresh (the grace period is measured per block already)
+          setNudgeCount(0);
+          setIsCooldownActive(false);
+          if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
           setIsFocusPhase(true);
           setRemainingTimeSec(focusSecs);
         }
@@ -692,10 +873,13 @@ export function useTimer() {
 
   const cancelSession = () => {
     if (window.confirm('Are you sure you want to cancel the active session?')) {
+      if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
       setIsTimerRunning(false);
       setActiveSession(null);
       localStorage.removeItem('activeSession');
       localStorage.removeItem(TIMER_STATE_KEY);
+      resetTelemetry();
+      setShowNudgeModal(false);
       setIsWidgetFloating(false);
       setIsWidgetFullscreen(false);
       setIsPipActive(false);
@@ -708,24 +892,30 @@ export function useTimer() {
 
   const closeRewardModal = () => {
     // Save the session details first so the Feedback Modal can still use them
+    // (nudgeTelemetry goes along so it can be sent to /api/v1/sessions/complete)
     if (activeSession) {
       localStorage.setItem('completedSessionData', JSON.stringify({
         ...activeSession,
-        tasks: tasksList
+        tasks: tasksList,
+        nudgeTelemetry: getNudgeTelemetry(),
       }));
     }
     setShowRewardModal(false);
     setActiveSession(null);
     localStorage.removeItem('activeSession');
     localStorage.removeItem(TIMER_STATE_KEY);
+    resetTelemetry();
   };
 
   const triggerInstantComplete = () => {
     if (activeSession) {
+      if (nudgeIntervalRef.current) clearInterval(nudgeIntervalRef.current);
+      setShowNudgeModal(false);
       setIsTimerRunning(false);
       localStorage.setItem('completedSessionData', JSON.stringify({
         ...activeSession,
-        tasks: tasksList
+        tasks: tasksList,
+        nudgeTelemetry: getNudgeTelemetry(),
       }));
       saveFinishedSessionToHistory(activeSession, tasksList);
       if (incrementTotalSessions) {
@@ -924,6 +1114,8 @@ export function useTimer() {
     beginResync,
     getNudgePenalty,
     resetNudgePenalty,
+    // FRD Table 2.2 telemetry
+    getNudgeTelemetry,
   };
 }
 
