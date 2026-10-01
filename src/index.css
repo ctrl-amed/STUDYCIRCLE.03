@@ -232,3 +232,24 @@
   transform-origin: center;
   animation: shrinkToCenter 4s linear forwards;
 }
+
+
+/* ========================================================= */
+/* CIRCLING / TRACING BORDER ANIMATION FOR ACTIVE TECHNIQUE  */
+/* ========================================================= */
+@keyframes borderTrace {
+  0% {
+    box-shadow: 0 0 0 2px var(--color-primary), 0 0 10px rgba(232, 115, 57, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px var(--color-primary), 0 0 20px rgba(232, 115, 57, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 0 2px var(--color-primary), 0 0 10px rgba(232, 115, 57, 0.5);
+  }
+}
+
+.active-circling-border {
+  animation: borderTrace 2s infinite ease-in-out;
+  position: relative;
+}

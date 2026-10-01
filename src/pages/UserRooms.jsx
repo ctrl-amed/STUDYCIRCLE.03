@@ -16,6 +16,7 @@ const COURSE_OPTIONS = [
   'Bachelor of Science in Computer Science (Application Development Elective Track)',
   'Diploma in Application Development',
   'Diploma in Computer Network Administration',
+  'Bachelor of Science in Information System',
 ];
 
 // Minutes (integer from the backend) -> "2h 05m"

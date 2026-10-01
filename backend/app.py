@@ -4036,7 +4036,6 @@ def admin_suspend_user():
         print("ADMIN SUSPEND ERROR:", str(e))
         return jsonify({'success': False, 'error': str(e)}), 500
 
-
 # =============================================================================
 # IT ADMIN DASHBOARD  ->  GET /api/itadmin/dashboard
 #

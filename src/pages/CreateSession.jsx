@@ -1,3 +1,4 @@
+// src/pages/CreateSession.jsx
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
@@ -44,7 +45,6 @@ export default function CreateSession() {
           if (data.success) {
             setAiRationale(data.recommendation || "Keep your momentum going with balanced intervals!");
             
-            // Gamitin nang direkta ang structured data na galing sa AI (kasama ang weight at history analysis)
             setRecommendedData({
               techniqueName: data.techniqueName || 'Pomodoro',
               focus: data.focus || 25,
@@ -200,7 +200,7 @@ export default function CreateSession() {
       }
 
       const data = await response.json();
-      console.log("Validation Response:", data); // Dito natin makikita kung anong binalik ng backend
+      console.log("Validation Response:", data);
 
       if (data.success) {
         setValidationResult(data);
@@ -215,14 +215,13 @@ export default function CreateSession() {
       }
     } catch (err) {
       console.error("Task validation fetch failed:", err);
-      // Fallback para hindi ma-lock ang user kapag may error sa backend
       setCurrentStep(3);
     } finally {
       setIsValidating(false);
     }
   };
 
-  // --- SAVE & CONFIRM (Fixed Double Save) ---
+  // --- SAVE & CONFIRM ---
   const handleConfirmSession = () => {
     const validTasks = draftTasks.filter((t) => t.trim() !== '');
     const activeTech = techniqueDetails[selectedTechnique] || techniqueDetails.recommended;
@@ -232,7 +231,6 @@ export default function CreateSession() {
     const finalSessions =
       selectedTechnique === 'recommended' ? recommendedData.sessions : customSessionCount || '1';
 
-    // Gawing uppercase o malinis ang workType para sa database at UI display (hal. "WRITING")
     const formattedWorkType = selectedWorkType ? selectedWorkType.toUpperCase() : 'FOCUS SESSION';
 
     const newSession = {
@@ -240,9 +238,9 @@ export default function CreateSession() {
       activity: formattedWorkType,
       techniqueKey: selectedTechnique,
       techniqueName: activeTech.title,
-      technique: activeTech.title, // <--- IDINAGDAG: para mabasa ng backend/database
-      durationMinutes: focusTime,  // <--- IDINAGDAG
-      duration: focusTime,         // <--- IDINAGDAG
+      technique: activeTech.title,
+      durationMinutes: focusTime,
+      duration: focusTime,
       focusTime,
       breakTime,
       sessionCount: finalSessions,
@@ -252,9 +250,6 @@ export default function CreateSession() {
 
     localStorage.setItem('activeSession', JSON.stringify(newSession));
 
-    // Let the parent window know a session was created. UserHomepage decides
-    // whether to broadcast it to a shared room — CreateSession doesn't need
-    // to know anything about multiplayer state itself.
     window.parent.postMessage({ type: 'SESSION_CREATED', session: newSession }, '*');
     window.parent.postMessage('CLOSE_CREATE_SESSION_MODAL', '*');
   };
@@ -330,7 +325,7 @@ export default function CreateSession() {
                       onClick={() => setSelectedWorkType(opt.id)}
                       className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-3 sm:p-6 min-h-[120px] sm:min-h-[180px] text-left flex flex-col transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] dark:bg-zinc-900 ${
                         selectedWorkType === opt.id
-                          ? 'bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] dark:from-zinc-800 dark:to-zinc-700'
+                          ? 'card-highlight'
                           : ''
                       }`}
                     >
@@ -467,7 +462,7 @@ export default function CreateSession() {
                     onClick={() => setSelectedTechnique('recommended')}
                     className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 sm:p-5 text-center flex flex-col items-center justify-center gap-3 transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] dark:bg-zinc-900 ${
                       selectedTechnique === 'recommended'
-                        ? 'ring-2 ring-theme-primary bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] dark:from-zinc-800 dark:to-zinc-700'
+                        ? 'card-highlight active-circling-border'
                         : ''
                     }`}
                   >
@@ -476,17 +471,19 @@ export default function CreateSession() {
                     </div>
 
                     {isLoadingAI ? (
-  <span className="font-pixel text-sm text-theme-dark/70 animate-pulse flex items-center justify-center gap-1">
-    Analyzing your study habits
-    <span className="animate-bounce">.</span>
-    <span className="animate-bounce [animation-delay:0.2s]">.</span>
-    <span className="animate-bounce [animation-delay:0.4s]">.</span>
-  </span>
-) : (
-  <p className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/90 px-2 italic">
-    "{aiRationale || recommendedData.techniqueName}"
-  </p>
-)}
+                      <div className="flex items-center justify-center gap-2 py-2 text-theme-primary">
+                        <svg className="w-5 h-5 animate-spin shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
+                        </svg>
+                        <span className="font-pixel text-[16px] sm:text-[18px] tracking-wide animate-pulse">
+                          Analyzing your study habits...
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="font-pixel text-[15px] sm:text-[18px] text-theme-dark/90 px-2 italic">
+                        "{aiRationale || recommendedData.techniqueName}"
+                      </p>
+                    )}
                     <div className="w-full h-[1px] bg-theme-dark/20" />
                     <div className="w-full grid grid-cols-3 items-center justify-center divide-x divide-theme-dark/20">
                       <div className="flex items-center justify-center gap-3 px-1">
@@ -543,7 +540,7 @@ export default function CreateSession() {
                         onClick={() => setSelectedTechnique(item.key)}
                         className={`bg-theme-surface rounded-[12px] border-[1px] border-theme-dark p-4 text-left flex flex-col justify-between transition-all duration-150 cursor-pointer hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_#3D2013] active:translate-x-0.5 active:translate-y-0.5 active:shadow-[1px_1px_0px_#3D2013] dark:bg-zinc-900 ${
                           selectedTechnique === item.key
-                            ? 'bg-gradient-to-b from-[#FDE4D0] to-[#FFD2AE] dark:from-zinc-800 dark:to-zinc-700'
+                            ? 'card-highlight active-circling-border'
                             : ''
                         }`}
                       >
@@ -708,6 +705,7 @@ export default function CreateSession() {
 
         </div>
       </main>
+
       {/* TASK VALIDATION WARNING MODAL*/}
       {showValidationModal && validationResult && (
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -738,7 +736,7 @@ export default function CreateSession() {
               <button
                 onClick={() => {
                   setShowValidationModal(false);
-                  setCurrentStep(3); // Continue anyway option
+                  setCurrentStep(3);
                 }}
                 className="font-pressstart text-[8px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 cursor-pointer hover:opacity-90"
               >

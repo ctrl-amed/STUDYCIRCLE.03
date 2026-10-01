@@ -1,3 +1,4 @@
+// src/pages/UserProfile.jsx
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
@@ -5,7 +6,7 @@ import CustomAvatar from '../components/CustomAvatar';
 // Maps each level-reward badge to its image, per spec
 const LEVEL_BADGES_MAP = {
   1: { img: "media/xp_starter.png", alt: "Badge Starter" },
-  5: { img: "media/badge_regular.png", alt: "Badge Regular" }, // or media/xp_regular.png, depending on your assets
+  5: { img: "media/badge_regular.png", alt: "Badge Regular" },
   10: { img: "media/badge_advanced.png", alt: "Badge Advanced" },
   15: { img: "media/xp_commited.png", alt: "Badge Committed" },
   20: { img: "media/xp_dedicated.png", alt: "Badge Dedicated" },
@@ -148,14 +149,16 @@ export default function UserProfile() {
         {/* ==================== LEFT CARD: USER IDENTITY ==================== */}
         <div className="lg:col-span-4 bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-6 flex flex-col items-center justify-center gap-5 shadow-md h-full">
           {/* AVATAR ICON WITH OVERLAYED LEVEL BADGE */}
-          <div className="relative w-44 h-44 rounded-full border-[4px] border-theme-dark bg-theme-muted flex items-center justify-center overflow-hidden">
-            <div className="absolute inset-0 flex items-center justify-center scale-125 pt-8 pointer-events-none">
-              <CustomAvatar config={avatarConfig} state="idle" />
+          <div className="relative flex items-center justify-center">
+            <div className="w-44 h-44 rounded-full border-[4px] border-theme-dark bg-theme-muted flex items-center justify-center overflow-hidden relative">
+              <div className="absolute inset-0 flex items-center justify-center scale-125 pt-8 pointer-events-none">
+                <CustomAvatar config={avatarConfig} state="idle" />
+              </div>
             </div>
 
             {/* LEVEL BADGE AT BOTTOM RIGHT OVERLAY */}
-            <div className="absolute bottom-1 right-1 bg-theme-primary border-[2px] border-theme-dark px-2 py-0.5 text-center flex items-center justify-center rounded-[6px] shadow-md z-10">
-              <span className="font-pressstart text-[10px] text-theme-dark font-bold">
+            <div className="absolute bottom-1 right-2 bg-theme-primary border-[2px] border-theme-dark px-2.5 py-1 text-center flex items-center justify-center rounded-[6px] shadow-md z-10">
+              <span className="font-pressstart text-[10px] sm:text-xs text-theme-dark font-bold">
                 {player?.level ?? 1}
               </span>
             </div>
@@ -263,7 +266,7 @@ export default function UserProfile() {
                 </span>
               </div>
 
-              {/* CARD D: BEST STREAK (highest streak the account has ever reached) */}
+              {/* CARD D: BEST STREAK */}
               <div className="bg-theme-surface border-[2px] border-theme-dark rounded-[12px] p-3 flex flex-col items-center justify-between text-center gap-2 min-h-[110px]">
                 <svg className="w-6 h-6 text-theme-primary" viewBox="0 0 24 24">
                   <path d="M0 0h24v24H0z" fill="none" />

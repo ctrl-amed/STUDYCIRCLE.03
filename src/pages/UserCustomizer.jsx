@@ -1,3 +1,4 @@
+// src/pages/UserCustomizer.jsx
 import React, { useState, useEffect } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
@@ -154,7 +155,6 @@ const ALL_ASSETS = [
   ...ROOM_CATALOG.room.map((a) => ({ ...a, folder: 'ROOMS', catKey: 'room' })),
 ];
 
-// Fallback defaults used only when a user has no saved config anywhere yet
 const DEFAULT_AVATAR_CONFIG = {
   body: 'BODY1',
   face: 'FACE1',
@@ -167,9 +167,6 @@ const DEFAULT_AVATAR_CONFIG = {
 const DEFAULT_ROOM_CONFIG = { room: 'ROOM1' };
 const DEFAULT_UNLOCKED_ITEMS = ['BODY1', 'BODY2', 'BODY3', 'FACE1', 'TOP7', 'BOTTOM6', 'ROOM1'];
 
-// FIX: every cached key below is namespaced per user email so one browser
-// can never show account A's avatar/room/inventory while account B is
-// logged in (this was the "Lekshi's avatar shows on Hehe's account" bug).
 const storageKey = (base, email) => (email ? `${base}_${email}` : `${base}_guest`);
 
 export default function UserCustomizer() {
@@ -180,17 +177,24 @@ export default function UserCustomizer() {
   const [avatarCategory, setAvatarCategory] = useState('skin & face');
   const [roomCategory, setRoomCategory] = useState('room');
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
-  const [toast, setToast] = useState(null);
+
+  // Toasts State (Matching Auth.jsx)
+  const [toasts, setToasts] = useState([]);
+
+  const triggerToast = (message) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
+
+  const showToast = triggerToast;
 
   const [avatarConfig, setAvatarConfig] = useState(DEFAULT_AVATAR_CONFIG);
   const [roomConfig, setRoomConfig] = useState(DEFAULT_ROOM_CONFIG);
   const [unlockedItems, setUnlockedItems] = useState(DEFAULT_UNLOCKED_ITEMS);
 
-  // FIX: this effect re-loads the correct data whenever the logged-in user
-  // changes, or whenever playerData finishes loading from the backend.
-  // Before, a useState(() => ...) initializer only ran ONCE on first mount,
-  // so if playerData arrived a moment later (or belonged to a different
-  // user than before), the screen kept showing stale/wrong data.
   useEffect(() => {
     if (playerData?.avatarConfig) {
       setAvatarConfig(playerData.avatarConfig);
@@ -224,8 +228,6 @@ export default function UserCustomizer() {
         setUnlockedItems(DEFAULT_UNLOCKED_ITEMS);
       }
     }
-    // Re-run whenever the account changes or the backend data for this
-    // account finishes loading/updating.
   }, [userEmail, playerData?.avatarConfig, playerData?.roomConfig, playerData?.unlockedItems]);
 
   const baseUrl = import.meta.env.BASE_URL.endsWith('/')
@@ -235,19 +237,6 @@ export default function UserCustomizer() {
   const coinIconUrl = `${baseUrl}media/coin_logo.png`;
   const platformIconUrl = `${baseUrl}media/platform.png`;
 
-  const showToast = (message) => {
-    setToast(message);
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => setToast(null), 2200);
-  };
-
-  // FIX: this used to only look at the currently active tab (avatar OR
-  // room), which meant you could equip a paid item in one tab, switch to
-  // the other tab (where nothing was pending), and hit "Save Changes" to
-  // keep the paid item for free — it was never charged for and never
-  // added to unlockedItems. Now it always checks BOTH avatar and room
-  // items together, regardless of which tab is open, so nothing equipped
-  // can be saved without being paid for first.
   const getUnownedEquippedItems = () => {
     const unowned = [];
 
@@ -367,7 +356,6 @@ export default function UserCustomizer() {
 
     if (userEmail) {
       try {
-        // 1. Save unlocked items, avatar and room config
         await fetch('http://localhost:5000/api/update-customization', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -375,11 +363,10 @@ export default function UserCustomizer() {
             email: userEmail,
             avatarConfig: avatarConfig,
             roomConfig: roomConfig,
-            unlockedItems: listToSave // Passes the newly bought items directly
+            unlockedItems: listToSave
           }),
         });
 
-        // 2. Save deducted coins
         await fetch('http://localhost:5000/api/update-coins', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -405,10 +392,8 @@ export default function UserCustomizer() {
     const newlyUnlockedIds = pendingUnownedItems.map((item) => item.id);
     const updatedUnlockedList = Array.from(new Set([...unlockedItems, ...newlyUnlockedIds]));
 
-    // Update state
     setUnlockedItems(updatedUnlockedList);
 
-    // Pass updatedUnlockedList directly to ensure the API receives the new items
     await saveCustomizationWithCoins(newCoinBalance, updatedUnlockedList);
     setShowCheckoutModal(false);
   };
@@ -738,12 +723,26 @@ export default function UserCustomizer() {
         </div>
       )}
 
-      {/* Small non-blocking toast, replaces the old alert() popups */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] bg-theme-dark text-theme-white font-pressstart text-[9px] sm:text-[10px] px-4 py-3 rounded-[8px] shadow-lg border-2 border-theme-primary animate-fade-in">
-          {toast}
-        </div>
-      )}
+      {/* TOASTS CONTAINER (Consistent with Auth.jsx UI) */}
+      <div id="toast-container" className="fixed top-28 right-6 z-[10000] pointer-events-none flex flex-col gap-3">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className="bg-theme-surface border-4 border-theme-dark p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
+            style={{ boxShadow: '4px 4px 0px #3D2013' }}
+          >
+            <div className="flex items-center gap-3 pr-2">
+              <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
+              </svg>
+              <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-4 tracking-wide">{toast.message}</span>
+            </div>
+            <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
+              <div className="w-full h-full bg-theme-safe animate-progress-center"></div>
+            </div>
+          </div>
+        ))}
+      </div>
     </main>
   );
 }
