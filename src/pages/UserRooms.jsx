@@ -11,11 +11,12 @@ const MAX_ROOM_NAME_LENGTH = 50;
 
 // Standard course list suggestions
 const COURSE_OPTIONS = [
-  'Bachelor of Science in Information Technology (Information and Network Security Elective Track)',
-  'Bachelor of Science in Computer Science (Computational and Data Sciences Elective Track)',
-  'Bachelor of Science in Computer Science (Application Development Elective Track)',
-  'Diploma in Application Development',
-  'Diploma in Computer Network Administration',
+  'BSIT',
+  'BSCS',
+  'BSCS-AD',
+  'DAD',
+  'DCNA',
+  'BSIS',
 ];
 
 // Minutes (integer from the backend) -> "2h 05m"
