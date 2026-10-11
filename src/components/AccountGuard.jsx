@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { usePlayer } from '../context/PlayerContext';
 
-const API = 'http://localhost:5000';
+const API = 'http://https://studycircle-03.onrender.com';
 const LOGIN_PATH = `${import.meta.env.BASE_URL}auth#login`;
 
 // Ginagamit din ng UserHomepage

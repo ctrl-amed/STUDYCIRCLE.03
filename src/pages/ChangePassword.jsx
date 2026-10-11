@@ -94,7 +94,7 @@ export default function ChangePassword() {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/change-password', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: token, new_password: newPassword })

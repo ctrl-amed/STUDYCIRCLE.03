@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminFetch } from '../utils/adminApi';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://https://studycircle-03.onrender.com';
 const REFRESH_MS = 30000; // auto-refresh every 30 seconds
 
 // Local (not UTC) YYYY-MM-DD, so "today" matches the admin's own calendar day

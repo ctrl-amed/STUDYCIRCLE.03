@@ -82,7 +82,7 @@ export default function UserRooms() {
   // --- FETCH ROOMS (member counts are LIVE from the backend) ---
   const fetchRealRooms = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/rooms');
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/rooms');
       const data = await response.json();
       if (data.success && data.rooms) {
         const formattedRooms = data.rooms.map((r) => ({
@@ -107,7 +107,7 @@ export default function UserRooms() {
   useEffect(() => {
     fetchRealRooms();
 
-    const socket = io('http://localhost:5000');
+    const socket = io('http://https://studycircle-03.onrender.com');
     socketRef.current = socket;
 
     // REALTIME: server tells us how many people are inside each room
@@ -163,7 +163,7 @@ export default function UserRooms() {
     if (!email) return undefined;
 
     let cancelled = false;
-    fetch(`http://localhost:5000/api/get-room-history?email=${encodeURIComponent(email)}`)
+    fetch(`http://https://studycircle-03.onrender.com/api/get-room-history?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled || !d.success) return;
@@ -298,7 +298,7 @@ export default function UserRooms() {
     };
 
     try {
-      const response = await fetch('http://localhost:5000/api/rooms', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -112,7 +112,7 @@ export default function Sidebar({
   useEffect(() => {
     if (!playerData?.email) return undefined;
     let cancelled = false;
-    fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(playerData.email)}`)
+    fetch(`http://https://studycircle-03.onrender.com/api/get-profile?email=${encodeURIComponent(playerData.email)}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled || !d.success) return;
@@ -152,7 +152,7 @@ export default function Sidebar({
     if (claimedLevels.includes(item.level) || claimingLevel === item.level) return;
     setClaimingLevel(item.level);
     try {
-      const response = await fetch('http://localhost:5000/api/claim-reward', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/claim-reward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: playerData.email, level: item.level }),
@@ -174,7 +174,7 @@ export default function Sidebar({
     e.preventDefault();
     
     try {
-      const response = await fetch('http://localhost:5000/api/send-feedback', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/send-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

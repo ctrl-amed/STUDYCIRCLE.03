@@ -55,7 +55,7 @@ export default function UserProfile() {
 
       // 1. Profile row: avatar, rooms created, best streak, level, coins, inventory...
       try {
-        const res = await fetch(`http://localhost:5000/api/get-profile?email=${q}`);
+        const res = await fetch(`http://https://studycircle-03.onrender.com/api/get-profile?email=${q}`);
         const data = await res.json();
         if (!cancelled && data.success && data.profile) {
           setProfile(data.profile);
@@ -68,7 +68,7 @@ export default function UserProfile() {
 
       // 2. Study sessions: total focus time + average session
       try {
-        const res = await fetch(`http://localhost:5000/api/get-all-sessions?email=${q}`);
+        const res = await fetch(`http://https://studycircle-03.onrender.com/api/get-all-sessions?email=${q}`);
         const data = await res.json();
         if (!cancelled && data.success && data.sessions) {
           const sessions = data.sessions;

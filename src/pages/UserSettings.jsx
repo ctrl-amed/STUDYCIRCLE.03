@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePlayer } from '../context/PlayerContext';
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://https://studycircle-03.onrender.com';
 
 // --- Philippine Time helpers -------------------------------------------------
 // current PH time as "YYYY-MM-DDTHH:MM" (used as the `min` of datetime-local)

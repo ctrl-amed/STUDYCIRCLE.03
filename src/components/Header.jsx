@@ -123,7 +123,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
   const fetchFriendsData = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/get-friends-data?email=${playerData.email}`);
+      const response = await fetch(`http://https://studycircle-03.onrender.com/api/get-friends-data?email=${playerData.email}`);
       const data = await response.json();
       if (data.success) {
         const friendsList = data.friends || [];
@@ -159,7 +159,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     const searchTimeout = setTimeout(async () => {
       if (activeFriendsTab === 'add-friends') {
         try {
-          const response = await fetch(`http://localhost:5000/api/search-users?query=${addSearchQuery}&email=${playerData?.email || ''}`);
+          const response = await fetch(`http://https://studycircle-03.onrender.com/api/search-users?query=${addSearchQuery}&email=${playerData?.email || ''}`);
           const data = await response.json();
           if (data.success) {
             setAddFriends(data.users || []);
@@ -175,7 +175,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   // Handle Friend Requests
   const handleRequestAddFriend = async (receiverEmail) => {
     try {
-      const response = await fetch('http://localhost:5000/api/send-friend-request', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/send-friend-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,7 +198,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
   const handleFriendRequestAction = async (requestId, action) => {
     try {
-      const response = await fetch('http://localhost:5000/api/handle-friend-request', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/handle-friend-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestId, action: action.toLowerCase() })
@@ -216,7 +216,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const fetchMessages = async (friendEmail) => {
     if (!playerData?.email || !friendEmail) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/messages?user1=${playerData.email}&user2=${friendEmail}`);
+      const response = await fetch(`http://https://studycircle-03.onrender.com/api/messages?user1=${playerData.email}&user2=${friendEmail}`);
       const data = await response.json();
 
       if (data.success) {
@@ -337,7 +337,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     setShowEmojiPicker(false);
 
     try {
-      await fetch('http://localhost:5000/api/send-message', {
+      await fetch('http://https://studycircle-03.onrender.com/api/send-message', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -360,7 +360,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
     setTimeout(async () => {
       try {
-        await fetch('http://localhost:5000/api/remove-friend', {
+        await fetch('http://https://studycircle-03.onrender.com/api/remove-friend', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -382,7 +382,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     if (claimedStreakDays.includes(item.days)) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/claim-streak-reward', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/claim-streak-reward', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: playerData.email, days: item.days }),

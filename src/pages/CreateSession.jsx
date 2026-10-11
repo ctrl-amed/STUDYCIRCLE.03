@@ -36,7 +36,7 @@ export default function CreateSession() {
       const fetchAIRecommendation = async () => {
         setIsLoadingAI(true);
         try {
-          const response = await fetch('http://localhost:5000/api/ai-recommendation', {
+          const response = await fetch('http://https://studycircle-03.onrender.com/api/ai-recommendation', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -195,7 +195,7 @@ export default function CreateSession() {
 
     setIsValidating(true);
     try {
-      const response = await fetch('http://localhost:5000/api/validate-task', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/validate-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

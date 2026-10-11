@@ -309,7 +309,7 @@ export default function UserCustomizer() {
 
     if (userEmail) {
       try {
-        await fetch('http://localhost:5000/api/update-customization', {
+        await fetch('http://https://studycircle-03.onrender.com/api/update-customization', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -356,7 +356,7 @@ export default function UserCustomizer() {
 
     if (userEmail) {
       try {
-        await fetch('http://localhost:5000/api/update-customization', {
+        await fetch('http://https://studycircle-03.onrender.com/api/update-customization', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -367,7 +367,7 @@ export default function UserCustomizer() {
           }),
         });
 
-        await fetch('http://localhost:5000/api/update-coins', {
+        await fetch('http://https://studycircle-03.onrender.com/api/update-coins', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

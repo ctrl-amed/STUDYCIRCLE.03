@@ -168,7 +168,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     let cancelled = false;
     setAvatarReady(false);
 
-    fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(email)}`)
+    fetch(`http://https://studycircle-03.onrender.com/api/get-profile?email=${encodeURIComponent(email)}`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
@@ -464,7 +464,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     console.log("Submitting report with reporter_username:", usernameToUse); // Debug log
 
     try {
-      const response = await fetch('http://localhost:5000/api/reports', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/reports', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -627,7 +627,7 @@ const ctx = isMultiplayer
     const totalFocusSeconds = finalDuration * 60 * Number(currentActiveSession.sessionCount || 1);
 
     try {
-      const response = await fetch('http://localhost:5000/api/v1/sessions/complete', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/v1/sessions/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -754,7 +754,7 @@ const ctx = isMultiplayer
       const emailToUse = getUserEmail();
       if (!emailToUse) return;
       try {
-        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
+        const response = await fetch(`http://https://studycircle-03.onrender.com/api/get-all-sessions?email=${emailToUse}`);
         const data = await response.json();
         if (data.success && data.sessions) {
           const rawSessions = data.sessions;
@@ -818,7 +818,7 @@ const ctx = isMultiplayer
   if (!userEmail) return;
 
   if (!socketRef.current) {
-    socketRef.current = io('http://localhost:5000');
+    socketRef.current = io('http://https://studycircle-03.onrender.com');
   }
 
   socketRef.current.emit('user_connected', { email: userEmail });
@@ -851,7 +851,7 @@ const ctx = isMultiplayer
       if (!emailToUse) return;
 
       try {
-        const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${emailToUse}`);
+        const response = await fetch(`http://https://studycircle-03.onrender.com/api/get-all-sessions?email=${emailToUse}`);
         const data = await response.json();
 
         if (data.success && data.sessions) {
@@ -892,7 +892,7 @@ const ctx = isMultiplayer
   useEffect(() => {
     // Wait until we know the player's real avatar, so the room receives the right one
     if (isMultiplayer && avatarReady) {
-      socketRef.current = io('http://localhost:5000');
+      socketRef.current = io('http://https://studycircle-03.onrender.com');
       
       const currentStatus = timer.activeSession ? "IN SESSION" : "ONLINE";
 
@@ -1084,7 +1084,7 @@ const ctx = isMultiplayer
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/leaderboard');
+        const response = await fetch('http://https://studycircle-03.onrender.com/api/leaderboard');
         const data = await response.json();
         if (data.success) {
           setLeaderboardData(data.leaderboard);
@@ -1213,7 +1213,7 @@ const ctx = isMultiplayer
     if (!identifier || sentFriendRequests.includes(memberKey)) return;
 
     try {
-      const response = await fetch('http://localhost:5000/api/send-friend-request', {
+      const response = await fetch('http://https://studycircle-03.onrender.com/api/send-friend-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -45,7 +45,7 @@ export default function ITUsers() {
   const fetchITUsersData = async (silent = false) => {
     if (!silent) setIsLoadingUsers(true);
     try {
-      const response = await adminFetch('http://localhost:5000/api/itadmin/users');
+      const response = await adminFetch('http://https://studycircle-03.onrender.com/api/itadmin/users');
       const data = await response.json();
 
       if (data.success && data.users) {
@@ -71,7 +71,7 @@ export default function ITUsers() {
     fetchITUsersData();
 
     // 2. Connect to Flask socket
-    const socket = io('http://localhost:5000');
+    const socket = io('http://https://studycircle-03.onrender.com');
 
     // A suspension was created somewhere else (e.g. from the Reports page): refresh the list
     socket.on('users_changed', () => {
@@ -228,7 +228,7 @@ export default function ITUsers() {
         : suspendDuration;
 
     try {
-      const response = await adminFetch('http://localhost:5000/api/itadmin/suspend-user', {
+      const response = await adminFetch('http://https://studycircle-03.onrender.com/api/itadmin/suspend-user', {
         method: 'POST',
         body: JSON.stringify({
           email: userToSuspend.email,

@@ -20,7 +20,7 @@ print("Hash matches typed password:", bcrypt.checkpw(password.encode(), row['pas
 
 # Test the real backend login (backend must be running)
 req = urllib.request.Request(
-    "http://localhost:5000/api/itadmin/login",
+    "http://https://studycircle-03.onrender.com/api/itadmin/login",
     data=json.dumps({"email": email, "password": password}).encode(),
     headers={"Content-Type": "application/json"},
 )

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { adminFetch } from '../utils/adminApi';
 
-const API = 'http://localhost:5000';
+const API = 'http://https://studycircle-03.onrender.com';
 
 // server sends { value, change } -> shape the cards use
 const toCard = (m, upIsGood = true) => ({

@@ -33,7 +33,7 @@ export default function UserStatistics() {
   const fetchProfileStreaks = async () => {
     if (!userEmail) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/get-profile?email=${encodeURIComponent(userEmail)}`);
+      const response = await fetch(`http://https://studycircle-03.onrender.com/api/get-profile?email=${encodeURIComponent(userEmail)}`);
       const data = await response.json();
       if (data.success && data.profile) {
         setProfile(data.profile);
@@ -48,7 +48,7 @@ export default function UserStatistics() {
     if (!userEmail) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/get-all-sessions?email=${encodeURIComponent(userEmail)}`);
+      const response = await fetch(`http://https://studycircle-03.onrender.com/api/get-all-sessions?email=${encodeURIComponent(userEmail)}`);
       const data = await response.json();
 
       if (data.success && data.sessions) {

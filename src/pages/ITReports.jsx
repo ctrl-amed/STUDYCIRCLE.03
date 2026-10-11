@@ -46,7 +46,7 @@ export default function ITReports() {
 
   // Fetch live reports from backend on mount & split into open vs resolved/closed lists
   useEffect(() => {
-    adminFetch('http://localhost:5000/api/itadmin/reports')
+    adminFetch('http://https://studycircle-03.onrender.com/api/itadmin/reports')
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -319,7 +319,7 @@ export default function ITReports() {
 
     setIsSubmittingAction(true);
     try {
-      const res = await adminFetch(`http://localhost:5000/api/itadmin/reports/${targetId}`, {
+      const res = await adminFetch(`http://https://studycircle-03.onrender.com/api/itadmin/reports/${targetId}`, {
         method: 'PATCH',
         body: JSON.stringify({
           status: statusValue,
