@@ -13,3 +13,5 @@ apscheduler==3.10.4
 google-generativeai==0.4.1
 Flask-Mail==0.9.1
 httpx>=0.27.0
+Flask-Limiter
+gevent
