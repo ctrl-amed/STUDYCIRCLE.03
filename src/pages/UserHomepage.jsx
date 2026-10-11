@@ -230,12 +230,18 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
+  // Error modal (replaces the browser alert). Shape: { title, message }
+  const [errorModal, setErrorModal] = useState(null);
+  const showError = (message, title = 'OOPS!') => setErrorModal({ title, message });
+
   // Feedback Modal States
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [taskStatus, setTaskStatus] = useState('Completed');
   const [productivityLevel, setProductivityLevel] = useState(3);
   const [accomplishedText, setAccomplishedText] = useState('');
   const [showFeedbackSuccessModal, setShowFeedbackSuccessModal] = useState(false);
+  // true when the last session was shorter than the minimum, so it earned no XP / coins
+  const [belowMinimumNotice, setBelowMinimumNotice] = useState(false);
 
   // Report Modal States
   const [showReportModal, setShowReportModal] = useState(false);
@@ -451,7 +457,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     }
 
     if (!usernameToUse) {
-      alert("Error: Username not found. Please log in again.");
+      showError("We couldn't find your account. Please log in again.");
       return;
     }
 
@@ -475,11 +481,12 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
         closeModal(false);
         onSuccess(true);
       } else {
-        alert("Failed to submit report: " + (data.error || "Unknown error"));
+        console.error('Submit report failed:', data.error);
+        showError("We couldn't submit your report right now. Please try again in a moment.", 'REPORT FAILED');
       }
     } catch (err) {
       console.error("Network error while submitting report:", err);
-      alert("Network error while submitting report.");
+      showError("Can't reach the server. Check your connection and try again.", 'CONNECTION ERROR');
     }
   };
 
@@ -583,7 +590,7 @@ const calculatedCoins = Math.round(Math.max(1, Math.round(durationMins * 0.2)) *
     const userEmail = getUserEmail();
 
     if (!userEmail) {
-      alert("Error: User email not found. Please log in again.");
+      showError("We couldn't find your account. Please log in again.");
       return;
     }
 
@@ -668,13 +675,16 @@ const ctx = isMultiplayer
         setTaskStatus('Completed');
         setProductivityLevel(3);
         setAccomplishedText('');
+        setBelowMinimumNotice(Boolean(data.belowMinimum));
         setShowFeedbackSuccessModal(true);
       } else {
-        alert("Failed to save session: " + data.error);
+        // Log the raw error for debugging, but keep it away from the user
+        console.error('Save session failed:', data.error);
+        showError("We couldn't save your session right now. Please try again in a moment.", 'SAVE FAILED');
       }
     } catch (err) {
       console.error("Network error while saving session:", err);
-      alert("Network error while saving session.");
+      showError("Can't reach the server. Check your connection and try again.", 'CONNECTION ERROR');
     }
   };
 
@@ -954,6 +964,7 @@ const ctx = isMultiplayer
       });
 
       socketRef.current.on('room_join_rejected', (data) => {
+        // Kept as alert(): the page navigates away right after, so a modal would vanish instantly
         alert(data?.reason || "You can't join this room.");
         localStorage.removeItem('activeRoomSession');
         navigate('/dashboard');
@@ -1214,10 +1225,11 @@ const ctx = isMultiplayer
       if (data.success) {
         setSentFriendRequests((prev) => [...prev, memberKey]);
       } else {
-        alert(data.message || "Failed to send friend request.");
+        showError(data.message || "We couldn't send your friend request. Please try again.", 'REQUEST FAILED');
       }
     } catch (error) {
       console.error('Error sending friend request from room modal:', error);
+      showError("Can't reach the server. Check your connection and try again.", 'CONNECTION ERROR');
     }
   };
 
@@ -2306,7 +2318,9 @@ const ctx = isMultiplayer
               FEEDBACK SUBMITTED
             </h3>
             <p className="font-pixel text-[16px] sm:text-[20px] text-theme-dark/80">
-              Thank you for your feedback! Your rewards have been successfully claimed and saved.
+              {belowMinimumNotice
+                ? 'Thank you for your feedback! Your session was saved, but sessions under 25 minutes do not earn XP or coins.'
+                : 'Thank you for your feedback! Your rewards have been successfully claimed and saved.'}
             </p>
             <button
               type="button"
@@ -3314,6 +3328,25 @@ const ctx = isMultiplayer
           </div>
         </div>
       )}
+
+      {/* ERROR MODAL (replaces the browser alert). z is above the feedback modal, so the
+          user's answers stay open behind it and they can press SUBMIT again. */}
+      {errorModal && (
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
+          <div className="bg-theme-surface border-4 border-theme-dark rounded-[16px] w-full max-w-sm p-6 shadow-2xl flex flex-col items-center text-center gap-4 dark:bg-zinc-900">
+            <div className="text-4xl">⚠️</div>
+            <h3 className="font-pressstart text-[14px] text-theme-danger uppercase">{errorModal.title}</h3>
+            <p className="font-pixel text-[18px] text-theme-dark leading-snug">{errorModal.message}</p>
+            <button
+              onClick={() => setErrorModal(null)}
+              className="mt-2 font-pressstart text-[10px] text-theme-white bg-theme-primary border-2 border-theme-dark px-6 py-3 w-full retro-shadow hover:bg-[#d0622c] cursor-pointer uppercase"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
       {timer.activeSession && (
         <div className="fixed bottom-6 right-6 z-[99999]">
           <button

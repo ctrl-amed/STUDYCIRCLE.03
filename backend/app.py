@@ -1,5 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_bcrypt import Bcrypt
 import os
 from supabase import create_client, Client
@@ -32,8 +34,28 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 CORS(app)
 bcrypt = Bcrypt(app)
 
+# --- NEW: Flask Limiter Setup ---
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
+# --- NEW: Return JSON when a user hits the rate limit ---
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({
+        "success": False, 
+        "error": f"You are doing that too fast. {e.description}"
+    }), 429
+# --------------------------------
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=GEMINI_API_KEY)
+# Model name can be changed without touching the code: set GEMINI_MODEL in .env / Render.
+# If the terminal prints "Gemini rationale failed", set this to a model your API key supports.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
 # Pulled from Render/Environment, falls back to a local default if not set
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'postgresql://your_local_fallback')
@@ -51,10 +73,28 @@ app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-app.config['DEFAULT_MAIL_SENDER'] = os.getenv('DEFAULT_MAIL_SENDER', f"StudyCircle <{os.getenv('MAIL_USERNAME')}>")
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv(
+    'DEFAULT_MAIL_SENDER',
+    f"StudyCircle <{os.getenv('MAIL_USERNAME')}>"
+)
 
 mail = Mail(app)
 
+from email.message import EmailMessage
+
+def send_plain_email(to_email, subject, body):
+    sender = os.getenv("MAIL_USERNAME")
+    password = os.getenv("MAIL_PASSWORD")
+
+    msg = EmailMessage()
+    msg['From'] = f"StudyCircle <{sender}>"
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
+        server.login(sender, password)
+        server.send_message(msg)
 
 # =============================================================================
 # SHARED HELPERS
@@ -74,6 +114,23 @@ def parse_json_field(value, default=None):
             return default
     return value
 
+# =============================================================================
+# DEFAULT CUSTOMIZATION FOR NEW ACCOUNTS
+# Must match DEFAULT_AVATAR_CONFIG / DEFAULT_ROOM_CONFIG / DEFAULT_UNLOCKED_ITEMS
+# in UserCustomizer.jsx
+# =============================================================================
+
+DEFAULT_AVATAR_CONFIG = {
+    "body": "BODY1",
+    "face": "FACE1",
+    "tops": "TOP7",
+    "bottoms": "BOTTOM6",
+    "shoes": "",
+    "hair": "",
+    "accessories": "",
+}
+DEFAULT_ROOM_CONFIG = {"room": "ROOM1"}
+DEFAULT_UNLOCKED_ITEMS = ["BODY1", "BODY2", "BODY3", "FACE1", "TOP7", "BOTTOM6", "ROOM1"]
 
 # =============================================================================
 # ADMIN AUTH HELPERS
@@ -724,6 +781,7 @@ def is_umak_email(email):
     return bool(email) and bool(UMAK_EMAIL_REGEX.match(email.strip()))
 
 @app.route('/api/signup', methods=['POST'])
+@limiter.limit("5 per hour")
 def signup():
     data = request.get_json()
     username = data.get('username')
@@ -768,6 +826,9 @@ def signup():
             "inventory": [],
             "status": "offline",
             "max_xp": 100,
+            "avatar_config": DEFAULT_AVATAR_CONFIG,
+            "room_config": DEFAULT_ROOM_CONFIG,
+            "unlocked_items": DEFAULT_UNLOCKED_ITEMS,
         }).execute()
 
         created_user = response.data[0] if response.data else {}
@@ -795,9 +856,9 @@ def signup():
                 'inventory': inv_data or [],
                 # explicit nulls so a new account never inherits the previous
                 # account's avatar / room / owned items in the browser
-                'avatarConfig': None,
-                'roomConfig': None,
-                'unlockedItems': None
+                'avatarConfig': parse_json_field(created_user.get('avatar_config'), DEFAULT_AVATAR_CONFIG),
+                'roomConfig': parse_json_field(created_user.get('room_config'), DEFAULT_ROOM_CONFIG),
+                'unlockedItems': parse_json_field(created_user.get('unlocked_items'), DEFAULT_UNLOCKED_ITEMS)
             }
         }), 201
     except Exception as e:
@@ -879,6 +940,9 @@ def google_signup():
             "inventory": [],
             "status": "offline",
             "max_xp": 100,
+            "avatar_config": DEFAULT_AVATAR_CONFIG,
+            "room_config": DEFAULT_ROOM_CONFIG,
+            "unlocked_items": DEFAULT_UNLOCKED_ITEMS,
         }).execute()
 
         created_user = response.data[0] if response.data else {}
@@ -904,9 +968,9 @@ def google_signup():
                 'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': raw_inv or [],
-                'avatarConfig': None,
-                'roomConfig': None,
-                'unlockedItems': None
+                'avatarConfig': parse_json_field(created_user.get('avatar_config'), DEFAULT_AVATAR_CONFIG),
+                'roomConfig': parse_json_field(created_user.get('room_config'), DEFAULT_ROOM_CONFIG),
+                'unlockedItems': parse_json_field(created_user.get('unlocked_items'), DEFAULT_UNLOCKED_ITEMS)
             }
         }), 201
 
@@ -914,6 +978,7 @@ def google_signup():
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/login', methods=['POST'])
+@limiter.limit("10 per minute")
 def login():
     data = request.get_json()
     email = data.get('email')
@@ -1131,12 +1196,11 @@ def send_study_reminder():
                 target_email = user['email']
                 username = user['username']
 
-                msg = Message(
-                    subject="⏰ StudyCircle Daily Reminder: Time to Focus!",
-                    recipients=[target_email],
-                    body=f"Hi {username},\n\nThis is your daily study reminder! Log in to StudyCircle and keep your streak going! 🔥\n\n- StudyCircle Team"
+                send_plain_email(
+                    target_email,
+                    "⏰ StudyCircle Daily Reminder: Time to Focus!",
+                    f"Hi {username},\n\nThis is your daily study reminder! Log in to StudyCircle and keep your streak going! 🔥\n\n- StudyCircle Team"
                 )
-                mail.send(msg)
 
                 supabase.table('study_reminders').update({
                     'last_sent_date': today_date_str
@@ -1169,12 +1233,11 @@ def send_study_reminder():
                             username = u.get('username') or 'Student'
 
                             try:
-                                msg = Message(
-                                    subject="⏰ StudyCircle Scheduled Reminder: Study Time!",
-                                    recipients=[target_email],
-                                    body=f"Hi {username},\n\nThis is your scheduled study reminder for {rem_dt}!\n\nOpen StudyCircle now and jump into a focus session: http://localhost:5173\n\n- StudyCircle Team"
+                                send_plain_email(
+                                    target_email,
+                                    "⏰ StudyCircle Scheduled Reminder: Study Time!",
+                                    f"Hi {username},\n\nThis is your scheduled study reminder for {rem_dt}!\n\nOpen StudyCircle now and jump into a focus session: http://localhost:5173\n\n- StudyCircle Team"
                                 )
-                                mail.send(msg)
                                 item['sent'] = True
                                 modified = True
                                 print(f"[MANUAL REMINDER SENT] to {target_email} for {rem_dt}")
@@ -1271,12 +1334,11 @@ def update_reminder():
         # Confirmation email if enabled
         if enabled:
             try:
-                msg = Message(
-                    subject="⏰ StudyCircle Reminder Set Successfully!",
-                    recipients=[email],
-                    body=f"Hello!\n\nYour daily study reminder has been set to {reminder_time} (Philippine Standard Time).\n\nKeep your focus strong!\n- StudyCircle Team"
+                send_plain_email(
+                    email,
+                    "⏰ StudyCircle Reminder Set Successfully!",
+                    f"Hello!\n\nYour daily study reminder has been set to {reminder_time} (Philippine Standard Time).\n\nKeep your focus strong!\n- StudyCircle Team"
                 )
-                mail.send(msg)
             except Exception as mail_err:
                 print("[MAIL SEND ERROR]:", mail_err)
 
@@ -1330,12 +1392,11 @@ def add_manual_reminder():
         # 2. Try sending initial confirmation email safely without breaking the DB save
         try:
             if app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD'):
-                msg = Message(
-                    subject="⏰ StudyCircle Custom Reminder Added",
-                    recipients=[email],
-                    body=f"Hello!\n\nA manual study reminder has been scheduled for {dt_str} (Philippine Standard Time).\n\nKeep up the great work!\n- StudyCircle Team"
+                send_plain_email(
+                    email,
+                    "⏰ StudyCircle Custom Reminder Added",
+                    f"Hello!\n\nA manual study reminder has been scheduled for {dt_str} (Philippine Standard Time).\n\nKeep up the great work!\n- StudyCircle Team"
                 )
-                mail.send(msg)
                 print(f"[MANUAL REMINDER CONFIRMATION SENT] to {email}")
         except Exception as mail_err:
             print("[EMAIL DISPATCH WARNING - check app password / credentials]:", mail_err)
@@ -1386,12 +1447,11 @@ def test_email():
         return jsonify({"success": False, "message": "No email provided"}), 400
 
     try:
-        msg = Message(
-            subject="🧪 StudyCircle Test Email",
-            recipients=[recipient_email],
-            body="Hello! This is a test email from your StudyCircle app to verify that email reminders are working perfectly."
+        send_plain_email(
+            recipient_email,
+            "🧪 StudyCircle Test Email",
+            "Hello! This is a test email from your StudyCircle app to verify that email reminders are working perfectly."
         )
-        mail.send(msg)
         return jsonify({"success": True, "message": "Test email sent successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1535,20 +1595,19 @@ def search_users():
         return jsonify({"success": True, "users": []}), 200
 
     try:
-        # 1. Get every email that's already a friend or has a pending request,
-        #    so they don't show up again in search results
-        friendships_res = supabase.table('friendships').select('*').or_(f"sender_email.eq.{current_email},receiver_email.eq.{current_email}").execute()
+        u_res = supabase.table('users').select('id').eq('email', current_email).execute()
+        current_user_id = u_res.data[0]['id'] if u_res.data else None
+        excluded_ids = {current_user_id}
 
-        excluded_emails = {current_email}
-        for item in friendships_res.data:
-            if item['status'] in ['accepted', 'pending']:
-                other_email = item['receiver_email'] if item['sender_email'] == current_email else item['sender_email']
-                excluded_emails.add(other_email)
+        if current_user_id:
+            friendships_res = supabase.table('friendships').select('*').or_(f"sender_id.eq.{current_user_id},receiver_id.eq.{current_user_id}").execute()
+            for item in friendships_res.data:
+                if item['status'] in ['accepted', 'pending']:
+                    other_id = item['receiver_id'] if item['sender_id'] == current_user_id else item['sender_id']
+                    excluded_ids.add(other_id)
 
-        # 2. Search for users not in the excluded list
-        response = supabase.table('users').select('username, email, level, avatar_config').ilike('username', f"%{query}%").execute()
-
-        filtered_users = [u for u in response.data if u['email'] not in excluded_emails]
+        response = supabase.table('users').select('id, username, email, level, avatar_config').ilike('username', f"%{query}%").execute()
+        filtered_users = [u for u in response.data if u['id'] not in excluded_ids]
 
         return jsonify({"success": True, "users": filtered_users}), 200
     except Exception as e:
@@ -1565,13 +1624,14 @@ def send_friend_request():
         return jsonify({"success": False, "message": "Sender and receiver emails are required."}), 400
 
     try:
-        # Save the request in the Supabase friendships table
+        res = supabase.table('users').select('id, email').in_('email', [sender_email, receiver_email]).execute()
+        id_map = {r['email']: r['id'] for r in res.data}
+        
         supabase.table('friendships').insert({
-            "sender_email": sender_email,
-            "receiver_email": receiver_email,
+            "sender_id": id_map.get(sender_email),
+            "receiver_id": id_map.get(receiver_email),
             "status": "pending"
         }).execute()
-
         return jsonify({"success": True, "message": "Friend request sent successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1580,15 +1640,16 @@ def send_friend_request():
 @app.route('/api/get-friends-data', methods=['GET'])
 def get_friends_data():
     email = request.args.get('email')
-
     if not email:
         return jsonify({"success": False, "message": "Email is required."}), 400
 
     try:
-        # Get accepted friends and incoming requests
-        response = supabase.table('friendships').select('*').or_(f"sender_email.eq.{email},receiver_email.eq.{email}").execute()
+        u_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not u_res.data:
+            return jsonify({"success": True, "friends": [], "requests": []}), 200
+        user_id = u_res.data[0]['id']
 
-        # Safe check in case the response data is null or empty
+        response = supabase.table('friendships').select('*').or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}").execute()
         if not response.data:
             return jsonify({"success": True, "friends": [], "requests": []}), 200
 
@@ -1597,29 +1658,19 @@ def get_friends_data():
 
         for item in response.data:
             status = item.get('status')
-            sender = item.get('sender_email')
-            receiver = item.get('receiver_email')
+            sender_id = item.get('sender_id')
+            receiver_id = item.get('receiver_id')
 
             if status == 'accepted':
-                friend_email = receiver if sender == email else sender
-                # Get the friend's details from the users table
-                u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', friend_email).execute()
-                if u_res.data:
-                    friends.append(u_res.data[0])
-
-            elif status == 'pending' and receiver == email:
-                # Incoming request for this user
-                u_res = supabase.table('users').select('username, email, level, avatar_config').eq('email', sender).execute()
-                if u_res.data:
-                    requests.append({
-                        "id": item.get('id'),
-                        "sender": u_res.data[0]
-                    })
+                friend_id = receiver_id if sender_id == user_id else sender_id
+                f_res = supabase.table('users').select('username, email, level, avatar_config').eq('id', friend_id).execute()
+                if f_res.data: friends.append(f_res.data[0])
+            elif status == 'pending' and receiver_id == user_id:
+                s_res = supabase.table('users').select('username, email, level, avatar_config').eq('id', sender_id).execute()
+                if s_res.data: requests.append({"id": item.get('id'), "sender": s_res.data[0]})
 
         return jsonify({"success": True, "friends": friends, "requests": requests}), 200
-
     except Exception as e:
-        print(f"Error in get_friends_data: {str(e)}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -1650,11 +1701,15 @@ def remove_friend():
         return jsonify({"success": False, "message": "Both emails are required."}), 400
 
     try:
-        # Delete the friendship record no matter which side is sender/receiver
-        supabase.table('friendships').delete().or_(
-            f"and(sender_email.eq.{user_email},receiver_email.eq.{friend_email}),and(sender_email.eq.{friend_email},receiver_email.eq.{user_email})"
-        ).execute()
+        res = supabase.table('users').select('id, email').in_('email', [user_email, friend_email]).execute()
+        id_map = {r['email']: r['id'] for r in res.data}
+        u_id = id_map.get(user_email)
+        f_id = id_map.get(friend_email)
 
+        if u_id and f_id:
+            supabase.table('friendships').delete().or_(
+                f"and(sender_id.eq.{u_id},receiver_id.eq.{f_id}),and(sender_id.eq.{f_id},receiver_id.eq.{u_id})"
+            ).execute()
         return jsonify({"success": True, "message": "Friend removed successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1664,43 +1719,68 @@ def remove_friend():
 # LEADERBOARD
 # =============================================================================
 
+def _focus_minutes_by_user(since=None):
+    """Total focus minutes per user id (optionally only sessions created since `since`)."""
+    def build():
+        q = supabase.table('study_sessions').select('user_id, duration_minutes')
+        q = q.gte('duration_minutes', MIN_SESSION_MINUTES)   # only qualifying sessions count
+        if since is not None:
+            q = q.gte('created_at', _iso_utc(since))
+        return q.order('id')
+
+    totals = {}
+    for s in _fetch_all(build):
+        uid = s.get('user_id')
+        if uid is not None:
+            totals[uid] = totals.get(uid, 0) + int(s.get('duration_minutes') or 0)
+    return totals
+
+
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
+    """Leaderboard ranked by TOTAL FOCUS TIME (ties broken by XP).
+    'this-month' only counts sessions since the 1st of the month, Philippine time."""
     try:
-        # Top 10 users by XP for "All Time"
-        all_time_res = supabase.table('users').select('username, avatar_url, avatar_config, current_xp').order('current_xp', desc=True).limit(10).execute()
+        users = supabase.table('users') \
+            .select('id, username, avatar_url, avatar_config, current_xp, streak') \
+            .execute().data or []
 
-        # Top 10 users by streak
-        streaks_res = supabase.table('users').select('username, avatar_url, avatar_config, streak').order('streak', desc=True).limit(10).execute()
+        def avatar(u):
+            return u.get('avatar_url') or \
+                f"https://api.dicebear.com/7.x/pixel-art/svg?seed={u.get('username')}"
 
-        def format_avatar(url, username):
-            return url if url else f"https://api.dicebear.com/7.x/pixel-art/svg?seed={username}"
+        def by_focus(totals):
+            rows = [u for u in users if totals.get(u['id'], 0) > 0]
+            rows.sort(key=lambda u: (-totals[u['id']], -(u.get('current_xp') or 0)))
+            out = []
+            for i, u in enumerate(rows[:10]):
+                m = totals[u['id']]
+                out.append({
+                    "rank": i + 1,
+                    "username": u['username'],
+                    "pfp": avatar(u),
+                    "avatar_config": u.get('avatar_config'),
+                    "score": f"{m // 60}h {m % 60:02d}m"
+                })
+            return out
 
-        all_time = []
-        for i, user in enumerate(all_time_res.data):
-            all_time.append({
-                "rank": i + 1,
-                "username": user.get('username'),
-                "pfp": format_avatar(user.get('avatar_url'), user.get('username')),
-                "avatar_config": user.get('avatar_config'),
-                "score": f"{user.get('current_xp', 0):,} XP"
-            })
+        now = datetime.now(PHT)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        streaks = []
-        for i, user in enumerate(streaks_res.data):
-            streaks.append({
-                "rank": i + 1,
-                "username": user.get('username'),
-                "pfp": format_avatar(user.get('avatar_url'), user.get('username')),
-                "avatar_config": user.get('avatar_config'),
-                "streak": f"{user.get('streak', 0)} d"
-            })
+        streak_rows = sorted(users, key=lambda u: -(u.get('streak') or 0))[:10]
+        streaks = [{
+            "rank": i + 1,
+            "username": u['username'],
+            "pfp": avatar(u),
+            "avatar_config": u.get('avatar_config'),
+            "streak": f"{u.get('streak') or 0} d"
+        } for i, u in enumerate(streak_rows)]
 
         return jsonify({
             "success": True,
             "leaderboard": {
-                "all-time": all_time,
-                "this-month": all_time,  # Placeholder until there's a monthly tracking table
+                "all-time": by_focus(_focus_minutes_by_user()),
+                "this-month": by_focus(_focus_minutes_by_user(month_start)),
                 "streaks": streaks
             }
         }), 200
@@ -1713,6 +1793,7 @@ def get_leaderboard():
 # =============================================================================
 
 @app.route('/api/messages', methods=['GET'])
+@limiter.limit("60 per minute")
 def get_messages():
     user1 = request.args.get('user1')
     user2 = request.args.get('user2')
@@ -1721,19 +1802,23 @@ def get_messages():
         return jsonify({"success": False, "message": "Missing user emails"}), 400
 
     try:
-        # Get all messages between the two users
+        res = supabase.table('users').select('id, email').in_('email', [user1, user2]).execute()
+        id_map = {r['email']: r['id'] for r in res.data}
+        u1_id = id_map.get(user1)
+        u2_id = id_map.get(user2)
+
         response = supabase.table('messages').select('*') \
-            .in_('sender_email', [user1, user2]) \
-            .in_('receiver_email', [user1, user2]) \
+            .in_('sender_id', [u1_id, u2_id]) \
+            .in_('receiver_id', [u1_id, u2_id]) \
             .order('created_at').execute()
 
         return jsonify({"success": True, "messages": response.data}), 200
     except Exception as e:
-        print("Error fetching messages:", e)
         return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route('/api/send-message', methods=['POST'])
+@limiter.limit("30 per minute")
 def send_message():
     data = request.json
     sender = data.get('sender_email')
@@ -1744,16 +1829,17 @@ def send_message():
         return jsonify({"success": False, "message": "Incomplete data"}), 400
 
     try:
-        # Save the message to the database
+        res = supabase.table('users').select('id, email').in_('email', [sender, receiver]).execute()
+        id_map = {r['email']: r['id'] for r in res.data}
+        
         supabase.table('messages').insert({
-            "sender_email": sender,
-            "receiver_email": receiver,
+            "sender_id": id_map.get(sender),
+            "receiver_id": id_map.get(receiver),
             "message": message
         }).execute()
 
         return jsonify({"success": True}), 200
     except Exception as e:
-        print("Error sending message:", e)
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -1772,8 +1858,12 @@ def save_session():
     completed_tasks = int(data.get('completedTasks', 0))
 
     try:
+        u_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not u_res.data:
+            return jsonify({"success": False, "message": "User not found"}), 404
+        
         supabase.table('study_sessions').insert({
-            "email": email,
+            "user_id": u_res.data[0]['id'],
             "activity_name": activity,
             "technique": technique,
             "duration_minutes": duration,
@@ -1783,6 +1873,37 @@ def save_session():
         return jsonify({"success": True}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+# Productivity Score (Chapter 3, Productivity-Score Design, pp. 92-95):
+#   PS = (0.30 SC + 0.30 FT + 0.25 TC + 0.15 SS) x 100, every term is 0..1.
+#   SC = session-completion value (1 if the session was completed, otherwise 0)
+#   FT = normalized focus time = CFM / PFM (completed / planned focus minutes)
+#   TC = task-completion value = completed tasks / total tasks
+#   SS = normalized study streak = min(SD / 7, 1)   (seven-day reference period)
+# Document sample: 40 of 50 min, task completed, 5-day streak ->
+#   0.30(1) + 0.30(0.8) + 0.25(1) + 0.15(5/7) = 0.8971 -> 89.71
+PS_WEIGHTS = {'SC': 0.30, 'FT': 0.30, 'TC': 0.25, 'SS': 0.15}   # sum = 1.00
+
+
+def productivity_score(sc, ft, tc, ss):
+    """Each input is clamped to 0..1. Returns 0..100 with 2 decimals."""
+    clamp = lambda v: max(0.0, min(1.0, float(v or 0)))
+    total = (PS_WEIGHTS['SC'] * clamp(sc) + PS_WEIGHTS['FT'] * clamp(ft)
+             + PS_WEIGHTS['TC'] * clamp(tc) + PS_WEIGHTS['SS'] * clamp(ss))
+    return round(total * 100, 2)
+
+
+def calculate_productivity_score(consumed_ratio, tasks_completed, total_tasks,
+                                 streak, session_completed=True):
+    ft = max(0.0, min(1.0, consumed_ratio))                      # FT = CFM / PFM
+    sc = 1.0 if session_completed else 0.0                       # SC
+    tc = (tasks_completed / total_tasks) if total_tasks > 0 else ft   # TC (no tasks: use focus ratio)
+    ss = min(streak / 7, 1.0)                                    # SS
+    return productivity_score(sc, ft, tc, ss)
+
+
+# Chapter 3: a session must last at least this many minutes to earn XP or coins.
+MIN_SESSION_MINUTES = 25
 
 
 @app.route('/api/v1/sessions/complete', methods=['POST'])
@@ -1883,7 +2004,7 @@ def complete_focus_session():
         today = datetime.now(PHT).date()
         yesterday = today - timedelta(days=1)
 
-        history_res = supabase.table('study_sessions').select('created_at, coins_gained').eq('email', raw_email).execute()
+        history_res = supabase.table('study_sessions').select('created_at, coins_gained').eq('user_id', user_id).execute()
 
         studied_today = False
         studied_yesterday = False
@@ -1901,6 +2022,13 @@ def complete_focus_session():
         # Enforce the 100-coin-per-day limit
         raw_coins_gained = int(round(max(1, int(round(duration_minutes * 0.2))) * consumed_ratio))
         coins_gained = max(0, min(raw_coins_gained, 100 - coins_earned_today))
+
+        # 25-minute minimum rule: shorter sessions are still saved (and count for the
+        # streak and leaderboard time) but earn no XP and no coins.
+        below_minimum = duration_minutes < MIN_SESSION_MINUTES
+        if below_minimum:
+            rounded_exp_gained = 0
+            coins_gained = 0
 
         new_xp = current_xp + rounded_exp_gained
         new_coins = current_coins + coins_gained
@@ -1934,6 +2062,11 @@ def complete_focus_session():
         # Best streak = the highest streak this account has ever reached
         new_best_streak = max(int(user.get('best_streak') or 0), new_streak)
 
+        productivity_score = calculate_productivity_score(
+            consumed_ratio, tasks_completed, total_tasks, new_streak,
+            session_completed=(task_status.strip().lower() in SUCCESS_STATUSES)
+        )
+
         # NOTE: the 3rd streak-freeze slot is no longer unlocked automatically at
         # Level 20. It is unlocked when the player CLAIMS the Level 20 reward
         # (see claim_reward below).
@@ -1950,7 +2083,7 @@ def complete_focus_session():
 
         # 2. Insert into study_sessions table, including feedback fields
         supabase.table('study_sessions').insert({
-            "email": user['email'],
+            "user_id": user_id,
             "activity_name": activity_name,
             "technique": technique,
             "duration_minutes": duration_minutes,
@@ -1984,11 +2117,15 @@ def complete_focus_session():
             "didLevelUp": new_level > current_level,
             "nudgePauses": nudge_pauses,
             "consumedRatio": round(consumed_ratio, 3),
+            "productivityScore": productivity_score,
+            "belowMinimum": below_minimum,
+            "minSessionMinutes": MIN_SESSION_MINUTES,
         }), 200
 
     except Exception as e:
         print("[v2.1 EXP ERROR]:", str(e))
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 
 @app.route('/api/get-room-history', methods=['GET'])
@@ -1998,8 +2135,12 @@ def get_room_history():
     if not email:
         return jsonify({"success": False, "message": "Email is required."}), 400
     try:
+        u_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not u_res.data: return jsonify({"success": True, "history": []}), 200
+        user_id = u_res.data[0]['id']
+
         sess = supabase.table('study_sessions').select('*') \
-            .eq('email', email).order('created_at', desc=True).execute().data or []
+            .eq('user_id', user_id).order('created_at', desc=True).execute().data or []
         sess = [s for s in sess if s.get('room_id') is not None]
 
         room_ids = list({s['room_id'] for s in sess})
@@ -2059,7 +2200,10 @@ def get_all_sessions():
     if not email:
         return jsonify({"success": False, "message": "Email is required."}), 400
     try:
-        response = supabase.table('study_sessions').select('*').eq('email', email).order('created_at', desc=True).execute()
+        u_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not u_res.data: return jsonify({"success": True, "sessions": []}), 200
+        
+        response = supabase.table('study_sessions').select('*').eq('user_id', u_res.data[0]['id']).order('created_at', desc=True).execute()
         return jsonify({"success": True, "sessions": response.data}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -2089,7 +2233,7 @@ def kitsu_chat():
         os.environ["GEMINI_API_KEY"] = api_key
         genai.configure(api_key=api_key)
 
-        model = genai.GenerativeModel('gemini-3.6-flash')
+        model = genai.GenerativeModel(GEMINI_MODEL)
 
         prompt = f"You are Kitsu, a cozy, friendly, and helpful anime-style study fox assistant for a study app called StudyCircle. Keep your answers encouraging, concise, and study-focused. User says: {user_message}"
 
@@ -2129,7 +2273,7 @@ def generate_ai_tool():
             extracted_text = "Sample study material content."
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel('gemini-3.6-flash')
+        model = genai.GenerativeModel(GEMINI_MODEL)
 
         if tool_type in ['Pre-quiz', 'Post-quiz']:
             prompt = f"""
@@ -2279,37 +2423,13 @@ TASK_DICTIONARIES = {
     ]
 }
 
-TASK_MAX_POINTS = 3  # points needed for a full score (1.0)
-
 CATEGORY_ALIASES = {
     "practicing": "practice", "practise": "practice",
     "memorization": "memorize", "memorise": "memorize", "memorizing": "memorize",
 }
 
-# A core word ANYWHERE in a keyword/phrase makes it a strong (exact) signal -> 3 points
-CORE_ROOTS = {
-    "reading":  {"read", "reading", "reread", "re-read", "skim", "scan", "peruse"},
-    "writing":  {"write", "writing", "draft", "drafting", "compose", "composing",
-                 "rewrite", "re-write", "proofread", "proofreading", "outline", "essay"},
-    "review":   {"review", "reviewing", "recap", "revisit", "revise", "revision"},
-    "practice": {"practice", "practise", "practicing", "practising", "drill", "drills",
-                 "exercise", "exercises", "solve", "solving", "rehearse", "rehearsal"},
-    "memorize": {"memorize", "memorise", "memorizing", "memorising", "memorization",
-                 "memorisation", "flashcards", "recall", "recalling", "mnemonic", "mnemonics"},
-    "creation": {"create", "creating", "creation", "build", "building", "design",
-                 "designing", "develop", "developing", "prototype", "wireframe", "brainstorm"},
-}
-
-# Broad words that appear in everyday non-study tasks -> 1 point
-GENERIC_TERMS = {
-    "check", "try", "make", "making", "plan", "planning", "learn", "answer", "answering",
-    "repeat", "apply", "train", "training", "work on", "work through", "go over", "go through",
-    "project", "document", "report", "paper", "letter", "email", "response", "story",
-    "article", "introduction", "conclusion", "proposal", "case study", "produce", "producing",
-    "look up", "consult", "remember", "retain", "retention",
-    "association", "calculate", "compute", "implement", "application", "refresh",
-    "draw", "drawing", "master", "hands on", "browse", "examine", "inspect",
-}
+# (The old CORE_ROOTS / GENERIC_TERMS / PROMOTED_TERMS point weights were removed:
+#  the Rule-Based Task Validation section scores a task by its NUMBER of unique matched keywords instead.)
 
 STOPWORDS = {"a", "an", "the", "my", "our", "some", "this", "that", "these", "those"}
 
@@ -2320,37 +2440,65 @@ def normalize(text):
     return " ".join(w for w in text.split() if w not in STOPWORDS)
 
 
-# Generic words that ARE the main verb of that category -> 2 points instead of 1
-PROMOTED_TERMS = {
-    "reading":  {"go through", "go over", "browse", "examine", "inspect", "consult", "look up", "work through"},
-    "review":   {"go over", "go through", "refresh"},
-    "practice": {"answer", "answering", "apply", "train", "training", "work on", "work through",
-                 "calculate", "compute", "implement", "application"},
-}
-
-
-def keyword_weight(category, kw):
-    if kw in PROMOTED_TERMS.get(category, ()):
-        return 2
-    if kw in GENERIC_TERMS:
-        return 1
-    # a core word ANYWHERE in the phrase makes it a strong signal
-    if any(w in CORE_ROOTS.get(category, set()) for w in kw.split()):
-        return 3
-    return 2  # synonym / related phrase
-
-
-# Built once at startup: (keyword, compiled regex, weight), longest phrases first
+# Built once at startup: (keyword, compiled regex), longest phrases first
+# (longer phrases are matched before shorter ones, e.g. "read chapter" before "read")
 KEYWORD_RULES = {}
 for _cat, _kws in TASK_DICTIONARIES.items():
     _rules = []
     for _kw in sorted(set(_kws), key=lambda k: (-len(k), k)):
         # optional suffix so "solved", "memorized", "created", "designs" still match
         _pattern = re.compile(rf'\b{re.escape(normalize(_kw))}(?:s|es|ed|d|ing)?\b')
-        _rules.append((_kw, _pattern, keyword_weight(_cat, _kw)))
+        _rules.append((_kw, _pattern))
     KEYWORD_RULES[_cat] = _rules
 
 
+def alignment_score(n_matches):
+    """Rule-Based Task Validation, Task Alignment Score S_c(t):
+    0 matches -> 0.00, 1 -> 0.75, 2 -> 0.90, 3 or more -> 1.00"""
+    if n_matches <= 0:
+        return 0.0
+    if n_matches == 1:
+        return 0.75
+    if n_matches == 2:
+        return 0.90
+    return 1.0
+
+
+def count_matches(task_str, category):
+    """Unique keywords of `category` found in the task (longest phrases first, no double counting)."""
+    temp_text = f" {normalize(task_str)} "
+    matched = []
+    for kw, pattern in KEYWORD_RULES[category]:
+        if pattern.search(temp_text):
+            matched.append(kw)
+            temp_text = pattern.sub(' ', temp_text)
+    return matched
+
+
+def suggest_category(task_str, selected):
+    """Other category with the most keyword matches, or None."""
+    best, best_n = None, 0
+    for cat in KEYWORD_RULES:
+        if cat == selected:
+            continue
+        n = len(count_matches(task_str, cat))
+        if n > best_n:
+            best, best_n = cat, n
+    return best
+
+
+def effective_category(task_str, selected):
+    """The selected category if the task fits it, otherwise a clearly better-fitting one."""
+    n_sel = len(count_matches(task_str, selected))
+    if alignment_score(n_sel) >= 0.70:
+        return selected
+    sug = suggest_category(task_str, selected)
+    if sug and len(count_matches(task_str, sug)) > n_sel:
+        return sug
+    return selected
+
+
+@limiter.limit("120 per hour")
 @app.route('/api/validate-task', methods=['POST'])
 def validate_task():
     data = request.get_json() or {}
@@ -2366,16 +2514,9 @@ def validate_task():
     results, total_score = [], 0.0
 
     for task_str in tasks:
-        temp_text = f" {normalize(task_str)} "
-        matched, points = [], 0
-
-        for kw, pattern, weight in KEYWORD_RULES[category]:
-            if pattern.search(temp_text):
-                matched.append(kw)
-                points += weight
-                temp_text = pattern.sub(' ', temp_text)   # avoid double-counting
-
-        score = min(1.0, points / TASK_MAX_POINTS)
+        matched = count_matches(task_str, category)
+        n_m = len(matched)                 # N_m = number of unique matched keywords
+        score = alignment_score(n_m)
 
         if score >= 0.70:
             status = "Aligned"
@@ -2384,9 +2525,16 @@ def validate_task():
         else:
             status = "Not Aligned"
 
+        suggested = None
+        if status != "Aligned":
+            s = suggest_category(task_str, category)
+            if s and len(count_matches(task_str, s)) > n_m:
+                suggested = s
+
         results.append({
-            'task': task_str, 'score': round(score, 2), 'points': points,
-            'status': status, 'matchedKeywords': matched
+            'task': task_str, 'score': round(score, 2), 'points': n_m,
+            'status': status, 'matchedKeywords': matched,
+            'suggestedCategory': suggested
         })
         total_score += score
 
@@ -2397,7 +2545,7 @@ def validate_task():
         'success': True, 'averageScore': avg, 'status': final_status,
         'taskBreakdown': results,
         # lets the frontend flag individual bad tasks even if the average passes
-        'misalignedTasks': [r['task'] for r in results if r['status'] == 'Not Aligned'],
+        'misalignedTasks': [r['task'] for r in results if r['status'] != 'Aligned'],
     }), 200
 
 
@@ -2418,6 +2566,17 @@ FRAMEWORK_SCORES = {
     "90m Deep Work": {"df": 10, "fm": 2, "cs": 2}
 }
 
+
+def normalized_framework_score(framework, criterion):
+    """Min-max normalization (fallback 3-criteria model, not in Chapter 3):
+    x_{f,c} = (X_{f,c} - X_{c,min}) / (X_{c,max} - X_{c,min})"""
+    vals = [s[criterion] for s in FRAMEWORK_SCORES.values()]
+    lo, hi = min(vals), max(vals)
+    if hi == lo:
+        return 0.0
+    return (FRAMEWORK_SCORES[framework][criterion] - lo) / (hi - lo)
+
+
 # --- Helpers for the WSM recommendation engine ---
 
 # Maps whatever the frontend sends ("Practice", "practising", "memorization"...)
@@ -2436,8 +2595,9 @@ WEIGHT_CATEGORY_ALIASES = {
 # study_sessions.task_status values that count as a successful session (lowercase)
 SUCCESS_STATUSES = {"completed", "early", "on-time", "on time"}
 
-# Minimum sessions with a technique before its history affects the score (PDF: 5)
-WSM_MIN_ATTEMPTS = 5
+# Fallback 3-criteria model (not in Chapter 3): history modifier H_f = 1.0 when attempts < 3, otherwise max(0.5, successes/attempts)
+WSM_MIN_ATTEMPTS = 3
+WSM_MIN_MODIFIER = 0.5
 
 
 def resolve_weight_category(value):
@@ -2465,7 +2625,75 @@ def resolve_framework_name(technique):
     return None
 
 
+# =============================================================================
+# 5-CRITERIA WEIGHTED SUM MODEL (Chapter 3, Tables 3.1-3.3, Figure 3.5)
+#   S_f = sum over the 5 criteria of (weight x rating of technique f), ratings 1-5.
+#   Recommended technique = the one with the highest S_f.
+# The engine is switched on automatically once WSM5_RATINGS is filled in from your
+# Tables 3.2 / 3.3. Until then the older 3-criteria model above keeps the app working.
+# =============================================================================
+
+WSM5_WEIGHTS = {
+    'task_category': 0.30,
+    'learning_objective': 0.25,
+    'study_time': 0.15,
+    'material_type': 0.15,
+    'task_complexity': 0.15,
+}   # sum = 1.00
+
+# What the app can actually start for each technique (focus / break / sessions).
+# If Table 3.3 has a technique without a timer preset (e.g. "Flashcards with Active Recall"),
+# add it here and point it at the closest preset; its own name is still shown to the student.
+WSM5_TIMERS = {
+    "Pomodoro": {"focus": 25, "break": 5, "sessions": 4},
+    "52-17 Method": {"focus": 52, "break": 17, "sessions": 3},
+    "90m Deep Work": {"focus": 90, "break": 20, "sessions": 2},
+}
+
+# FILL THIS FROM Chapter 3 (Tables 3.1-3.3). Ratings are 1-5. One entry per technique:
+#   WSM5_RATINGS = {
+#       "Pomodoro": {
+#           "task_category": {"creation": 2, "writing": 3, "practicing": 3, "reading": 3, "review": 5, "memorize": 5},
+#           "learning_objective": {"<option name as in Table 3.1>": 4, ...},
+#           "study_time": {"<option>": 4, ...},
+#           "material_type": {"<option>": 4, ...},
+#           "task_complexity": {"<option>": 4, ...},
+#       },
+#       ... one block per technique in Table 3.3 ...
+#   }
+# (The numbers in the comment above are only an example of the SHAPE, not your values.)
+WSM5_RATINGS = {}
+
+
+def wsm5_ready(answers):
+    """True when the ratings table is filled and the form sent all four non-task answers."""
+    if not WSM5_RATINGS or not isinstance(answers, dict):
+        return False
+    return all(str(answers.get(c) or '').strip() for c in
+               ('learning_objective', 'study_time', 'material_type', 'task_complexity'))
+
+
+def wsm5_score(technique, answers, task_categories):
+    """S_f for one technique. Task Category = average rating over the session's tasks."""
+    r = WSM5_RATINGS[technique]
+    cats = [str(c).strip().lower() for c in task_categories]
+    cat_ratings = [r['task_category'][c] for c in cats if c in r['task_category']]
+    cat_rating = sum(cat_ratings) / len(cat_ratings) if cat_ratings else 0
+    total = WSM5_WEIGHTS['task_category'] * cat_rating
+    for crit in ('learning_objective', 'study_time', 'material_type', 'task_complexity'):
+        total += WSM5_WEIGHTS[crit] * r[crit].get(str(answers.get(crit)).strip(), 0)
+    return round(total, 2)
+
+
+def wsm5_recommend(answers, task_categories):
+    """Returns (best_technique, {technique: score}). Ties: first technique in WSM5_RATINGS wins."""
+    scores = {t: wsm5_score(t, answers, task_categories) for t in WSM5_RATINGS}
+    best = max(scores, key=scores.get)
+    return best, scores
+
+
 @app.route('/api/ai-recommendation', methods=['POST'])
+@limiter.limit("60 per hour")
 def ai_recommendation():
     data = request.get_json() or {}
     email = data.get('email')
@@ -2477,8 +2705,11 @@ def ai_recommendation():
 
     try:
         # 1. Get history from Supabase for the Historical Modifier (H_f)
+        u_res = supabase.table('users').select('id').eq('email', email).execute()
+        if not u_res.data: return jsonify({'success': False, 'error': 'User not found.'}), 404
+        
         sessions_res = supabase.table('study_sessions').select('technique, task_status') \
-            .eq('email', email).order('created_at', desc=True).limit(20).execute()
+            .eq('user_id', u_res.data[0]['id']).order('created_at', desc=True).limit(20).execute()
         user_history = sessions_res.data or []
 
         perf_tracking = {
@@ -2497,15 +2728,24 @@ def ai_recommendation():
             rec = perf_tracking[fw_name]
             if rec["attempts"] < WSM_MIN_ATTEMPTS:
                 return 1.0
-            return rec["successes"] / rec["attempts"]
+            return max(WSM_MIN_MODIFIER, rec["successes"] / rec["attempts"])
 
-        # 2. WSM session weight calculation (Equation 1: average weights across tasks)
+        # 2. WSM session weight calculation (average the task-category weights across all tasks)
         session_category = resolve_weight_category(work_type) or "Reading"
 
+        # Each task gets its OWN category (the weights are averaged over the tasks):
+        #  - {task, category} objects keep their category
+        #  - plain strings use the selected category, or a clearly better-fitting one
+        sel_key = str(work_type).strip().lower()
+        sel_key = CATEGORY_ALIASES.get(sel_key, sel_key)
         matched_categories = []
         for t in tasks:
-            # if the frontend sends {task, category} objects, respect each task's own category
-            own_cat = resolve_weight_category(t.get('category')) if isinstance(t, dict) else None
+            if isinstance(t, dict):
+                own_cat = resolve_weight_category(t.get('category'))
+            elif sel_key in KEYWORD_RULES:
+                own_cat = resolve_weight_category(effective_category(str(t), sel_key))
+            else:
+                own_cat = None
             matched_categories.append(own_cat or session_category)
 
         if not matched_categories:
@@ -2522,27 +2762,34 @@ def ai_recommendation():
             "cs": total_cs / num_tasks
         }
 
-        # 3. WSM framework scoring & selection (Equation 2)
-        best_framework = "Pomodoro"
-        highest_score = -1
-        framework_details = {
-            "Pomodoro": {"focus": 25, "break": 5, "sessions": 4},
-            "52-17 Method": {"focus": 52, "break": 17, "sessions": 3},
-            "90m Deep Work": {"focus": 90, "break": 20, "sessions": 2}
-        }
+        # 3. WSM framework scoring & selection
+        framework_details = dict(WSM5_TIMERS)
+        answers = data.get('answers') or {}
+        wsm_scores = None
 
-        for fw, scores in FRAMEWORK_SCORES.items():
-            base_score = (
-                (session_weights["df"] * scores["df"]) +
-                (session_weights["fm"] * scores["fm"]) +
-                (session_weights["cs"] * scores["cs"])
-            )
-            h_mod = get_historical_modifier(fw)
-            final_score = base_score * h_mod
+        if wsm5_ready(answers):
+            # 5-criteria Weighted Sum Model from Chapter 3 (S_f = sum of weight x rating)
+            best_framework, wsm_scores = wsm5_recommend(
+                answers, [c.lower() for c in matched_categories])
+            highest_score = wsm_scores[best_framework]
+        else:
+            # Fallback (ratings table not filled / form did not send the 5 answers):
+            # 3-criteria model with min-max normalization and the history modifier H_f.
+            best_framework = "Pomodoro"
+            highest_score = -1
+            for fw in FRAMEWORK_SCORES:
+                base_score = (
+                    (session_weights["df"] * normalized_framework_score(fw, "df")) +
+                    (session_weights["fm"] * normalized_framework_score(fw, "fm")) +
+                    (session_weights["cs"] * normalized_framework_score(fw, "cs"))
+                )
+                final_score = base_score * get_historical_modifier(fw)
+                if final_score > highest_score:
+                    highest_score = final_score
+                    best_framework = fw
 
-            if final_score > highest_score:
-                highest_score = final_score
-                best_framework = fw
+        # Fallback if a technique has no timer preset
+        framework_details.setdefault(best_framework, {"focus": 25, "break": 5, "sessions": 4})
 
         config = framework_details[best_framework]
 
@@ -2551,7 +2798,7 @@ def ai_recommendation():
         task_labels = [t.get('task') or t.get('text') or str(t) if isinstance(t, dict) else str(t) for t in tasks]
         try:
             genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            model = genai.GenerativeModel('gemini-3.6-flash')
+            model = genai.GenerativeModel(GEMINI_MODEL)
 
             prompt = f"""
             You are Kitsu AI, an expert adaptive study coach inside StudyCircle. 
@@ -2574,7 +2821,9 @@ def ai_recommendation():
             'focus': config['focus'],
             'break': config['break'],
             'sessions': config['sessions'],
-            'recommendation': rationale
+            'recommendation': rationale,
+            'scores': wsm_scores,
+            'model': 'wsm-5-criteria' if wsm_scores else 'wsm-3-criteria'
         }), 200
 
     except Exception as e:
@@ -2851,14 +3100,15 @@ def on_join_room(data):
     total_focus_formatted = "0h 00m"  # Default focus time if there's no history yet
 
     try:
-        u_res = supabase.table('users').select('email, avatar_config, level').eq('username', username).execute()
+        u_res = supabase.table('users').select('id, email, avatar_config, level').eq('username', username).execute()
         if u_res.data:
+            user_id = u_res.data[0]['id']
             user_email = u_res.data[0].get('email', '')
             db_avatar = u_res.data[0].get('avatar_config')
             level = u_res.data[0].get('level', level)
 
-            # Calculate the user's real total focus time from 'study_sessions'
-            sessions_res = supabase.table('study_sessions').select('duration_minutes').eq('email', user_email).execute()
+            # Calculate the user's real total focus time using user_id
+            sessions_res = supabase.table('study_sessions').select('duration_minutes').eq('user_id', user_id).execute()
             if sessions_res.data:
                 total_minutes = sum(int(s.get('duration_minutes', 0)) for s in sessions_res.data)
                 hours = total_minutes // 60
@@ -3786,13 +4036,12 @@ def admin_get_users():
         users = users_res.data or []
 
         # 1. Total sessions from study_sessions table
-        sessions_res = supabase.table('study_sessions').select('email').execute()
-        sessions_count_by_email = {}
+        sessions_res = supabase.table('study_sessions').select('user_id').execute()
+        sessions_count_by_user_id = {}
         for s in (sessions_res.data or []):
-            em = s.get('email')
-            if em:
-                em_lower = em.strip().lower()
-                sessions_count_by_email[em_lower] = sessions_count_by_email.get(em_lower, 0) + 1
+            uid = s.get('user_id')
+            if uid is not None:
+                sessions_count_by_user_id[uid] = sessions_count_by_user_id.get(uid, 0) + 1
 
         # 2. Lifetime flags count and active suspension check
         susp_res = supabase.table('suspensions').select('*').order('created_at', desc=True).execute()
@@ -3853,7 +4102,7 @@ def admin_get_users():
                 'username': u.get('username') or 'User',
                 'email': u.get('email'),
                 'status': status_display,
-                'totalSessions': sessions_count_by_email.get(user_email, 0),
+                'totalSessions': sessions_count_by_user_id.get(u_id, 0),
                 'lastActive': 'Today' if (days_ago == 0 or live_state) else f"{days_ago}d ago",
                 'daysAgo': 0 if live_state else days_ago,
                 'flags': flags_count_by_user.get(u_id, 0),
@@ -4262,7 +4511,7 @@ def admin_dashboard():
         rooms_prev = _count_between('rooms', 'created_at', prev_start, prev_end)
 
         sessions = _fetch_all(lambda: supabase.table('study_sessions')
-                              .select('email, created_at, task_status')
+                              .select('user_id, created_at, task_status')
                               .gte('created_at', _iso_utc(start))
                               .lt('created_at', _iso_utc(end))
                               .order('created_at'))
@@ -4295,8 +4544,8 @@ def admin_dashboard():
             total[idx] += 1
             if (s.get('task_status') or '').strip().lower() == 'completed':
                 completed[idx] += 1
-            if s.get('email'):
-                users_seen[idx].add(s['email'].strip().lower())
+            if s.get('user_id'):
+                users_seen[idx].add(s['user_id'])
 
         chart = {
             'labels': [b[1] for b in buckets],
@@ -4340,24 +4589,26 @@ def admin_dashboard():
 
         # Recent: latest finished sessions
         recent = supabase.table('study_sessions') \
-            .select('id, email, activity_name, task_status, created_at, room_id') \
+            .select('id, user_id, activity_name, task_status, created_at, room_id') \
             .order('created_at', desc=True).limit(30).execute().data or []
 
-        emails = list({(s.get('email') or '').strip() for s in recent if s.get('email')})
+        user_ids = list({s['user_id'] for s in recent if s.get('user_id') is not None})
         room_ids = list({s['room_id'] for s in recent if s.get('room_id') is not None})
-        name_by_email, room_by_id = {}, {}
-        if emails:
-            u = supabase.table('users').select('email, username').in_('email', emails).execute().data or []
-            name_by_email = {x['email'].strip().lower(): x['username'] for x in u}
+        name_by_uid, room_by_id = {}, {}
+
+        if user_ids:
+            u = supabase.table('users').select('id, username').in_('id', user_ids).execute().data or []
+            name_by_uid = {x['id']: x['username'] for x in u}
+
         if room_ids:
             rr = supabase.table('rooms').select('id, name').in_('id', room_ids).execute().data or []
             room_by_id = {x['id']: x['name'] for x in rr}
 
         for s in recent:
-            em = (s.get('email') or '').strip().lower()
+            uid = s.get('user_id')
             activity.append({
                 'id': f"sess-{s['id']}",
-                'user': name_by_email.get(em) or (em.split('@')[0] if em else 'User'),
+                'user': name_by_uid.get(uid) or 'User',
                 'room': room_by_id.get(s.get('room_id')) or s.get('activity_name') or 'Focus Session',
                 'status': s.get('task_status') or 'Completed',
                 'createdAt': s.get('created_at'),
