@@ -34,7 +34,7 @@ const initialPlayerData = {
   email: savedUser.email || "hero@acorn.study",
   level: savedUser.level ?? 1,
   currentXP: savedUser.current_xp ?? savedUser.currentXP ?? 1,
-  maxXP: savedUser.max_xp ?? savedUser.maxXP ?? 100,
+  maxXP: savedUser.max_xp ?? savedUser.maxXP ?? 50,
   avatarUrl: savedUser.avatarUrl || "",
   avatarConfig: savedUser.avatarConfig || null,
   roomConfig: savedUser.roomConfig || null,

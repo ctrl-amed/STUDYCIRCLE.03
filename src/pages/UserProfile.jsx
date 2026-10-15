@@ -93,17 +93,19 @@ export default function UserProfile() {
   const totalCoins = player?.coins ?? 0;
   const xpPercent = Math.min(100, Math.max(0, ((player?.currentXP || 0) / (player?.maxXP || 100)) * 100));
 
-  // Get the badges the user has already claimed, from the account's inventory
+  // Get the badges the user has actually claimed, from the account's inventory
   const getUnlockedBadges = () => {
     let inventory = player?.inventory || [];
 
-    // Fallback: this account's saved session in localStorage
-    if (inventory.length === 0 && userEmail) {
+    // Fallback: only while the database profile is still loading.
+    // Once it has loaded, an empty inventory really means nothing was claimed,
+    // so we must not fall back to a stale cached copy.
+    if (!profile && inventory.length === 0 && userEmail) {
       try {
         const savedUserJson = localStorage.getItem(`user_${userEmail}`);
         if (savedUserJson) {
           const parsedUser = JSON.parse(savedUserJson);
-          if (parsedUser.inventory) {
+          if (Array.isArray(parsedUser.inventory)) {
             inventory = parsedUser.inventory;
           }
         }
@@ -112,7 +114,8 @@ export default function UserProfile() {
       }
     }
 
-    const claimedLevels = [1];
+    // Start empty: a badge only shows once its "level_N_reward" was claimed.
+    const claimedLevels = [];
 
     inventory.forEach(item => {
       if (typeof item === 'string' && item.startsWith('level_') && item.endsWith('_reward')) {
@@ -199,6 +202,11 @@ export default function UserProfile() {
             
             <div className="p-6 flex items-center gap-6 overflow-x-auto my-auto">
               <div className="flex items-center gap-4">
+                {unlockedBadges.length === 0 && (
+                  <p className="font-pressstart text-[8px] text-theme-dark/60">
+                    No badges yet. Claim level rewards to unlock them.
+                  </p>
+                )}
                 {unlockedBadges.map((lvl) => {
                   const badgeInfo = LEVEL_BADGES_MAP[lvl] || { img: "media/xp_starter.png", alt: `Level ${lvl} Badge` };
                   return (
