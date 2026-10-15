@@ -22,6 +22,10 @@ import re
 import time
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from functools import wraps
+import hmac
+import hashlib
+import requests
+import ssl
 
 # =============================================================================
 # APP CONFIGURATION & SETUP
@@ -30,7 +34,7 @@ from functools import wraps
 load_dotenv()
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 CORS(app)
 bcrypt = Bcrypt(app)
 
@@ -85,6 +89,12 @@ from email.message import EmailMessage
 def send_plain_email(to_email, subject, body):
     sender = os.getenv("MAIL_USERNAME")
     password = os.getenv("MAIL_PASSWORD")
+    if not sender or not password:
+        raise RuntimeError("MAIL_USERNAME / MAIL_PASSWORD are not set in .env")
+
+    # Linisin ang spaces sakaling na-copy-paste nang may space ang app password
+    sender = sender.strip()
+    password = password.replace(" ", "").strip()
 
     msg = EmailMessage()
     msg['From'] = f"StudyCircle <{sender}>"
@@ -92,7 +102,11 @@ def send_plain_email(to_email, subject, body):
     msg['Subject'] = subject
     msg.set_content(body)
 
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=20) as server:
+    context = ssl.create_default_context()
+
+    # Port 465 gamit ang direct SSL
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context, timeout=15) as server:
+        server.set_debuglevel(1)  # Ipi-print nito ang buong SMTP logs sa terminal
         server.login(sender, password)
         server.send_message(msg)
 
@@ -780,47 +794,195 @@ STUDENT_ID_REGEX = re.compile(r'^[a-zA-Z]\d{8}$')
 def is_umak_email(email):
     return bool(email) and bool(UMAK_EMAIL_REGEX.match(email.strip()))
 
+
+# ---------- Email verification for sign-up ----------
+SIGNUP_CODE_TTL_MIN = 10        # a code works for 10 minutes
+SIGNUP_CODE_MAX_ATTEMPTS = 5    # wrong guesses allowed per code
+SIGNUP_RESEND_SECONDS = 60      # wait time between emails
+
+
+def _new_code():
+    return f"{secrets.randbelow(1000000):06d}"
+
+
+def _code_hash(email, code):
+    return hmac.new(SECRET_KEY.encode(), f"{email.lower()}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def _send_signup_code(email, username, code):
+    send_plain_email(
+        email,
+        "StudyCircle: your verification code",
+        f"Hi {username},\n\nYour StudyCircle verification code is:\n\n    {code}\n\n"
+        f"It expires in {SIGNUP_CODE_TTL_MIN} minutes. If you did not try to sign up, ignore this email.\n\n"
+        f"- StudyCircle Team"
+    )
+
+
+def _seconds_to_wait(last_sent_at):
+    last = parse_ts(last_sent_at)
+    if not last:
+        return 0
+    return max(0, SIGNUP_RESEND_SECONDS - (datetime.now(timezone.utc) - last).total_seconds())
+
+
 @app.route('/api/signup', methods=['POST'])
-@limiter.limit("5 per hour")
+@limiter.limit("100 per hour")
 def signup():
-    data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    student_id = data.get('student_id')
-    password = data.get('password')
+    """STEP 1: check the form, save a pending signup, email a 6-digit code.
+    The account is only created in /api/signup/verify after the code is correct."""
+    data = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    email = (data.get('email') or '').strip()
+    student_id = (data.get('student_id') or '').strip()
+    password = data.get('password') or ''
 
     if not username or not email or not password or not student_id:
         return jsonify({'error': 'Please provide all required fields.'}), 400
-
-    email = email.strip()
-    student_id = student_id.strip()
-
     if not is_umak_email(email):
         return jsonify({'error': 'You must sign up with a valid @umak.edu.ph email.', 'field': 'email'}), 400
-
     if not STUDENT_ID_REGEX.match(student_id):
         return jsonify({'error': 'Invalid student ID format.', 'field': 'student_id'}), 400
 
     try:
-        existing_email = supabase.table('users').select('*').eq('email', email).execute()
-        if existing_email.data:
+        if supabase.table('users').select('id').eq('email', email).execute().data:
             return jsonify({'error': 'This email is already registered.', 'field': 'email'}), 400
-
-        existing_username = supabase.table('users').select('*').eq('username', username).execute()
-        if existing_username.data:
+        if supabase.table('users').select('id').eq('username', username).execute().data:
             return jsonify({'error': 'Username is already taken.', 'field': 'username'}), 400
-
-        existing_student_id = supabase.table('users').select('*').eq('student_id', student_id).execute()
-        if existing_student_id.data:
+        if supabase.table('users').select('id').eq('student_id', student_id).execute().data:
             return jsonify({'error': 'This student ID is already registered.', 'field': 'student_id'}), 400
 
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        pend = supabase.table('pending_signups').select('last_sent_at').eq('email', email).execute()
+        if pend.data:
+            wait = _seconds_to_wait(pend.data[0].get('last_sent_at'))
+            if wait > 0:
+                return jsonify({
+                    'error': f'Please wait {int(wait) + 1} seconds before asking for a new code.',
+                    'retryAfter': int(wait) + 1
+                }), 429
+
+        code = _new_code()
+        now = datetime.now(timezone.utc)
+        supabase.table('pending_signups').upsert({
+            'email': email,
+            'username': username,
+            'student_id': student_id,
+            'password_hash': bcrypt.generate_password_hash(password).decode('utf-8'),
+            'code_hash': _code_hash(email, code),
+            'expires_at': (now + timedelta(minutes=SIGNUP_CODE_TTL_MIN)).isoformat(),
+            'attempts': 0,
+            'last_sent_at': now.isoformat(),
+        }, on_conflict='email').execute()
+
+        # Attempt to deliver via SMTP; print code to console as a testing fallback
+        try:
+            _send_signup_code(email, username, code)
+            print(f"[SIGNUP CODE SENT] Dispatched to {email}")
+        except Exception as mail_err:
+            print(f"\n[SIGNUP CODE EMAIL FAILED]: {mail_err}")
+            print("=" * 52)
+            print(f"DEV VERIFICATION CODE FOR {email}: {code}")
+            print("=" * 52 + "\n")
+
+        return jsonify({
+            'needs_verification': True,
+            'email': email,
+            'expiresInMinutes': SIGNUP_CODE_TTL_MIN
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/signup/resend', methods=['POST'])
+@limiter.limit("100 per hour")
+def signup_resend():
+    """Sends a fresh code for a pending signup."""
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip()
+    try:
+        res = supabase.table('pending_signups').select('*').eq('email', email).execute()
+        if not res.data:
+            return jsonify({'error': 'No pending sign-up for this email. Please sign up again.', 'expired': True}), 404
+        p = res.data[0]
+
+        wait = _seconds_to_wait(p.get('last_sent_at'))
+        if wait > 0:
+            return jsonify({
+                'error': f'Please wait {int(wait) + 1} seconds before asking for a new code.',
+                'retryAfter': int(wait) + 1
+            }), 429
+
+        code = _new_code()
+        now = datetime.now(timezone.utc)
+        supabase.table('pending_signups').update({
+            'code_hash': _code_hash(email, code),
+            'expires_at': (now + timedelta(minutes=SIGNUP_CODE_TTL_MIN)).isoformat(),
+            'attempts': 0,
+            'last_sent_at': now.isoformat(),
+        }).eq('email', email).execute()
+
+        try:
+            _send_signup_code(email, p['username'], code)
+            print(f"[SIGNUP CODE RESENT] Dispatched to {email}")
+        except Exception as mail_err:
+            print(f"\n[SIGNUP CODE EMAIL FAILED]: {mail_err}")
+            print("=" * 52)
+            print(f"DEV RESEND CODE FOR {email}: {code}")
+            print("=" * 52 + "\n")
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/signup/verify', methods=['POST'])
+@limiter.limit("30 per hour")
+def signup_verify():
+    """STEP 2: check the code, then create the account."""
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip()
+    code = re.sub(r'\D', '', str(data.get('code') or ''))
+    if not email or len(code) != 6:
+        return jsonify({'error': 'Enter the 6-digit code from your email.'}), 400
+
+    try:
+        res = supabase.table('pending_signups').select('*').eq('email', email).execute()
+        if not res.data:
+            return jsonify({'error': 'No pending sign-up for this email. Please sign up again.', 'expired': True}), 400
+        p = res.data[0]
+
+        expires = parse_ts(p.get('expires_at'))
+        if not expires or datetime.now(timezone.utc) >= expires:
+            supabase.table('pending_signups').delete().eq('email', email).execute()
+            return jsonify({'error': 'This code has expired. Please sign up again.', 'expired': True}), 400
+
+        attempts = int(p.get('attempts') or 0)
+        if attempts >= SIGNUP_CODE_MAX_ATTEMPTS:
+            supabase.table('pending_signups').delete().eq('email', email).execute()
+            return jsonify({'error': 'Too many wrong codes. Please sign up again.', 'expired': True}), 400
+
+        if not hmac.compare_digest(p['code_hash'], _code_hash(email, code)):
+            supabase.table('pending_signups').update({'attempts': attempts + 1}).eq('email', email).execute()
+            left = SIGNUP_CODE_MAX_ATTEMPTS - attempts - 1
+            return jsonify({'error': f'Wrong code. {left} attempt(s) left.'}), 400
+
+        # Code is correct. Re-check uniqueness in case someone took the name while verifying.
+        clash = None
+        if supabase.table('users').select('id').eq('email', email).execute().data:
+            clash = ('email', 'This email is already registered.')
+        elif supabase.table('users').select('id').eq('username', p['username']).execute().data:
+            clash = ('username', 'That username was taken while you were verifying. Please sign up again.')
+        elif supabase.table('users').select('id').eq('student_id', p['student_id']).execute().data:
+            clash = ('student_id', 'This student ID is already registered.')
+        if clash:
+            supabase.table('pending_signups').delete().eq('email', email).execute()
+            return jsonify({'error': clash[1], 'field': clash[0], 'expired': True}), 400
 
         response = supabase.table('users').insert({
-            "username": username,
+            "username": p['username'],
             "email": email,
-            "student_id": student_id,
-            "password": hashed_password,
+            "student_id": p['student_id'],
+            "password": p['password_hash'],
             "coins": 100,
             "streak": 0,
             "inventory": [],
@@ -830,8 +992,8 @@ def signup():
             "room_config": DEFAULT_ROOM_CONFIG,
             "unlocked_items": DEFAULT_UNLOCKED_ITEMS,
         }).execute()
-
         created_user = response.data[0] if response.data else {}
+        supabase.table('pending_signups').delete().eq('email', email).execute()
 
         if created_user.get('id'):
             ensure_streak_freeze_row(created_user['id'])
@@ -843,9 +1005,9 @@ def signup():
         return jsonify({
             'message': 'User created successfully!',
             'user': {
-                'username': created_user.get('username', username),
+                'username': created_user.get('username', p['username']),
                 'email': created_user.get('email', email),
-                'studentId': created_user.get('student_id', student_id),
+                'studentId': created_user.get('student_id', p['student_id']),
                 'coins': created_user.get('coins', 100),
                 'streak': created_user.get('streak', 0),
                 'bestStreak': created_user.get('best_streak') or 0,
@@ -854,8 +1016,6 @@ def signup():
                 'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': inv_data or [],
-                # explicit nulls so a new account never inherits the previous
-                # account's avatar / room / owned items in the browser
                 'avatarConfig': parse_json_field(created_user.get('avatar_config'), DEFAULT_AVATAR_CONFIG),
                 'roomConfig': parse_json_field(created_user.get('room_config'), DEFAULT_ROOM_CONFIG),
                 'unlockedItems': parse_json_field(created_user.get('unlocked_items'), DEFAULT_UNLOCKED_ITEMS)
@@ -864,18 +1024,42 @@ def signup():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+
+# ---------- Google sign-in verification ----------
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")   # optional but recommended (same ID as your frontend)
+
+
+def verify_google_token(access_token):
+    """Asks Google whether the token is real. Returns the profile dict or None."""
+    if not access_token:
+        return None
+    try:
+        r = requests.get('https://oauth2.googleapis.com/tokeninfo',
+                         params={'access_token': access_token}, timeout=8)
+        if r.status_code != 200:
+            return None
+        info = r.json()
+        if not info.get('email') or str(info.get('email_verified')).lower() != 'true':
+            return None
+        if GOOGLE_CLIENT_ID and info.get('aud') != GOOGLE_CLIENT_ID:
+            return None
+        return info
+    except Exception as e:
+        print("Google token check failed:", e)
+        return None
+
+
 @app.route('/api/google-signup', methods=['POST'])
 def google_signup():
-    data = request.get_json()
+    data = request.get_json() or {}
+    info = verify_google_token(data.get('access_token'))
+    if not info:
+        return jsonify({'error': 'Google sign-in could not be verified. Please try again.'}), 401
+
     username = data.get('username')
-    email = data.get('email')
     student_id = data.get('student_id')
-    google_id = data.get('google_id')
-
-    if not email:
-        return jsonify({'error': 'Email is required.'}), 400
-
-    email = email.strip()
+    email = info['email'].strip()
+    google_id = info.get('sub')
 
     if not is_umak_email(email):
         return jsonify({'error': 'You must sign in with a valid @umak.edu.ph email.'}), 400
@@ -928,7 +1112,7 @@ def google_signup():
         if existing_student_id.data:
             return jsonify({'error': 'This student ID is already registered.', 'field': 'student_id'}), 400
 
-        dummy_password = bcrypt.generate_password_hash(google_id or 'google_secure_pass').decode('utf-8')
+        dummy_password = bcrypt.generate_password_hash(secrets.token_urlsafe(32)).decode('utf-8')
 
         response = supabase.table('users').insert({
             "username": username,
@@ -1251,12 +1435,26 @@ def send_study_reminder():
             print("[MANUAL REMINDER WORKER ERROR]:", e)
 
 
+def purge_pending_signups():
+    """Deletes sign-ups whose verification code has expired."""
+    try:
+        supabase.table('pending_signups').delete() \
+            .lt('expires_at', datetime.now(timezone.utc).isoformat()).execute()
+    except Exception as e:
+        print("[PENDING SIGNUP PURGE ERROR]:", e)
+
+
 # Background scheduler: checks every minute for scheduled reminders and expired suspensions
 scheduler = BackgroundScheduler()
 scheduler.add_job(func=send_study_reminder, trigger="interval", minutes=1)
 scheduler.add_job(func=lift_expired_suspensions, trigger="interval", minutes=1,
                   id="lift_suspensions", replace_existing=True)
-scheduler.start()
+scheduler.add_job(func=purge_pending_signups, trigger="interval", minutes=10,
+                  id="purge_pending", replace_existing=True)
+
+# Pinipigilan ang pagtakbo sa reloader process para hindi mag-conflict ang sockets sa Windows
+if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    scheduler.start()
 
 
 @app.route('/api/get-reminders', methods=['GET'])
@@ -1584,30 +1782,31 @@ def update_coins_db():
 
 # =============================================================================
 # FRIENDS SYSTEM (search, requests, accept/reject, list, remove)
+# The friendships table identifies people by sender_email / receiver_email.
 # =============================================================================
 
 @app.route('/api/search-users', methods=['GET'])
 def search_users():
     query = request.args.get('query', '').strip()
-    current_email = request.args.get('email', '')
+    current_email = request.args.get('email', '').strip()
 
     if not query:
         return jsonify({"success": True, "users": []}), 200
 
     try:
-        u_res = supabase.table('users').select('id').eq('email', current_email).execute()
-        current_user_id = u_res.data[0]['id'] if u_res.data else None
-        excluded_ids = {current_user_id}
+        excluded_emails = {current_email}
 
-        if current_user_id:
-            friendships_res = supabase.table('friendships').select('*').or_(f"sender_id.eq.{current_user_id},receiver_id.eq.{current_user_id}").execute()
-            for item in friendships_res.data:
+        if current_email:
+            friendships_res = supabase.table('friendships').select('*').or_(
+                f"sender_email.eq.{current_email},receiver_email.eq.{current_email}"
+            ).execute()
+            for item in (friendships_res.data or []):
                 if item['status'] in ['accepted', 'pending']:
-                    other_id = item['receiver_id'] if item['sender_id'] == current_user_id else item['sender_id']
-                    excluded_ids.add(other_id)
+                    other_email = item['receiver_email'] if item['sender_email'] == current_email else item['sender_email']
+                    excluded_emails.add(other_email)
 
         response = supabase.table('users').select('id, username, email, level, avatar_config').ilike('username', f"%{query}%").execute()
-        filtered_users = [u for u in response.data if u['id'] not in excluded_ids]
+        filtered_users = [u for u in (response.data or []) if u['email'] not in excluded_emails]
 
         return jsonify({"success": True, "users": filtered_users}), 200
     except Exception as e:
@@ -1617,19 +1816,16 @@ def search_users():
 @app.route('/api/send-friend-request', methods=['POST'])
 def send_friend_request():
     data = request.get_json()
-    sender_email = data.get('senderEmail')
-    receiver_email = data.get('receiverEmail')
+    sender_email = (data.get('senderEmail') or '').strip()
+    receiver_email = (data.get('receiverEmail') or '').strip()
 
     if not sender_email or not receiver_email:
         return jsonify({"success": False, "message": "Sender and receiver emails are required."}), 400
 
     try:
-        res = supabase.table('users').select('id, email').in_('email', [sender_email, receiver_email]).execute()
-        id_map = {r['email']: r['id'] for r in res.data}
-        
         supabase.table('friendships').insert({
-            "sender_id": id_map.get(sender_email),
-            "receiver_id": id_map.get(receiver_email),
+            "sender_email": sender_email,
+            "receiver_email": receiver_email,
             "status": "pending"
         }).execute()
         return jsonify({"success": True, "message": "Friend request sent successfully!"}), 200
@@ -1638,38 +1834,55 @@ def send_friend_request():
 
 
 @app.route('/api/get-friends-data', methods=['GET'])
+@limiter.limit("120 per minute")   # the header polls this every few seconds
 def get_friends_data():
-    email = request.args.get('email')
+    email = (request.args.get('email') or '').strip()
     if not email:
         return jsonify({"success": False, "message": "Email is required."}), 400
 
     try:
-        u_res = supabase.table('users').select('id').eq('email', email).execute()
-        if not u_res.data:
+        response = supabase.table('friendships').select('*').or_(
+            f"sender_email.eq.{email},receiver_email.eq.{email}"
+        ).execute()
+        rows = response.data or []
+        if not rows:
             return jsonify({"success": True, "friends": [], "requests": []}), 200
-        user_id = u_res.data[0]['id']
 
-        response = supabase.table('friendships').select('*').or_(f"sender_id.eq.{user_id},receiver_id.eq.{user_id}").execute()
-        if not response.data:
-            return jsonify({"success": True, "friends": [], "requests": []}), 200
+        # work out whose profile we need, then load them all in ONE query
+        needed = set()
+        for item in rows:
+            status = item.get('status')
+            sender_email = item.get('sender_email')
+            receiver_email = item.get('receiver_email')
+            if status == 'accepted':
+                needed.add(receiver_email if sender_email == email else sender_email)
+            elif status == 'pending' and receiver_email == email:
+                needed.add(sender_email)
+        needed.discard(None)
+
+        profiles = {}
+        if needed:
+            u_res = supabase.table('users') \
+                .select('username, email, level, avatar_config') \
+                .in_('email', list(needed)).execute()
+            profiles = {u['email']: u for u in (u_res.data or [])}
 
         friends = []
-        requests = []
-
-        for item in response.data:
+        requests_list = []
+        for item in rows:
             status = item.get('status')
-            sender_id = item.get('sender_id')
-            receiver_id = item.get('receiver_id')
+            sender_email = item.get('sender_email')
+            receiver_email = item.get('receiver_email')
 
             if status == 'accepted':
-                friend_id = receiver_id if sender_id == user_id else sender_id
-                f_res = supabase.table('users').select('username, email, level, avatar_config').eq('id', friend_id).execute()
-                if f_res.data: friends.append(f_res.data[0])
-            elif status == 'pending' and receiver_id == user_id:
-                s_res = supabase.table('users').select('username, email, level, avatar_config').eq('id', sender_id).execute()
-                if s_res.data: requests.append({"id": item.get('id'), "sender": s_res.data[0]})
+                friend_email = receiver_email if sender_email == email else sender_email
+                if friend_email in profiles:
+                    friends.append(profiles[friend_email])
+            elif status == 'pending' and receiver_email == email:
+                if sender_email in profiles:
+                    requests_list.append({"id": item.get('id'), "sender": profiles[sender_email]})
 
-        return jsonify({"success": True, "friends": friends, "requests": requests}), 200
+        return jsonify({"success": True, "friends": friends, "requests": requests_list}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1694,22 +1907,17 @@ def handle_friend_request():
 @app.route('/api/remove-friend', methods=['POST'])
 def remove_friend():
     data = request.get_json()
-    user_email = data.get('userEmail')
-    friend_email = data.get('friendEmail')
+    user_email = (data.get('userEmail') or '').strip()
+    friend_email = (data.get('friendEmail') or '').strip()
 
     if not user_email or not friend_email:
         return jsonify({"success": False, "message": "Both emails are required."}), 400
 
     try:
-        res = supabase.table('users').select('id, email').in_('email', [user_email, friend_email]).execute()
-        id_map = {r['email']: r['id'] for r in res.data}
-        u_id = id_map.get(user_email)
-        f_id = id_map.get(friend_email)
-
-        if u_id and f_id:
-            supabase.table('friendships').delete().or_(
-                f"and(sender_id.eq.{u_id},receiver_id.eq.{f_id}),and(sender_id.eq.{f_id},receiver_id.eq.{u_id})"
-            ).execute()
+        supabase.table('friendships').delete().or_(
+            f"and(sender_email.eq.{user_email},receiver_email.eq.{friend_email}),"
+            f"and(sender_email.eq.{friend_email},receiver_email.eq.{user_email})"
+        ).execute()
         return jsonify({"success": True, "message": "Friend removed successfully!"}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1790,29 +1998,52 @@ def get_leaderboard():
 
 # =============================================================================
 # CHAT / MESSAGING
+# The messages table identifies people by sender_email / receiver_email.
 # =============================================================================
 
 @app.route('/api/messages', methods=['GET'])
 @limiter.limit("60 per minute")
 def get_messages():
-    user1 = request.args.get('user1')
-    user2 = request.args.get('user2')
+    user1 = (request.args.get('user1') or '').strip()
+    user2 = (request.args.get('user2') or '').strip()
 
     if not user1 or not user2:
         return jsonify({"success": False, "message": "Missing user emails"}), 400
 
     try:
-        res = supabase.table('users').select('id, email').in_('email', [user1, user2]).execute()
-        id_map = {r['email']: r['id'] for r in res.data}
-        u1_id = id_map.get(user1)
-        u2_id = id_map.get(user2)
-
-        response = supabase.table('messages').select('*') \
-            .in_('sender_id', [u1_id, u2_id]) \
-            .in_('receiver_id', [u1_id, u2_id]) \
-            .order('created_at').execute()
+        response = supabase.table('messages').select('*').or_(
+            f"and(sender_email.eq.{user1},receiver_email.eq.{user2}),"
+            f"and(sender_email.eq.{user2},receiver_email.eq.{user1})"
+        ).order('created_at').execute()
 
         return jsonify({"success": True, "messages": response.data}), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route('/api/latest-messages', methods=['GET'])
+@limiter.limit("120 per minute")   # the header polls this every few seconds
+def latest_messages():
+    """Newest message each person sent TO this user: { friendEmail: {message, created_at} }.
+    The header compares these times with when the user last opened each chat to show the unread dot."""
+    email = (request.args.get('email') or '').strip()
+    if not email:
+        return jsonify({"success": False, "message": "Email is required."}), 400
+
+    try:
+        res = supabase.table('messages') \
+            .select('sender_email, message, created_at') \
+            .eq('receiver_email', email) \
+            .order('created_at', desc=True) \
+            .limit(500).execute()
+
+        latest = {}
+        for m in (res.data or []):
+            sender = m.get('sender_email')
+            if sender and sender not in latest:        # rows are newest-first
+                latest[sender] = {'message': m.get('message'), 'created_at': m.get('created_at')}
+
+        return jsonify({"success": True, "latest": latest}), 200
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
@@ -1821,20 +2052,17 @@ def get_messages():
 @limiter.limit("30 per minute")
 def send_message():
     data = request.json
-    sender = data.get('sender_email')
-    receiver = data.get('receiver_email')
+    sender = (data.get('sender_email') or '').strip()
+    receiver = (data.get('receiver_email') or '').strip()
     message = data.get('message')
 
     if not sender or not receiver or not message:
         return jsonify({"success": False, "message": "Incomplete data"}), 400
 
     try:
-        res = supabase.table('users').select('id, email').in_('email', [sender, receiver]).execute()
-        id_map = {r['email']: r['id'] for r in res.data}
-        
         supabase.table('messages').insert({
-            "sender_id": id_map.get(sender),
-            "receiver_id": id_map.get(receiver),
+            "sender_email": sender,
+            "receiver_email": receiver,
             "message": message
         }).execute()
 
@@ -3344,20 +3572,43 @@ def handle_host_response(data):
     }, broadcast=True)
 
 
+def sid_for_room_user(room, username):
+    """Newest live socket of this username in this room."""
+    found = None
+    for sid, (r, u) in sid_to_room.items():
+        if r == room and u == username:
+            found = sid
+    return found
+
+
+def _relay_webrtc(event, data):
+    info = sid_to_room.get(request.sid)
+    if not info or not isinstance(data, dict):
+        return
+    room, sender = info
+    target_sid = sid_for_room_user(room, data.get('target'))
+    if not target_sid or target_sid == request.sid:
+        return
+    payload = {'from': sender}
+    for key in ('sdp', 'candidate'):
+        if key in data:
+            payload[key] = data[key]
+    socketio.emit(event, payload, room=target_sid)
+
+
 @socketio.on('webrtc_offer')
 def handle_webrtc_offer(data):
-    # Forward the offer to the specific target peer
-    socketio.emit('webrtc_offer', data, room=data.get('target'))
+    _relay_webrtc('webrtc_offer', data)
 
 
 @socketio.on('webrtc_answer')
 def handle_webrtc_answer(data):
-    socketio.emit('webrtc_answer', data, room=data.get('target'))
+    _relay_webrtc('webrtc_answer', data)
 
 
 @socketio.on('webrtc_ice_candidate')
 def handle_ice_candidate(data):
-    socketio.emit('webrtc_ice_candidate', data, room=data.get('target'))
+    _relay_webrtc('webrtc_ice_candidate', data)
 
 
 @socketio.on('update_speaking_status')

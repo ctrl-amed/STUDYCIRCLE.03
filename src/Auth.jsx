@@ -16,6 +16,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const { startSimulatedLoad } = useLoading();
   const { setPlayerData } = usePlayer();
+  const [errorModal, setErrorModal] = useState(null);
 
   // Active View State: 'login' | 'signup' | 'reset'
   const [activeView, setActiveView] = useState('login');
@@ -52,11 +53,25 @@ export default function Auth() {
   const [signupPasswordErr, setSignupPasswordErr] = useState('');
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
+  const [signupFormErr, setSignupFormErr] = useState('');
 
   // Sign Up Terms Consent Modal States
   const [signupConsentPending, setSignupConsentPending] = useState(false);
   const [signupAgeTermsChecked, setSignupAgeTermsChecked] = useState(false);
   const [signupTermsErr, setSignupTermsErr] = useState('');
+
+  // Email verification code (sign-up)
+  const [verifyPending, setVerifyPending] = useState(null);   // { email }
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyErr, setVerifyErr] = useState('');
+  const [verifyInfo, setVerifyInfo] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
 
   // Google OAuth Modal/Prompt States
   const [googleUserPending, setGoogleUserPending] = useState(null);
@@ -119,6 +134,7 @@ export default function Auth() {
     setSignupEmailErr('');
     setSignupStudentIdErr('');
     setSignupPasswordErr('');
+    setSignupFormErr('');
     setSignupConfirmPasswordErr(defaultGuideText);
     setIsConfirmPasswordCustomError(false);
   };
@@ -216,7 +232,7 @@ export default function Auth() {
       const response = await fetch('http://localhost:5000/api/google-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: decoded.email, google_id: decoded.sub || decoded.id }),
+        body: JSON.stringify({ access_token: credentialResponse.access_token }),
       });
       const data = await response.json();
 
@@ -257,7 +273,7 @@ export default function Auth() {
       }
 
       if (data.needs_username) {
-        setGoogleUserPending(decoded);
+        setGoogleUserPending({ ...decoded, access_token: credentialResponse.access_token });
         const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
         setGoogleUsernameInput(suggestedUsername);
         setGoogleStudentId('');
@@ -306,9 +322,8 @@ export default function Auth() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: trimmedUser,
-          email: googleUserPending.email,
           student_id: trimmedStudentId,
-          google_id: googleUserPending.sub || googleUserPending.id,
+          access_token: googleUserPending.access_token,
         }),
       });
       const data = await response.json();
@@ -515,6 +530,7 @@ export default function Auth() {
     setSignupEmailErr('');
     setSignupStudentIdErr('');
     setSignupPasswordErr('');
+    setSignupFormErr('');
 
     const isUserValid = validateUsername();
     const isEmailValid = validateEmail();
@@ -550,7 +566,17 @@ export default function Auth() {
       });
       const data = await response.json();
 
-      if (!response.ok) {
+      if (response.ok && data.needs_verification) {
+        setSignupConsentPending(false);
+        setVerifyPending({ email: data.email });
+        setVerifyCode('');
+        setVerifyErr('');
+        setVerifyInfo('');
+        setResendIn(60);
+        return;
+      }
+
+            if (!response.ok) {
         setSignupConsentPending(false);
 
         if (data.field === 'email') {
@@ -560,15 +586,45 @@ export default function Auth() {
         } else if (data.field === 'student_id') {
           setSignupStudentIdErr(data.error);
         } else {
-          setSignupTermsErr(data.error || 'Signup failed.');
+          setErrorModal({
+            title: response.status === 429 ? 'Please Wait' : 'Signup Failed',
+            message: data.error || 'Signup failed. Please try again.',
+          });
         }
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+      setSignupConsentPending(false);
+      setErrorModal({
+        title: 'Connection Error',
+        message: 'Unable to connect to the server. Please try again.',
+      });
+    }
+  };
+
+  const handleVerifyCodeSubmit = async (e) => {
+    e.preventDefault();
+    if (verifyCode.length !== 6) {
+      setVerifyErr('Enter the 6-digit code from your email.');
+      return;
+    }
+    try {
+      const response = await fetch('http://localhost:5000/api/signup/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyPending.email, code: verifyCode }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setVerifyErr(data.error || 'Verification failed.');
         return;
       }
 
       if (data.user) {
         localStorage.setItem('active_user_email', data.user.email);
         localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
-
         setPlayerData((prev) => ({
           ...prev,
           username: data.user.username,
@@ -583,18 +639,38 @@ export default function Auth() {
       setSignupStudentId('');
       setSignupPassword('');
       setSignupConfirmPassword('');
-      setSignupConsentPending(false);
+      setVerifyPending(null);
+      setVerifyCode('');
 
-      triggerToast('Account created successfully!');
-
+      triggerToast('Email verified! Account created.');
       startSimulatedLoad('Setting Up Profile...', 1500, () => {
         navigate('/dashboard');
       }, false);
-
     } catch (err) {
       console.error(err);
-      setSignupConsentPending(false);
-      setSignupTermsErr('Unable to connect to Flask server.');
+      setVerifyErr('Unable to connect to Flask server.');
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendIn > 0 || !verifyPending) return;
+    try {
+      const response = await fetch('http://localhost:5000/api/signup/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyPending.email }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setVerifyErr(data.error || 'Could not resend the code.');
+        if (data.retryAfter) setResendIn(data.retryAfter);
+        return;
+      }
+      setVerifyErr('');
+      setVerifyInfo('A new code was sent to your email.');
+      setResendIn(60);
+    } catch (err) {
+      setVerifyErr('Unable to connect to Flask server.');
     }
   };
 
@@ -982,6 +1058,8 @@ export default function Auth() {
                   </button>.
                 </p>
 
+                {signupFormErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {signupFormErr}</p>}
+
                 <button
                   type="submit"
                   className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-1 transition-all duration-150 retro-shadow cursor-pointer"
@@ -1049,6 +1127,30 @@ export default function Auth() {
             )}
           </div>
         </div>
+
+        {/* ERROR MODAL */}
+{errorModal && (
+  <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
+    <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
+      <div className="flex items-center gap-3">
+        <span className="font-pressstart text-[18px] text-theme-danger">✘</span>
+        <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-danger uppercase">
+          {errorModal.title}
+        </h3>
+      </div>
+      <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
+        {errorModal.message}
+      </p>
+      <button
+        type="button"
+        onClick={() => setErrorModal(null)}
+        className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-5 py-2.5 cursor-pointer retro-shadow w-full text-center"
+      >
+        OK
+      </button>
+    </div>
+  </div>
+)}
 
         {/* SUSPENDED ACCOUNT MODAL */}
         {showSuspendedModal && (
@@ -1213,6 +1315,66 @@ export default function Auth() {
                   >
                     COMPLETE SIGNUP
                   </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* EMAIL VERIFICATION CODE MODAL */}
+        {verifyPending && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
+            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
+              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Check Your Email</h3>
+              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
+                We sent a 6-digit code to <span className="text-theme-primary">{verifyPending.email}</span>. It expires in 10 minutes.
+              </p>
+
+              <form onSubmit={handleVerifyCodeSubmit} className="flex flex-col gap-3">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={verifyCode}
+                  onChange={(e) => {
+                    setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                    setVerifyErr('');
+                  }}
+                  placeholder="123456"
+                  className={`border-2 bg-theme-muted p-2 font-pressstart text-xl text-center tracking-[0.4em] outline-none w-full ${
+                    verifyErr ? 'border-[#A94A4A]' : 'border-theme-dark'
+                  }`}
+                />
+                {verifyErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {verifyErr}</p>}
+                {verifyInfo && !verifyErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-safe">{verifyInfo}</p>}
+
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={resendIn > 0}
+                    className={`font-pressstart text-[10px] bg-transparent border-none p-0 ${
+                      resendIn > 0 ? 'text-theme-dark/40 cursor-not-allowed' : 'text-theme-primary underline cursor-pointer'
+                    }`}
+                  >
+                    {resendIn > 0 ? `RESEND IN ${resendIn}s` : 'RESEND CODE'}
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setVerifyPending(null); setVerifyCode(''); setVerifyErr(''); }}
+                      className="font-pressstart text-[12px] bg-theme-muted border-2 border-theme-dark px-3 py-2 text-theme-dark cursor-pointer"
+                    >
+                      CANCEL
+                    </button>
+                    <button
+                      type="submit"
+                      className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
+                    >
+                      VERIFY
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

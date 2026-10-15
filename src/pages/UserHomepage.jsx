@@ -133,6 +133,13 @@ const activityIcons = {
   ),
 };
 
+// STUN lets browsers find each other. If voice works at home but not on some
+// school/mobile networks, you need a TURN server too (add it to this list).
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
 export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false }) {
   const { playerData, setPlayerData } = usePlayer();
   const location = useLocation();
@@ -320,117 +327,302 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const audioRef = useRef(null);
   const currentTrack = LOFI_TRACKS[currentTrackIndex];
 
-  // Voice Chat States & Ref para maiwasan ang lag/stale closure
+  // ---------------------------------------------------------------------------
+  // VOICE CHAT: mic capture + speaking detection + WebRTC (mesh)
+  // ---------------------------------------------------------------------------
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [micStatus, setMicStatus] = useState('idle'); // 'idle' | 'ready' | 'denied' | 'unavailable'
+  const [peerRetry, setPeerRetry] = useState(0);
+
+  const isMutedRef = useRef(false);
   const isSpeakingRef = useRef(false);
+  const micStatusRef = useRef('idle');
   const localStreamRef = useRef(null);
   const audioContextRef = useRef(null);
-  const analyserRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const roomNameRef = useRef(roomData.roomName);
+  const usernameRef = useRef(player.username);
+  roomNameRef.current = roomData.roomName;
+  usernameRef.current = player.username;
 
-  // Kunin ang audio stream at i-setup ang Audio Analyser para sa Speaking Detection
-  useEffect(() => {
-    if (isMultiplayer) {
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        .then((stream) => {
-          localStreamRef.current = stream;
+  const peersRef = useRef({});          // username -> RTCPeerConnection
+  const remoteAudiosRef = useRef({});   // username -> <audio> element
+  const pendingIceRef = useRef({});     // username -> ICE candidates that arrived early
+  const pendingOffersRef = useRef({});  // username -> offers that arrived before our mic was ready
+  const signalingRef = useRef({});      // always points at the latest handlers (used by socket events)
 
-          try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioContextRef.current = new AudioContext();
-            analyserRef.current = audioContextRef.current.createAnalyser();
-            const source = audioContextRef.current.createMediaStreamSource(stream);
-            source.connect(analyserRef.current);
-            analyserRef.current.fftSize = 512;
+  const updateMicStatus = (s) => {
+    micStatusRef.current = s;
+    setMicStatus(s);
+  };
 
-            const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+  const emitSpeaking = (value) => {
+    if (isSpeakingRef.current === value) return;
+    isSpeakingRef.current = value;
+    setIsSpeaking(value);
+    socketRef.current?.emit('update_speaking_status', {
+      room: roomNameRef.current,
+      username: usernameRef.current,
+      isSpeaking: value,
+    });
+  };
 
-            const detectVolume = () => {
-              const audioTrack = localStreamRef.current?.getAudioTracks()[0];
-              
-              if (analyserRef.current && !isMuted && audioTrack && audioTrack.enabled) {
-                analyserRef.current.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                  sum += dataArray[i];
-                }
-                const average = sum / dataArray.length;
-
-                // Itinaas sa 55 para maiwasan ang pagka-trigger sa ambient/static noise
-                const speakingNow = average > 55; 
-                
-                if (speakingNow !== isSpeakingRef.current) {
-                  isSpeakingRef.current = speakingNow;
-                  setIsSpeaking(speakingNow);
-
-                  if (socketRef.current) {
-                    socketRef.current.emit('update_speaking_status', {
-                      room: roomData.roomName,
-                      username: player.username,
-                      isSpeaking: speakingNow
-                    });
-                  }
-                }
-              } else {
-                if (isSpeakingRef.current) {
-                  isSpeakingRef.current = false;
-                  setIsSpeaking(false);
-                  if (socketRef.current) {
-                    socketRef.current.emit('update_speaking_status', {
-                      room: roomData.roomName,
-                      username: player.username,
-                      isSpeaking: false
-                    });
-                  }
-                }
-              }
-              animationFrameRef.current = requestAnimationFrame(detectVolume);
-            };
-
-            detectVolume();
-          } catch (e) {
-            console.error("Audio Context initialization failed:", e);
-          }
-        })
-        .catch((err) => {
-          console.error("Hindi ma-access ang mikropono:", err);
-        });
-
-      return () => {
-        if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
-        if (animationFrameRef.current) {
-          cancelAnimationFrame(animationFrameRef.current);
-        }
-        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-          audioContextRef.current.close();
-        }
-      };
+  // ----- WebRTC helpers -----
+  const closePeer = (name) => {
+    const pc = peersRef.current[name];
+    if (pc) {
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      try { pc.close(); } catch (e) {}
+      delete peersRef.current[name];
     }
-  }, [isMultiplayer, isMuted, roomData.roomName, player.username]);
+    const audio = remoteAudiosRef.current[name];
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+      delete remoteAudiosRef.current[name];
+    }
+    delete pendingIceRef.current[name];
+  };
 
-  // Function para sa pag-mute o pag-unmute ng sariling mic
-  const toggleMuteVoice = () => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
-        if (!audioTrack.enabled) {
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-          if (socketRef.current) {
-            socketRef.current.emit('update_speaking_status', {
-              room: roomData.roomName,
-              username: player.username,
-              isSpeaking: false
-            });
-          }
-        }
+  const closeAllPeers = () => {
+    Object.keys(peersRef.current).forEach(closePeer);
+  };
+
+  const sendSignal = (event, target, payload) => {
+    socketRef.current?.emit(event, {
+      room: roomNameRef.current,
+      from: usernameRef.current,
+      target,
+      ...payload,
+    });
+  };
+
+  const createPeer = (remoteName, isOfferer) => {
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peersRef.current[remoteName] = pc;
+
+    const local = localStreamRef.current;
+    if (local) {
+      local.getTracks().forEach((t) => pc.addTrack(t, local));
+    } else if (isOfferer) {
+      // no mic (denied / none): we can still LISTEN
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) sendSignal('webrtc_ice_candidate', remoteName, { candidate: e.candidate });
+    };
+
+    pc.ontrack = (e) => {
+      let audio = remoteAudiosRef.current[remoteName];
+      if (!audio) {
+        audio = new Audio();
+        audio.autoplay = true;
+        remoteAudiosRef.current[remoteName] = audio;
       }
+      audio.srcObject = e.streams[0] || new MediaStream([e.track]);
+      audio.play().catch(() => {
+        // browser blocked autoplay: start it on the next click anywhere
+        const resume = () => {
+          audio.play().catch(() => {});
+          document.removeEventListener('click', resume);
+        };
+        document.addEventListener('click', resume);
+      });
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed' && peersRef.current[remoteName] === pc) {
+        closePeer(remoteName);
+        setPeerRetry((c) => c + 1); // peers effect will call them again
+      }
+    };
+
+    return pc;
+  };
+
+  const flushIce = async (name, pc) => {
+    const queue = pendingIceRef.current[name] || [];
+    pendingIceRef.current[name] = [];
+    for (const c of queue) {
+      try { await pc.addIceCandidate(c); } catch (e) {}
     }
+  };
+
+  const callPeer = async (remoteName) => {
+    const pc = createPeer(remoteName, true);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal('webrtc_offer', remoteName, { sdp: pc.localDescription });
+    } catch (e) {
+      console.error('Create offer failed:', e);
+      closePeer(remoteName);
+    }
+  };
+
+  const handleOffer = async (data) => {
+    const from = data?.from;
+    if (!from || !data.sdp) return;
+
+    // our mic is still being set up: keep the offer, answer once it's settled
+    if (micStatusRef.current === 'idle') {
+      pendingOffersRef.current[from] = data;
+      return;
+    }
+
+    closePeer(from); // always start clean on a new offer
+    const pc = createPeer(from, false);
+    try {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(from, pc);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal('webrtc_answer', from, { sdp: pc.localDescription });
+    } catch (e) {
+      console.error('Handle offer failed:', e);
+      closePeer(from);
+    }
+  };
+
+  const handleAnswer = async (data) => {
+    const pc = peersRef.current[data?.from];
+    if (!pc || !data.sdp || pc.signalingState !== 'have-local-offer') return;
+    try {
+      await pc.setRemoteDescription(data.sdp);
+      await flushIce(data.from, pc);
+    } catch (e) {
+      console.error('Handle answer failed:', e);
+    }
+  };
+
+  const handleIceCandidate = async (data) => {
+    const from = data?.from;
+    if (!from || !data.candidate) return;
+    const pc = peersRef.current[from];
+    if (pc && pc.remoteDescription) {
+      try { await pc.addIceCandidate(data.candidate); } catch (e) {}
+    } else {
+      (pendingIceRef.current[from] = pendingIceRef.current[from] || []).push(data.candidate);
+    }
+  };
+
+  // keep the socket listeners pointed at the newest handlers
+  signalingRef.current = { handleOffer, handleAnswer, handleIceCandidate };
+
+  // ----- 1) Microphone + speaking detection -----
+  useEffect(() => {
+    if (!isMultiplayer) return undefined;
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      updateMicStatus('unavailable'); // also happens on plain http:// (non-localhost)
+      return undefined;
+    }
+
+    let cancelled = false;
+    let stream = null;
+
+    navigator.mediaDevices
+      .getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      })
+      .then(async (s) => {
+        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
+        stream = s;
+        localStreamRef.current = s;
+        s.getAudioTracks()[0].enabled = !isMutedRef.current;
+        updateMicStatus('ready');
+
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new Ctx();
+        audioContextRef.current = ctx;
+        if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+        if (cancelled) return;
+
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        ctx.createMediaStreamSource(s).connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+
+        const loop = () => {
+          if (cancelled) return;
+          if (isMutedRef.current) {
+            emitSpeaking(false);
+          } else {
+            analyser.getByteTimeDomainData(data);
+            let sumSq = 0;
+            for (let i = 0; i < data.length; i++) {
+              const v = (data[i] - 128) / 128;
+              sumSq += v * v;
+            }
+            emitSpeaking(Math.sqrt(sumSq / data.length) > 0.04); // raise if background noise triggers it
+          }
+          animationFrameRef.current = requestAnimationFrame(loop);
+        };
+        loop();
+      })
+      .catch((err) => {
+        console.error('Mic access failed:', err);
+        updateMicStatus(err?.name === 'NotAllowedError' ? 'denied' : 'unavailable');
+      });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animationFrameRef.current);
+      closeAllPeers();
+      pendingOffersRef.current = {};
+      stream?.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
+      }
+      isSpeakingRef.current = false;
+      setIsSpeaking(false);
+      updateMicStatus('idle');
+    };
+  }, [isMultiplayer]); // NOT isMuted: muting must not restart the mic
+
+  // ----- 2) Connect to everyone in the room -----
+  // Both sides run this. To avoid both sending an offer at once, only the person
+  // whose username sorts first calls the other; the other one answers.
+  const memberNamesKey = roomData.members.map((m) => m.username).sort().join('|');
+
+  useEffect(() => {
+    if (!isMultiplayer || micStatus === 'idle') return;
+
+    const me = player.username;
+    const others = roomData.members.map((m) => m.username).filter((n) => n && n !== me);
+
+    // remove peers of people who left
+    Object.keys(peersRef.current).forEach((n) => {
+      if (!others.includes(n)) closePeer(n);
+    });
+
+    // answer offers that arrived while our mic was starting
+    const waiting = Object.values(pendingOffersRef.current);
+    pendingOffersRef.current = {};
+    waiting.forEach((o) => handleOffer(o));
+
+    // call the people we are responsible for calling
+    others.forEach((n) => {
+      if (me < n && !peersRef.current[n]) callPeer(n);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMultiplayer, micStatus, memberNamesKey, peerRetry, player.username]);
+
+  // Mute / unmute: only flips the track, so the connections stay up
+  const toggleMuteVoice = () => {
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track) return;
+    const nextMuted = !isMutedRef.current;
+    isMutedRef.current = nextMuted;
+    track.enabled = !nextMuted;
+    setIsMuted(nextMuted);
+    if (nextMuted) emitSpeaking(false);
   };
 
   const getUserEmail = () => {
@@ -892,7 +1084,16 @@ const ctx = isMultiplayer
   useEffect(() => {
     // Wait until we know the player's real avatar, so the room receives the right one
     if (isMultiplayer && avatarReady) {
+      // close the first (presence) socket so it doesn't stay orphaned, then reuse one socket for the room
+      if (socketRef.current) socketRef.current.disconnect();
       socketRef.current = io('http://localhost:5000');
+      const myEmail = getUserEmail();
+      if (myEmail) socketRef.current.emit('user_connected', { email: myEmail });
+
+      // voice chat signaling
+      socketRef.current.on('webrtc_offer', (d) => signalingRef.current.handleOffer?.(d));
+      socketRef.current.on('webrtc_answer', (d) => signalingRef.current.handleAnswer?.(d));
+      socketRef.current.on('webrtc_ice_candidate', (d) => signalingRef.current.handleIceCandidate?.(d));
       
       const currentStatus = timer.activeSession ? "IN SESSION" : "ONLINE";
 
@@ -1491,7 +1692,7 @@ const ctx = isMultiplayer
                         
                         <span className="flex items-center text-[10px]">
                           {isMe ? (
-                            isMuted ? (
+                            (micStatus !== 'ready' || isMuted) ? (
                               <span className="text-red-400" title="Mic Off">🔇</span>
                             ) : isSpeaking ? (
                               <span className="animate-bounce text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,1)] font-bold scale-125 transition-transform" title="Speaking...">🎙️</span>
@@ -1929,11 +2130,14 @@ const ctx = isMultiplayer
                               <button
                                 type="button"
                                 onClick={toggleMuteVoice}
+                                disabled={micStatus !== 'ready'}
                                 className={`ml-1 px-1.5 py-0.5 rounded font-pressstart text-[6px] cursor-pointer border border-theme-dark ${
-                                  isMuted ? 'bg-theme-danger text-white' : 'bg-theme-safe text-theme-dark'
+                                  micStatus !== 'ready' || isMuted ? 'bg-theme-danger text-white' : 'bg-theme-safe text-theme-dark'
                                 }`}
                               >
-                                {isMuted ? 'MIC OFF' : 'MIC ON'}
+                                {micStatus === 'denied' ? 'MIC BLOCKED'
+                                  : micStatus === 'unavailable' ? 'NO MIC'
+                                  : isMuted ? 'MIC OFF' : 'MIC ON'}
                               </button>
                             </>
                           )}
