@@ -5,10 +5,7 @@ import json
 import os
 import re
 import secrets
-import smtplib
 from datetime import datetime, timedelta, timezone
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 import requests
 from flask import Blueprint, jsonify, request
@@ -20,6 +17,15 @@ from state import suspended_emails
 from utils.helpers import ensure_streak_freeze_row, parse_json_field, parse_ts, send_plain_email
 
 auth_bp = Blueprint('auth', __name__)
+
+# Where the reset link points. Set FRONTEND_URL in .env / Render when you deploy,
+# e.g. FRONTEND_URL=https://studycircle.example.com
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip('/')
+RESET_TOKEN_TTL_MIN = 15
+
+# Set DEV_PRINT_CODES=1 in .env ONLY on your own machine if you want the signup code
+# printed in the terminal when the email fails. Leave it unset in production.
+DEV_PRINT_CODES = os.getenv("DEV_PRINT_CODES") == "1"
 
 
 def is_umak_email(email):
@@ -101,15 +107,22 @@ def signup():
             'last_sent_at': now.isoformat(),
         }, on_conflict='email').execute()
 
-        # Attempt to deliver via SMTP; print code to console as a testing fallback
+        # Send the code to the student's own email. If it fails, tell the user
+        # (instead of pretending it worked) and clear the pending row so they can retry right away.
         try:
             _send_signup_code(email, username, code)
             print(f"[SIGNUP CODE SENT] Dispatched to {email}")
         except Exception as mail_err:
-            print(f"\n[SIGNUP CODE EMAIL FAILED]: {mail_err}")
-            print("=" * 52)
-            print(f"DEV VERIFICATION CODE FOR {email}: {code}")
-            print("=" * 52 + "\n")
+            print(f"[SIGNUP CODE EMAIL FAILED] {email}: {mail_err}")
+            if DEV_PRINT_CODES:
+                print("=" * 52)
+                print(f"DEV VERIFICATION CODE FOR {email}: {code}")
+                print("=" * 52)
+            else:
+                supabase.table('pending_signups').delete().eq('email', email).execute()
+                return jsonify({
+                    'error': 'We could not send the verification email. Please try again in a moment.'
+                }), 502
 
         return jsonify({
             'needs_verification': True,
@@ -117,6 +130,7 @@ def signup():
             'expiresInMinutes': config.SIGNUP_CODE_TTL_MIN
         }), 200
     except Exception as e:
+        print("[SIGNUP ERROR]:", e)
         return jsonify({'error': str(e)}), 400
 
 
@@ -152,13 +166,19 @@ def signup_resend():
             _send_signup_code(email, p['username'], code)
             print(f"[SIGNUP CODE RESENT] Dispatched to {email}")
         except Exception as mail_err:
-            print(f"\n[SIGNUP CODE EMAIL FAILED]: {mail_err}")
-            print("=" * 52)
-            print(f"DEV RESEND CODE FOR {email}: {code}")
-            print("=" * 52 + "\n")
+            print(f"[SIGNUP CODE EMAIL FAILED] {email}: {mail_err}")
+            if DEV_PRINT_CODES:
+                print("=" * 52)
+                print(f"DEV RESEND CODE FOR {email}: {code}")
+                print("=" * 52)
+            else:
+                return jsonify({
+                    'error': 'We could not send the verification email. Please try again in a moment.'
+                }), 502
 
         return jsonify({'success': True}), 200
     except Exception as e:
+        print("[SIGNUP RESEND ERROR]:", e)
         return jsonify({'error': str(e)}), 400
 
 
@@ -240,7 +260,7 @@ def signup_verify():
                 'bestStreak': created_user.get('best_streak') or 0,
                 'roomsCreated': created_user.get('rooms_created') or 0,
                 'currentXP': created_user.get('current_xp', 0),
-                'maxXP': created_user.get('max_xp', 50),
+                'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': inv_data or [],
                 'avatarConfig': parse_json_field(created_user.get('avatar_config'), config.DEFAULT_AVATAR_CONFIG),
@@ -316,7 +336,7 @@ def google_signup():
                     'bestStreak': user.get('best_streak') or 0,
                     'roomsCreated': user.get('rooms_created') or 0,
                     'currentXP': user.get('current_xp', 0),
-                    'maxXP': user.get('max_xp', 50),
+                    'maxXP': user.get('max_xp', 100),
                     'level': user.get('level', 1),
                     'inventory': raw_inv or [],
                     'avatarConfig': parse_json_field(user.get('avatar_config')),
@@ -374,7 +394,7 @@ def google_signup():
                 'bestStreak': created_user.get('best_streak') or 0,
                 'roomsCreated': created_user.get('rooms_created') or 0,
                 'currentXP': created_user.get('current_xp', 0),
-                'maxXP': created_user.get('max_xp', 50),
+                'maxXP': created_user.get('max_xp', 100),
                 'level': created_user.get('level', 1),
                 'inventory': raw_inv or [],
                 'avatarConfig': parse_json_field(created_user.get('avatar_config'), config.DEFAULT_AVATAR_CONFIG),
@@ -432,7 +452,7 @@ def login():
                 'bestStreak': user.get('best_streak') or 0,
                 'roomsCreated': user.get('rooms_created') or 0,
                 'currentXP': user.get('current_xp', 0),
-                'maxXP': user.get('max_xp', 50),
+                'maxXP': user.get('max_xp', 100),
                 'level': user.get('level', 1),
                 'inventory': raw_inv or [],
                 'avatarConfig': parse_json_field(user.get('avatar_config')),
@@ -444,75 +464,61 @@ def login():
         return jsonify({'error': str(e)}), 500
 
 
+# ---------- Password reset ----------
+# Needs one new column on the users table (run once in the Supabase SQL editor):
+#   alter table users add column if not exists reset_token_expires timestamptz;
+
 @auth_bp.route('/api/forgot-password', methods=['POST'])
+@limiter.limit("10 per hour")
 def forgot_password():
-    data = request.get_json()
-    email = data.get('email')
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip()
 
     if not email:
         return jsonify({'error': 'Please provide an email address.'}), 400
 
     try:
-        # Check if the email exists in the Supabase database
-        response = supabase.table('users').select('*').eq('email', email).execute()
+        response = supabase.table('users').select('username').eq('email', email).execute()
 
         if not response.data:
             return jsonify({'error': 'Email address not found in our system.'}), 404
 
-        user = response.data[0]
-        username = user.get('username', 'User')
+        username = response.data[0].get('username') or 'User'
 
-        # Generate a secure random token for the password reset and save it to Supabase
+        # Secure random token that expires in RESET_TOKEN_TTL_MIN minutes
         reset_token = secrets.token_urlsafe(32)
-        supabase.table('users').update({'reset_token': reset_token}).eq('email', email).execute()
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=RESET_TOKEN_TTL_MIN)
+        supabase.table('users').update({
+            'reset_token': reset_token,
+            'reset_token_expires': expires_at.isoformat(),
+        }).eq('email', email).execute()
 
-        reset_link = f"http://localhost:5173/changepassword?token={reset_token}"
+        reset_link = f"{FRONTEND_URL}/changepassword?token={reset_token}"
 
-        # Email configuration using Gmail SMTP
-        sender_email = os.getenv("MAIL_USERNAME")
-        sender_password = os.getenv("MAIL_PASSWORD")
+        # Same helper as the signup code email (strips spaces from the app password, uses SSL on 465)
+        send_plain_email(
+            email,
+            "Password Reset Request - StudyCircle",
+            f"Hello {username},\n\n"
+            f"We received a request to reset your StudyCircle password.\n\n"
+            f"Click the link below to reset your password:\n{reset_link}\n\n"
+            f"This link expires in {RESET_TOKEN_TTL_MIN} minutes.\n\n"
+            f"If you didn't request this, simply ignore this email.\n\n"
+            f"- StudyCircle Team"
+        )
 
-        # Build the email message
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = email
-        msg['Subject'] = "Password Reset Request - StudyCircle"
-
-        email_body = f"""
-Hello {username},
-
-We received a request to reset your StudyCircle password.
-
-Click the link below to reset your password:
-{reset_link}
-
-This link expires in 15 minutes.
-
-If you didn't request this, simply ignore this email.
-
-- StudyCircle Team
-        """
-        msg.attach(MIMEText(email_body, 'plain'))
-
-        # Send the email via Gmail SMTP
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, email, msg.as_string())
-        server.quit()
-
-        return jsonify({
-            'message': 'Password reset link sent successfully to your email!',
-            'reset_link': reset_link
-        }), 200
+        # The link is only sent by email. It is NOT returned in the response.
+        return jsonify({'message': 'Password reset link sent successfully to your email!'}), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print("[FORGOT PASSWORD ERROR]:", e)
+        return jsonify({'error': 'Could not send the reset email. Please try again.'}), 500
 
 
 @auth_bp.route('/api/change-password', methods=['POST'])
+@limiter.limit("20 per hour")
 def change_password():
-    data = request.get_json()
+    data = request.get_json() or {}
     token = data.get('token')
     new_password = data.get('new_password')
 
@@ -520,26 +526,37 @@ def change_password():
         return jsonify({'error': 'Token and new password are required.'}), 400
 
     try:
-        # Check if the token is valid
-        response = supabase.table('users').select('*').eq('reset_token', token).execute()
+        response = supabase.table('users').select('email, reset_token_expires') \
+            .eq('reset_token', token).execute()
 
         if not response.data:
             return jsonify({'error': 'Invalid or expired reset token.'}), 400
 
-        user_email = response.data[0]['email']
+        user = response.data[0]
+        user_email = user['email']
 
-        # Hash the new password securely
+        # Reject expired tokens (and old tokens that have no expiry saved)
+        expires = parse_ts(user.get('reset_token_expires'))
+        if not expires or datetime.now(timezone.utc) >= expires:
+            supabase.table('users').update({
+                'reset_token': None,
+                'reset_token_expires': None,
+            }).eq('email', user_email).execute()
+            return jsonify({'error': 'Invalid or expired reset token.'}), 400
+
         hashed_password = bcrypt.generate_password_hash(new_password).decode('utf-8')
 
-        # Update the password and clear the reset token
+        # Update the password and clear the token so the link works only once
         supabase.table('users').update({
             'password': hashed_password,
-            'reset_token': None
+            'reset_token': None,
+            'reset_token_expires': None,
         }).eq('email', user_email).execute()
 
         return jsonify({'message': 'Password successfully updated!'}), 200
 
     except Exception as e:
+        print("[CHANGE PASSWORD ERROR]:", e)
         return jsonify({'error': str(e)}), 500
 
 
