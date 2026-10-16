@@ -1,4 +1,5 @@
 """Suspensions, warnings and live enforcement (force logout, per-user socket rooms)."""
+import threading
 from datetime import datetime, timedelta, timezone
 
 from flask import jsonify
@@ -8,7 +9,7 @@ from extensions import socketio, supabase
 from services.presence import broadcast_presence_to_admins
 from services.rooms_service import broadcast_room_counts, note_if_room_empty
 from state import online_users, room_members, sid_email, sid_to_room, suspended_emails
-from utils.helpers import PHT, format_pht, new_log, parse_json_field, parse_ts
+from utils.helpers import PHT, format_pht, new_log, parse_json_field, parse_ts, send_plain_email
 
 DURATION_DELTAS = {
     '24 hours': timedelta(days=1), '1 day': timedelta(days=1),
@@ -18,6 +19,98 @@ DURATION_DELTAS = {
     '30 days': timedelta(days=30), '1 month': timedelta(days=30),
     '90 days': timedelta(days=90), '3 months': timedelta(days=90),
 }
+
+
+# ---------------------------------------------------------------------------
+# Email notices (warning / suspension / room action)
+# Sent in a background thread so a slow SMTP server never delays the admin's
+# action, and a failed email never undoes the warning or suspension itself.
+# ---------------------------------------------------------------------------
+
+def _send_email_async(to_email, subject, body, label):
+    if not to_email:
+        return
+
+    def _job():
+        try:
+            send_plain_email(to_email, subject, body)
+            print(f"[{label} EMAIL SENT] to {to_email}")
+        except Exception as e:
+            print(f"[{label} EMAIL FAILED] {to_email}: {e}")
+
+    threading.Thread(target=_job, daemon=True).start()
+
+
+def send_warning_email(email, username, reason, notes='', warning_count=1):
+    """Official warning notice to a user (user report or message report)."""
+    lines = [
+        f"Hi {username or 'Student'},",
+        "",
+        "You have received an official warning from the StudyCircle administrators.",
+        "",
+        f"Reason: {reason or 'Community Guidelines Violation'}",
+    ]
+    if notes:
+        lines.append(f"Details: {notes}")
+    lines += [
+        f"Active warnings on your account: {warning_count}",
+        "",
+        "Please follow the StudyCircle community guidelines. Further violations may "
+        "lead to a suspension of your account.",
+        "",
+        "If you think this was a mistake, reply to this email and we will review it.",
+        "",
+        "- StudyCircle Team",
+    ]
+    _send_email_async(email, "StudyCircle: Official Warning", "\n".join(lines), "WARNING")
+
+
+def send_suspension_email(email, username, reason, lift_display):
+    """Suspension notice. Internal admin notes are NOT included."""
+    body = "\n".join([
+        f"Hi {username or 'Student'},",
+        "",
+        "Your StudyCircle account has been suspended by the administrators.",
+        "",
+        f"Reason: {reason or 'Community Guidelines Violation'}",
+        f"Suspension ends: {lift_display}",
+        "",
+        "While your account is suspended you cannot log in or use StudyCircle.",
+        "",
+        "If you think this was a mistake, reply to this email and we will review it.",
+        "",
+        "- StudyCircle Team",
+    ])
+    _send_email_async(email, "StudyCircle: Your Account Has Been Suspended", body, "SUSPENSION")
+
+
+def email_room_host(host_username, room_name, action, reason, notes=''):
+    """Notice to a room's host. action = 'warned' or 'closed'."""
+    if not host_username:
+        return
+    try:
+        h = supabase.table('users').select('email').eq('username', host_username).execute()
+        if not h.data:
+            return
+        host_email = h.data[0].get('email')
+    except Exception as e:
+        print("[ROOM NOTICE] could not look up host:", e)
+        return
+
+    if action == 'closed':
+        subject = "StudyCircle: Your Room Was Closed"
+        intro = f'Your study room "{room_name}" was closed by the StudyCircle administrators.'
+        outro = "If you think this was a mistake, reply to this email and we will review it."
+    else:
+        subject = "StudyCircle: Official Warning for Your Room"
+        intro = f'Your study room "{room_name}" received an official warning from the StudyCircle administrators.'
+        outro = "Please make sure your room follows the community guidelines. Further violations may lead to the room being closed."
+
+    lines = [f"Hi {host_username},", "", intro, "", f"Reason: {reason or 'Community Guidelines Violation'}"]
+    if notes:
+        lines.append(f"Details: {notes}")
+    lines += ["", outro, "", "- StudyCircle Team"]
+    _send_email_async(host_email, subject, "\n".join(lines), "ROOM NOTICE")
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +296,8 @@ def suspended_response(susp):
 
 
 def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, admin_username):
-    """Single place that creates a suspension. Used by Manage Users AND Reports."""
+    """Single place that creates a suspension. Used by Manage Users AND Reports,
+    so the suspension email is sent from here for both."""
     expiration_iso = calculate_suspension_expiration(duration, custom_dt)
 
     supabase.table('suspensions').update({'is_active': False}) \
@@ -225,6 +319,16 @@ def apply_user_suspension(user_id, email, reason, duration, custom_dt, notes, ad
 
     lift_display = format_pht(expiration_iso) if expiration_iso else 'Permanent, until reviewed by IT administration'
     force_logout_user(email, reason, lift_display)
+
+    # Email notice (background thread; never blocks or breaks the suspension)
+    username = None
+    try:
+        u = supabase.table('users').select('username').eq('id', user_id).execute()
+        username = u.data[0]['username'] if u.data else None
+    except Exception:
+        pass
+    send_suspension_email(email, username, reason, lift_display)
+
     return expiration_iso
 
 
