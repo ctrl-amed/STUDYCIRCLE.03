@@ -1,6 +1,15 @@
-"""Weighted Sum Model (WSM) technique recommendation engine."""
+"""Weighted Sum Model (WSM) technique recommendation engine.
 
-# --- WSM (Weighted Sum Model) constants, used by the technique recommendation engine ---
+The recommendation uses the 5-criteria model at the bottom of this file
+(Chapter 3: Tables 3.4-3.5, Formulas 3.3-3.5). The constants and helpers directly
+below ("LEGACY") belong to the older 3-criteria model and are NOT used by the
+current recommendation.
+"""
+
+# =============================================================================
+# LEGACY (older 3-criteria model, not used by wsm5_* below).
+# Kept only in case other modules still import these names.
+# =============================================================================
 
 TASK_WEIGHTS = {
     "Creation": {"df": 0.8, "fm": 0.1, "cs": 0.1},
@@ -19,7 +28,7 @@ FRAMEWORK_SCORES = {
 
 
 def normalized_framework_score(framework, criterion):
-    """Min-max normalization (legacy fallback model):
+    """LEGACY min-max normalization:
     x_{f,c} = (X_{f,c} - X_{c,min}) / (X_{c,max} - X_{c,min})"""
     vals = [s[criterion] for s in FRAMEWORK_SCORES.values()]
     lo, hi = min(vals), max(vals)
@@ -28,9 +37,25 @@ def normalized_framework_score(framework, criterion):
     return (FRAMEWORK_SCORES[framework][criterion] - lo) / (hi - lo)
 
 
-# --- Helpers for the WSM recommendation engine ---
+WSM_MIN_ATTEMPTS = 3      # LEGACY (historical modifier, no longer used)
+WSM_MIN_MODIFIER = 0.5    # LEGACY (historical modifier, no longer used)
 
-# Maps whatever the frontend sends to the exact keys used in TASK_WEIGHTS
+
+def resolve_framework_name(technique):
+    """Maps a stored technique name to a FRAMEWORK_SCORES key. None if unknown."""
+    t = str(technique or '').lower()
+    if '52' in t:
+        return "52-17 Method"
+    if '90' in t or 'ultradian' in t or 'deep' in t:
+        return "90m Deep Work"
+    if 'pomodoro' in t or '25' in t:
+        return "Pomodoro"
+    return None
+
+
+# --- Category helper (used by the current model) ---
+
+# Maps whatever the frontend sends to a canonical category name
 WEIGHT_CATEGORY_ALIASES = {
     "creation": "Creation", "create": "Creation", "creating": "Creation",
     "writing": "Writing", "write": "Writing",
@@ -41,9 +66,6 @@ WEIGHT_CATEGORY_ALIASES = {
     "memorize": "Memorize", "memorise": "Memorize", "memorizing": "Memorize",
     "memorising": "Memorize", "memorization": "Memorize", "memorisation": "Memorize",
 }
-
-WSM_MIN_ATTEMPTS = 3
-WSM_MIN_MODIFIER = 0.5
 
 
 def resolve_weight_category(value):
@@ -59,21 +81,11 @@ def resolve_weight_category(value):
     return None
 
 
-def resolve_framework_name(technique):
-    """Maps a stored technique name to a FRAMEWORK_SCORES key. None if unknown."""
-    t = str(technique or '').lower()
-    if '52' in t:
-        return "52-17 Method"
-    if '90' in t or 'ultradian' in t or 'deep' in t:
-        return "90m Deep Work"
-    if 'pomodoro' in t or '25' in t:
-        return "Pomodoro"
-    return None
-
-
 # =============================================================================
-# 5-CRITERIA WEIGHTED SUM MODEL (Chapter 3, Tables 3.4-3.6, Formulas 3.5 & 3.6)
-#   S_i = sum(w_j * r_ij) kung saan sum(w_j) = 1.00
+# 5-CRITERIA WEIGHTED SUM MODEL (Chapter 3, Tables 3.4-3.5, Formulas 3.3-3.5)
+#   Formula 3.3:  sum(w_j) = 1.00
+#   Formula 3.4:  S_i = sum(w_j * r_ij)
+#   Formula 3.5:  R = argmax S_i
 #   Weights: Task Category (30%), Learning Objective (25%), Study Time (15%),
 #            Material Type (15%), Task Complexity (15%)
 # =============================================================================
@@ -92,7 +104,9 @@ WSM5_TIMERS = {
     "90m Deep Work": {"focus": 90, "break": 20, "sessions": 2},
 }
 
-# Predefined 1-to-5 suitability ratings batay sa Table 3.5 at Table 3.6 ng Chapter 3
+# Predefined 1-to-5 suitability ratings (rating scale of Table 3.5:
+# 5 Highly Suitable ... 1 Not Suitable). Several keys map to the same rating so
+# that different frontend wordings resolve to the same answer option.
 WSM5_RATINGS = {
     "Pomodoro": {
         "task_category": {
@@ -198,46 +212,50 @@ WSM5_RATINGS = {
     }
 }
 
+# Neutral rating (middle of the 1-5 scale) used when a criterion has no usable input.
+WSM5_NEUTRAL_RATING = 3.0
+
 
 def wsm5_ready(answers):
-    """Tiyaking aktibo ang 5-criteria model kapag may laman na ang WSM5_RATINGS."""
+    """The 5-criteria model is active whenever WSM5_RATINGS is populated."""
     return bool(WSM5_RATINGS)
 
 
 def wsm5_score(technique, answers, task_categories):
-    """Kinakalkula ang S_i para sa isang study technique gamit ang 5 criteria (Formula 3.5)."""
+    """S_i for one study technique over the 5 criteria (Formula 3.4)."""
     r = WSM5_RATINGS[technique]
     answers = answers or {}
-    
-    # 1. Task Category Alignment (Weight: 30%)
+
+    # 1. Task Category Alignment (weight 30%): average rating over the queued tasks' categories
     cats = [str(c).strip().lower() for c in task_categories]
     cat_ratings = [r['task_category'][c] for c in cats if c in r['task_category']]
-    cat_rating = sum(cat_ratings) / len(cat_ratings) if cat_ratings else 3.0
+    cat_rating = sum(cat_ratings) / len(cat_ratings) if cat_ratings else WSM5_NEUTRAL_RATING
     total = WSM5_WEIGHTS['task_category'] * cat_rating
 
-    # 2. Karagdagang apat na criteria (Learning Objective, Study Time, Material Type, Task Complexity)
+    # 2. The other four criteria, taken from the student's answers
     for crit in ('learning_objective', 'study_time', 'material_type', 'task_complexity'):
         val = str(answers.get(crit) or '').strip().lower()
         rating = r[crit].get(val)
-        
-        # Paghahanap ng partial match sakaling iba ang format ng frontend
-        if rating is None:
+
+        # Partial match in case the frontend wording differs slightly
+        if rating is None and val:
             for opt_key, opt_rating in r[crit].items():
-                if opt_key in val or (val and val in opt_key):
+                if opt_key in val or val in opt_key:
                     rating = opt_rating
                     break
-                    
-        # Baseline rating kung walang naipasang sagot sa partikular na criterion
+
+        # No usable answer for this criterion: neutral rating
         if rating is None:
-            rating = 3.5
-            
+            rating = WSM5_NEUTRAL_RATING
+
         total += WSM5_WEIGHTS[crit] * rating
 
     return round(total, 2)
 
 
 def wsm5_recommend(answers, task_categories):
-    """Nagbabalik ng (best_technique, {technique: score}) gamit ang Formula 3.6."""
+    """Returns (best_technique, {technique: score}): R = argmax S_i (Formula 3.5).
+    If scores tie, the first technique in WSM5_RATINGS order wins (Pomodoro)."""
     scores = {t: wsm5_score(t, answers, task_categories) for t in WSM5_RATINGS}
     best = max(scores, key=scores.get)
     return best, scores

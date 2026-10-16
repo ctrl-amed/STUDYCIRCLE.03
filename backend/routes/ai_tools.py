@@ -5,6 +5,7 @@ import os
 import google.generativeai as genai
 from flask import Blueprint, jsonify, request
 from pypdf import PdfReader
+from werkzeug.utils import secure_filename
 
 import config
 from extensions import limiter, supabase
@@ -58,7 +59,8 @@ def generate_ai_tool():
     try:
         upload_dir = 'temp_uploads'
         os.makedirs(upload_dir, exist_ok=True)
-        file_path = os.path.join(upload_dir, file.filename)
+        # secure_filename blocks path traversal (e.g. "../../app.py")
+        file_path = os.path.join(upload_dir, secure_filename(file.filename) or 'upload.pdf')
         file.save(file_path)
 
         reader = PdfReader(file_path)
@@ -126,11 +128,11 @@ def generate_ai_tool():
 
 
 # =============================================================================
-# TASK VALIDATION
+# TASK VALIDATION (Chapter 3: Rule-Based Task Validation, Formulas 3.1 and 3.2)
 # =============================================================================
 
-@limiter.limit("120 per hour")
 @ai_bp.route('/api/validate-task', methods=['POST'])
+@limiter.limit("120 per hour")      # must be BELOW the route decorator to take effect
 def validate_task():
     data = request.get_json() or {}
     category = str(data.get('category', '')).strip().lower()
@@ -146,9 +148,10 @@ def validate_task():
 
     for task_str in tasks:
         matched = count_matches(task_str, category)
-        n_m = len(matched)                 # N_m = number of unique matched keywords
-        score = alignment_score(n_m, category)
+        k_m = len(matched)                 # Km = number of matched indicators
+        score = alignment_score(k_m, category)   # TM = Km / Kt x 100 (Formula 3.1)
 
+        # Formula 3.2: T_A = 70, T_R = 40
         if score >= 70.0:
             status = "Aligned"
         elif score >= 40.0:
@@ -159,11 +162,11 @@ def validate_task():
         suggested = None
         if status != "Aligned":
             s = suggest_category(task_str, category)
-            if s and len(count_matches(task_str, s)) > n_m:
+            if s and len(count_matches(task_str, s)) > k_m:
                 suggested = s
 
         results.append({
-            'task': task_str, 'score': round(score, 2), 'points': n_m,
+            'task': task_str, 'score': round(score, 2), 'points': k_m,
             'status': status, 'matchedKeywords': matched,
             'suggestedCategory': suggested
         })
@@ -180,7 +183,7 @@ def validate_task():
 
 
 # =============================================================================
-# WSM RECOMMENDATION
+# WSM RECOMMENDATION (Chapter 3: Tables 3.4-3.5, Formulas 3.3-3.5)
 # =============================================================================
 
 @ai_bp.route('/api/ai-recommendation', methods=['POST'])
@@ -214,14 +217,14 @@ def ai_recommendation():
         if not matched_categories:
             matched_categories = [session_category]
 
-        # 5-criteria Weighted Sum Model (S_i = sum(w_j * r_ij)) from Chapter 3
+        # 5-criteria Weighted Sum Model: S_i = sum(w_j * r_ij) (Formula 3.4), R = argmax S_i (Formula 3.5)
         best_framework, wsm_scores = wsm5_recommend(answers, [c.lower() for c in matched_categories])
         
         framework_details = dict(WSM5_TIMERS)
         framework_details.setdefault(best_framework, {"focus": 25, "break": 5, "sessions": 4})
         cfg = framework_details[best_framework]
 
-        # Generate Rationale using Gemini
+        # Generate Rationale using Gemini (explanation only; it does not affect the chosen technique)
         task_labels = [t.get('task') or t.get('text') or str(t) if isinstance(t, dict) else str(t) for t in tasks]
         try:
             genai.configure(api_key=os.getenv("GEMINI_API_KEY"))

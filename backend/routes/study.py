@@ -147,19 +147,11 @@ def complete_focus_session():
         completed_focus_minutes = duration_minutes * consumed_ratio
 
         # Constants aligned with thesis parameters
-        MIN_SESSION_MINUTES = 25
+        MIN_SESSION_MINUTES = config.MIN_SESSION_MINUTES
         SUCCESS_STATUSES = {"completed", "early", "on-time", "on time"}
 
-        # XP and coins: fixed tiers from Table 3.7 (no multipliers)
-        xp_gained = 0
-        coins_gained = 0
-        
-        if completed_focus_minutes >= 90:
-            xp_gained, coins_gained = 60, 12
-        elif completed_focus_minutes >= 50:
-            xp_gained, coins_gained = 40, 8
-        elif completed_focus_minutes >= MIN_SESSION_MINUTES:
-            xp_gained, coins_gained = 25, 5
+        # XP and coins: fixed tiers from Table 3.7 (single source: xp_and_coins_for_focus_time)
+        xp_gained, coins_gained = xp_and_coins_for_focus_time(completed_focus_minutes)
 
         # Sessions under the 25-minute minimum are still saved but earn no XP/Coins
         below_minimum = completed_focus_minutes < MIN_SESSION_MINUTES
@@ -172,15 +164,15 @@ def complete_focus_session():
 
         studied_today_qualifying = False
         studied_yesterday_qualifying = False
-        
+
         for s in (history_res.data or []):
             dt = _to_pht(s.get('created_at'))
             if not dt:
                 continue
-                
+
             s_dur = int(s.get('duration_minutes') or 0)
             s_status = str(s.get('task_status') or '').strip().lower()
-            
+
             # Check if it was a qualifying session (>= 25 mins and task completed)
             if s_dur >= MIN_SESSION_MINUTES and s_status in SUCCESS_STATUSES:
                 if dt.date() == today:
@@ -197,7 +189,7 @@ def complete_focus_session():
 
         # --- STUDY STREAK LOGIC (Aligned with Document) ---
         is_current_qualifying = (not below_minimum) and (task_status.strip().lower() in SUCCESS_STATUSES)
-        
+
         freeze_used = False
         new_streak = current_streak
 
@@ -242,12 +234,14 @@ def complete_focus_session():
             "best_streak": new_best_streak
         }).eq('id', user_id).execute()
 
-        # 2. Insert into study_sessions table, including feedback fields
+        # 2. Insert into study_sessions table, including feedback fields.
+        #    duration_minutes stores the COMPLETED focus time (CFM), not the planned time,
+        #    because the leaderboard, streak and qualifying checks all read this column.
         supabase.table('study_sessions').insert({
             "user_id": user_id,
             "activity_name": activity_name,
             "technique": technique,
-            "duration_minutes": duration_minutes,
+            "duration_minutes": int(round(completed_focus_minutes)),
             "total_tasks": total_tasks,
             "completed_tasks": tasks_completed,
             "tasks_list": tasks_list,
@@ -329,7 +323,7 @@ def _focus_minutes_by_user(since=None):
 
 @study_bp.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
-    """Leaderboard ranked by TOTAL FOCUS TIME (ties broken by XP).
+    """Leaderboard ranked by TOTAL FOCUS TIME (ties broken by XP, then by the older account).
     'this-month' only counts sessions since the 1st of the month, Philippine time."""
     try:
         users = supabase.table('users') \
@@ -342,7 +336,8 @@ def get_leaderboard():
 
         def by_focus(totals):
             rows = [u for u in users if totals.get(u['id'], 0) > 0]
-            rows.sort(key=lambda u: (-totals[u['id']], -(u.get('current_xp') or 0)))
+            # 1) most focus time, 2) most XP, 3) lowest id = earliest account (stable fallback)
+            rows.sort(key=lambda u: (-totals[u['id']], -(u.get('current_xp') or 0), u['id']))
             out = []
             for i, u in enumerate(rows[:10]):
                 m = totals[u['id']]
