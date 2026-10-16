@@ -26,6 +26,7 @@ export default function KitsuAI() {
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [showBackModal, setShowBackModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [noticeModal, setNoticeModal] = useState(null); // { title, message, goToUpload }
 
   // Flashcards Interactive State
   const [flashcardState, setFlashcardState] = useState({
@@ -185,8 +186,26 @@ export default function KitsuAI() {
   };
 
   const handleStep1Next = async () => {
-    if (uploadedFiles.length > 0 && selectedFileIds.length === 0) {
-      alert('Please select at least one source file to continue.');
+    // Only the files that are checked
+    const targetFileObj = uploadedFiles.find((f) => selectedFileIds.includes(f.id))?.fileObj;
+
+    // No PDF uploaded yet -> notice modal, then back to the start
+    if (uploadedFiles.length === 0) {
+      setNoticeModal({
+        title: 'ADD A SOURCE FIRST',
+        message: `Please upload a PDF before generating your ${currentActiveTool}.`,
+        goToUpload: true,
+      });
+      return;
+    }
+
+    // Files exist but none are selected
+    if (!targetFileObj) {
+      setNoticeModal({
+        title: 'SELECT A SOURCE',
+        message: 'Please select at least one source file to continue.',
+        goToUpload: false,
+      });
       return;
     }
 
@@ -195,15 +214,7 @@ export default function KitsuAI() {
     try {
       const formData = new FormData();
       formData.append('toolType', currentActiveTool);
-
-      const targetFileObj = uploadedFiles.find(f => selectedFileIds.includes(f.id))?.fileObj || selectedUploadFile;
-      
-      if (targetFileObj) {
-        formData.append('file', targetFileObj);
-      } else {
-        const dummyBlob = new Blob(["Sample study text content for generation."], { type: 'text/plain' });
-        formData.append('file', dummyBlob, "source_fallback.txt");
-      }
+      formData.append('file', targetFileObj);
 
       const response = await fetch('http://localhost:5000/api/generate-ai-tool', {
         method: 'POST',
@@ -265,7 +276,11 @@ export default function KitsuAI() {
       setActiveStep('step2');
     } catch (err) {
       console.error("Generation error:", err);
-      alert(err.message || "Failed to generate AI tool content.");
+      setNoticeModal({
+        title: 'GENERATION FAILED',
+        message: "Kitsu couldn't generate your tool right now. Please try again in a moment.",
+        goToUpload: false,
+      });
     } finally {
       setIsGenerating(false);
     }
@@ -492,7 +507,7 @@ export default function KitsuAI() {
                 <span className="font-pressstart text-[10px] text-theme-dark">Select Source Files:</span>
                 <div className="flex flex-col gap-2">
                   {uploadedFiles.length === 0 ? (
-                    <span className="font-pixel text-xs text-theme-dark/60">No files uploaded. Proceeding will use a default context or fallback.</span>
+                    <span className="font-pixel text-xs text-theme-dark/60">No files uploaded yet. Add a PDF source first to generate your {currentActiveTool}.</span>
                   ) : (
                     uploadedFiles.map((file) => (
                       <label key={file.id} className="flex items-center gap-2 p-2 bg-theme-muted dark:bg-zinc-700 border border-theme-dark/30 rounded-lg cursor-pointer">
@@ -599,7 +614,11 @@ export default function KitsuAI() {
                         <button
                           onClick={() => {
                             if (quizState.userAnswers[quizState.currentQuestionIndex] === undefined) {
-                              alert("Please select an answer first.");
+                              setNoticeModal({
+                                title: 'PICK AN ANSWER',
+                                message: 'Please select an answer first.',
+                                goToUpload: false,
+                              });
                               return;
                             }
                             if (quizState.currentQuestionIndex < quizState.activeQuiz.questions.length - 1) {
@@ -725,6 +744,31 @@ export default function KitsuAI() {
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* NOTICE MODAL (replaces browser alerts) */}
+      {noticeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-theme-dark/50">
+          <div className="bg-theme-surface dark:bg-zinc-900 border-4 border-theme-dark rounded-2xl p-5 max-w-sm w-full flex flex-col items-center text-center gap-4">
+            <div className="text-4xl">📄</div>
+            <h3 className="font-pressstart text-xs text-theme-primary uppercase">{noticeModal.title}</h3>
+            <p className="font-pixel text-sm text-theme-dark/80">{noticeModal.message}</p>
+            <button
+              onClick={() => {
+                const goUpload = noticeModal.goToUpload;
+                setNoticeModal(null);
+                if (goUpload) {
+                  setActiveStep('menu'); // back to the Kitsu AI start
+                  setCurrentActiveTool('');
+                  setShowPdfModal(true); // open the upload popup right away
+                }
+              }}
+              className="w-full font-pressstart text-[10px] py-3 bg-theme-primary text-white border-2 border-theme-dark rounded-xl cursor-pointer hover:opacity-90"
+            >
+              {noticeModal.goToUpload ? 'ADD PDF' : 'OK'}
+            </button>
           </div>
         </div>
       )}

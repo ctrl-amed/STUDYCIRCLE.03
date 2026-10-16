@@ -327,7 +327,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
   const audioRef = useRef(null);
   const currentTrack = LOFI_TRACKS[currentTrackIndex];
 
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
   // VOICE CHAT: mic capture + speaking detection + WebRTC (mesh)
   // ---------------------------------------------------------------------------
   const [isMuted, setIsMuted] = useState(false);
@@ -366,6 +366,22 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       username: usernameRef.current,
       isSpeaking: value,
     });
+  };
+
+  // Tunes Opus for clear mono voice: higher bitrate, error correction (FEC),
+  // and no DTX (DTX can cut off the start/end of words).
+  // (You can move this outside the component, next to ICE_SERVERS, if you prefer.)
+  const tuneOpus = (sdp) => {
+    if (!sdp) return sdp;
+    const m = sdp.match(/a=rtpmap:(\d+) opus\/48000\/2/);
+    if (!m) return sdp;
+    const pt = m[1];
+    const params =
+      'minptime=10;useinbandfec=1;usedtx=0;stereo=0;maxaveragebitrate=64000;maxplaybackrate=48000';
+    const re = new RegExp(`a=fmtp:${pt} .*`);
+    return re.test(sdp)
+      ? sdp.replace(re, `a=fmtp:${pt} ${params}`)
+      : sdp.replace(m[0], `${m[0]}\r\na=fmtp:${pt} ${params}`);
   };
 
   // ----- WebRTC helpers -----
@@ -435,6 +451,17 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     };
 
     pc.onconnectionstatechange = () => {
+      // once connected, raise the audio bitrate for clearer voice
+      if (pc.connectionState === 'connected') {
+        pc.getSenders().forEach((s) => {
+          if (s.track?.kind !== 'audio') return;
+          const p = s.getParameters();
+          p.encodings = p.encodings && p.encodings.length ? p.encodings : [{}];
+          p.encodings[0].maxBitrate = 64000;
+          s.setParameters(p).catch(() => {});
+        });
+      }
+
       if (pc.connectionState === 'failed' && peersRef.current[remoteName] === pc) {
         closePeer(remoteName);
         setPeerRetry((c) => c + 1); // peers effect will call them again
@@ -456,7 +483,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
     const pc = createPeer(remoteName, true);
     try {
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      await pc.setLocalDescription({ type: offer.type, sdp: tuneOpus(offer.sdp) });
       sendSignal('webrtc_offer', remoteName, { sdp: pc.localDescription });
     } catch (e) {
       console.error('Create offer failed:', e);
@@ -480,7 +507,7 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
       await pc.setRemoteDescription(data.sdp);
       await flushIce(from, pc);
       const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      await pc.setLocalDescription({ type: answer.type, sdp: tuneOpus(answer.sdp) });
       sendSignal('webrtc_answer', from, { sdp: pc.localDescription });
     } catch (e) {
       console.error('Handle offer failed:', e);
@@ -527,7 +554,13 @@ export default function UserHomepage({ isMultiplayer: propIsMultiplayer = false 
 
     navigator.mediaDevices
       .getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false, // AGC can make volume "pump"; set to true if the mic is too quiet
+          channelCount: 1,
+          sampleRate: 48000,
+        },
         video: false,
       })
       .then(async (s) => {
