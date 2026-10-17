@@ -5,12 +5,13 @@ extensions, registers every Blueprint and the Socket.IO handlers, and starts the
 background jobs. All real logic lives in routes/, services/, sockets/ and utils/.
 """
 import os
-
 from flask import Flask
 from flask_cors import CORS
 
 import config
 from extensions import bcrypt, limiter, mail, socketio, supabase
+import threading
+from flask import request, g
 
 # Blueprints (HTTP routes)
 from routes.admin import admin_bp
@@ -36,6 +37,22 @@ from services.suspension import preload_suspended_emails
 
 app = Flask(__name__)
 CORS(app)
+
+# Traffic enforcer para hindi magka-WinError 10035 kapag sabay-sabay ang load ng React
+api_lock = threading.Lock()
+
+@app.before_request
+def enforce_traffic():
+    # Ihiwalay ang WebSockets (/socket.io/). I-lock lang natin ang heavy Supabase API routes
+    if request.path.startswith('/api/'):
+        api_lock.acquire()
+        g.holds_api_lock = True
+
+@app.teardown_request
+def release_traffic(exception=None):
+    # I-release ang lock pagkatapos ng request para makapasok ang susunod
+    if getattr(g, 'holds_api_lock', False):
+        api_lock.release()
 
 app.config['SQLALCHEMY_DATABASE_URI'] = config.DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -75,4 +92,5 @@ start_scheduler(app)
 
 
 if __name__ == '__main__':
+    # Gamitin ang socketio.run imbes na app.run para ma-handle nang tama ang WebSockets
     socketio.run(app, debug=True, port=5000)

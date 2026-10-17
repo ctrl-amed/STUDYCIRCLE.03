@@ -363,7 +363,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         if (currentChatFriend) {
           fetchMessages(currentChatFriend.email);
         }
-      }, 3000);
+      }, 15000); // Pinalitan mula 3000 naging 15000 (15 seconds)
     }
     return () => clearInterval(interval);
   }, [playerData, currentChatFriend]);
