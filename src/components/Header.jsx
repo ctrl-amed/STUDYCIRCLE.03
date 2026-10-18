@@ -1,8 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import EmojiPicker from 'emoji-picker-react';
 import { usePlayer } from '../context/PlayerContext';
 import CustomAvatar from '../components/CustomAvatar';
+
+// Every popup in this file is rendered with a portal straight into <body> and uses this very
+// high z-index. That way no stacking context higher up the page (and no page element such as
+// the START SESSION button) can ever be drawn on top of a modal.
+const OVERLAY_Z = 'z-[2147483000]';
+const Portal = ({ children }) => createPortal(children, document.body);
 
 // 12 Streak Rewards Definition
 const STREAK_REWARDS_DATA = [
@@ -49,6 +56,29 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
 
+  // The MESSAGES dropdown is rendered in <body> (portal), so it needs to know where the bell button is
+  const notifBtnRef = useRef(null);
+  const [notifPos, setNotifPos] = useState(null);
+
+  const computeNotifPos = () => {
+    const btn = notifBtnRef.current;
+    if (!btn || window.innerWidth < 640) return null; // phones: full-width sheet under the header
+    const r = btn.getBoundingClientRect();
+    return { top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) };
+  };
+
+  const toggleNotifModal = () => {
+    if (!showNotifModal) setNotifPos(computeNotifPos());
+    setShowNotifModal((open) => !open);
+  };
+
+  useEffect(() => {
+    if (!showNotifModal) return undefined;
+    const onResize = () => setNotifPos(computeNotifPos());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [showNotifModal]);
+
   // Pagination & Claimed Streak Rewards State galing sa database inventory
   const [streakPageIndex, setStreakPageIndex] = useState(0);
 
@@ -76,8 +106,53 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const [myFriends, setMyFriends] = useState([]);
   const [addFriends, setAddFriends] = useState([]);
   const [requests, setRequests] = useState([]);
-  const [notifications, setNotifications] = useState([]);
   const [chatHistory, setChatHistory] = useState({});
+
+  // ---------------------------------------------------------------------------
+  // UNREAD MESSAGES
+  // friendLatest = newest message each friend sent ME, { [friendEmail]: { message, created_at } }
+  // lastRead     = when I last read each friend's chat, { [friendEmail]: created_at } (kept in localStorage)
+  // A friend has an unread message when their newest message is newer than my last-read time.
+  // ---------------------------------------------------------------------------
+  const [friendLatest, setFriendLatest] = useState({});
+  const [lastRead, setLastRead] = useState({});
+  const baselineDoneRef = useRef(false);
+  const lastReadKey = playerData?.email ? `chat_last_read_${playerData.email}` : null;
+
+  useEffect(() => {
+    if (!lastReadKey) return;
+    try {
+      const raw = localStorage.getItem(lastReadKey);
+      setLastRead(raw ? JSON.parse(raw) : {});
+      // first time on this browser: treat old messages as already read (see fetchLatestMessages)
+      baselineDoneRef.current = raw !== null;
+    } catch (e) {
+      setLastRead({});
+      baselineDoneRef.current = false;
+    }
+  }, [lastReadKey]);
+
+  const saveLastRead = (next) => {
+    if (!lastReadKey) return;
+    try { localStorage.setItem(lastReadKey, JSON.stringify(next)); } catch (e) { /* ignore */ }
+  };
+
+  const markRead = (friendEmail, ts) => {
+    if (!friendEmail || !ts) return;
+    setLastRead((prev) => {
+      if (prev[friendEmail] && new Date(prev[friendEmail]) >= new Date(ts)) return prev;
+      const next = { ...prev, [friendEmail]: ts };
+      saveLastRead(next);
+      return next;
+    });
+  };
+
+  const isUnread = (friendEmail) => {
+    const latest = friendLatest[friendEmail];
+    if (!latest) return false;
+    const read = lastRead[friendEmail];
+    return !read || new Date(latest.created_at) > new Date(read);
+  };
 
   // Active selections & tab state
   const [activeFriendsTab, setActiveFriendsTab] = useState('my-friends');
@@ -114,6 +189,34 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     return friend?.avatar_url || friend?.avatar || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${friend?.username}`;
   };
 
+  // The MESSAGES list (bell button), built from friends + their latest message + unread state
+  const notifications = useMemo(() => {
+    const list = myFriends.map((f) => {
+      const isOnline = f.status ? f.status !== "OFFLINE" : true;
+      const latest = friendLatest[f.email];
+      const read = lastRead[f.email];
+      const unread = Boolean(latest) && (!read || new Date(latest.created_at) > new Date(read));
+      return {
+        id: f.email,
+        email: f.email,
+        username: f.username,
+        level: f.level || 1,
+        status: isOnline ? "ONLINE" : "OFFLINE",
+        avatarConfig: getFriendAvatarConfig(f),
+        avatarUrl: getAvatarUrl(f),
+        lastMessage: latest?.message || "Say hello to your study buddy! 👋",
+        timeAgo: isOnline ? "Active" : "Offline",
+        isUnread: unread,
+        lastAt: latest?.created_at || '',
+      };
+    });
+    // unread first, then newest message first
+    return list.sort((a, b) => {
+      if (a.isUnread !== b.isUnread) return a.isUnread ? -1 : 1;
+      return (b.lastAt || '').localeCompare(a.lastAt || '');
+    });
+  }, [myFriends, friendLatest, lastRead]);
+
   // Fetch real friends data when component mounts or modal opens
   useEffect(() => {
     if (playerData?.email) {
@@ -123,43 +226,56 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
   const fetchFriendsData = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/get-friends-data?email=${playerData.email}`);
+      const response = await fetch(`http://localhost:5000/api/get-friends-data?email=${encodeURIComponent(playerData.email)}`);
       const data = await response.json();
       if (data.success) {
-        const friendsList = data.friends || [];
-        setMyFriends(friendsList);
+        setMyFriends(data.friends || []);
         setRequests(data.requests || []);
-
-        setNotifications((prevNotifs) => {
-          return friendsList.map((f) => {
-            const existing = prevNotifs.find((n) => n.email === f.email);
-            const isOnline = f.status ? f.status !== "OFFLINE" : true;
-            return {
-              id: f.email,
-              email: f.email,
-              username: f.username,
-              level: f.level || 1,
-              status: isOnline ? "ONLINE" : "OFFLINE",
-              avatarConfig: getFriendAvatarConfig(f),
-              avatarUrl: getAvatarUrl(f),
-              lastMessage: "Say hello to your study buddy! 👋",
-              timeAgo: isOnline ? "Active" : "Offline",
-              isUnread: existing ? existing.isUnread : false
-            };
-          });
-        });
       }
     } catch (error) {
       console.error('Error fetching friends data:', error);
     }
   };
 
+  // One request that returns the newest incoming message from every friend
+  const fetchLatestMessages = async () => {
+    if (!playerData?.email) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/latest-messages?email=${encodeURIComponent(playerData.email)}`);
+      const data = await response.json();
+      if (!data.success) return;
+
+      const latest = data.latest || {};
+      setFriendLatest(latest);
+
+      // First run on this browser: everything already in the database counts as read,
+      // so old chats do not all light up at once.
+      if (!baselineDoneRef.current) {
+        baselineDoneRef.current = true;
+        const base = {};
+        Object.entries(latest).forEach(([em, m]) => { base[em] = m.created_at; });
+        setLastRead(base);
+        saveLastRead(base);
+      }
+    } catch (error) {
+      console.error('Error fetching latest messages:', error);
+    }
+  };
+
+  // While a chat is open, anything that arrives from that friend is read immediately
+  useEffect(() => {
+    if (showChatModal && currentChatFriend) {
+      const latest = friendLatest[currentChatFriend.email];
+      if (latest) markRead(currentChatFriend.email, latest.created_at);
+    }
+  }, [friendLatest, showChatModal, currentChatFriend]);
+
   // Search users in database for Add Friends tab
   useEffect(() => {
     const searchTimeout = setTimeout(async () => {
       if (activeFriendsTab === 'add-friends') {
         try {
-          const response = await fetch(`http://localhost:5000/api/search-users?query=${addSearchQuery}&email=${playerData?.email || ''}`);
+          const response = await fetch(`http://localhost:5000/api/search-users?query=${encodeURIComponent(addSearchQuery)}&email=${encodeURIComponent(playerData?.email || '')}`);
           const data = await response.json();
           if (data.success) {
             setAddFriends(data.users || []);
@@ -216,7 +332,7 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   const fetchMessages = async (friendEmail) => {
     if (!playerData?.email || !friendEmail) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/messages?user1=${playerData.email}&user2=${friendEmail}`);
+      const response = await fetch(`http://localhost:5000/api/messages?user1=${encodeURIComponent(playerData.email)}&user2=${encodeURIComponent(friendEmail)}`);
       const data = await response.json();
 
       if (data.success) {
@@ -224,13 +340,6 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
           sender: m.sender_email === playerData.email ? 'me' : 'them',
           text: m.message
         }));
-
-        if (formattedMessages.length > (chatHistory[friendEmail]?.length || 0)) {
-          const lastMsg = formattedMessages[formattedMessages.length - 1];
-          if (lastMsg.sender === 'them' && !showChatModal) {
-            setNotifications(prev => prev.map(n => n.email === friendEmail ? { ...n, isUnread: true } : n));
-          }
-        }
 
         setChatHistory(prev => ({
           ...prev,
@@ -242,16 +351,19 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
     }
   };
 
+  // Poll for new friend requests, new messages and the open chat
   useEffect(() => {
     let interval;
     if (playerData?.email) {
       fetchFriendsData();
+      fetchLatestMessages();
       interval = setInterval(() => {
         fetchFriendsData();
+        fetchLatestMessages();
         if (currentChatFriend) {
           fetchMessages(currentChatFriend.email);
         }
-      }, 3000);
+      }, 15000); // Pinalitan mula 3000 naging 15000 (15 seconds)
     }
     return () => clearInterval(interval);
   }, [playerData, currentChatFriend]);
@@ -306,19 +418,21 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
   };
 
   const unreadNotifCount = notifications.filter((n) => n.isUnread).length;
+  const pendingRequestCount = requests.length;
 
   const handleOpenChat = (friend) => {
     if (!friend || !friend.email) return;
 
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === friend.email ? { ...n, isUnread: false } : n))
-    );
+    // opening the chat marks everything from this friend as read
+    const latest = friendLatest[friend.email];
+    if (latest) markRead(friend.email, latest.created_at);
 
     setCurrentChatFriend(friend);
     setShowNotifModal(false);
     setShowFriendsModal(false);
     setShowEmojiPicker(false);
     setShowChatModal(true);
+    fetchMessages(friend.email);
   };
 
   const handleSendChatMessage = async (e) => {
@@ -426,7 +540,10 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
 
   return (
     <>
-      <header className="relative z-10 pt-4 sm:pt-6 flex items-center justify-between md:justify-end w-full px-3 sm:px-6 shrink-0 transition-colors duration-200">
+      {/* NOTE: no z-index on the header on purpose. All popups below are rendered with a
+          portal into <body> (see <Portal>) with a very high z-index, so nothing on the page
+          (like the START SESSION button) can appear on top of them. */}
+      <header className="relative pt-4 sm:pt-6 flex items-center justify-between md:justify-end w-full px-3 sm:px-6 shrink-0 transition-colors duration-200">
         <button
           onClick={onMobileToggle}
           aria-label="Open Mobile Navigation"
@@ -445,10 +562,12 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             </span>
           </div>
 
+          {/* MESSAGES BUTTON (badge = number of friends with an unread message) */}
           <div className="relative shrink-0">
             <button
-              onClick={() => setShowNotifModal(!showNotifModal)}
-              title="Notifications"
+              ref={notifBtnRef}
+              onClick={toggleNotifModal}
+              title={unreadNotifCount > 0 ? `Messages (${unreadNotifCount} unread)` : 'Messages'}
               className="h-8 sm:h-11 bg-theme-surface border-2 border-theme-dark px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
             >
               <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-theme-primary" viewBox="0 0 24 24">
@@ -458,96 +577,36 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
             </button>
 
             {unreadNotifCount > 0 && (
-              <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-theme-primary border-[1.5px] sm:border-2 border-theme-dark text-white font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none">
+              <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-theme-primary border-[1.5px] sm:border-2 border-theme-dark text-white font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none animate-pulse">
                 {unreadNotifCount}
-              </div>
-            )}
-
-            {showNotifModal && (
-              <div className="fixed inset-x-3 top-16 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 z-50">
-                <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 w-full sm:w-[360px] h-[70vh] sm:h-[420px] max-h-[500px] shadow-2xl flex flex-col gap-3 text-left transition-colors duration-200">
-                  <div className="flex items-center justify-between pb-2 border-b-2 border-theme-dark/20 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-primary" viewBox="0 0 24 24">
-                        <path d="M0 0h24v24H0z" fill="none" />
-                        <path fill="currentColor" fillRule="evenodd" d="M2.77 17.7c.155.065.32.095.48.095l.005-.005c.32 0 .64-.125.88-.365L6.56 15h8.19a2.755 2.755 0 0 0 2.75-2.75v-6.5A2.755 2.755 0 0 0 14.75 3h-10A2.755 2.755 0 0 0 2 5.75v10.795c0 .51.3.96.77 1.155M3.5 5.75c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H5.94L3.5 15.94zm16.365 15.68c.24.24.56.365.885.365v.005A1.245 1.245 0 0 0 22 20.55V10.255a2.755 2.755 0 0 0-2.75-2.75H19v1.5h.25c.69 0 1.25.56 1.25 1.25v9.69l-1.94-1.94h-6.81c-.69 0-1.25-.56-1.25-1.25V16.5H9v.255a2.755 2.755 0 0 0 2.75 2.75h6.19z" clipRule="evenodd" />
-                      </svg>
-                      <h3 className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark">MESSAGES</h3>
-                    </div>
-                    <button onClick={() => setShowNotifModal(false)} className="text-theme-dark hover:text-theme-danger font-pressstart text-[12px] p-1 cursor-pointer">✕</button>
-                  </div>
-
-                  <div className="relative w-full shrink-0">
-                    <input
-                      type="text"
-                      value={notifSearchQuery}
-                      onChange={(e) => setNotifSearchQuery(e.target.value)}
-                      placeholder="Search friends..."
-                      className="w-full bg-theme-surface border-2 border-theme-dark rounded-[8px] px-2.5 py-1.5 font-pressstart text-[8px] sm:text-[9px] text-theme-dark focus:outline-none placeholder-theme-dark/50 transition-colors"
-                    />
-                  </div>
-
-                  <div className="overflow-y-auto pr-1 flex-1 min-h-0 flex flex-col gap-2">
-                    {notifications.length === 0 ? (
-                      <p className="font-pressstart text-[8px] text-theme-dark/60 text-center py-6">No messages yet.</p>
-                    ) : (
-                      notifications
-                        .filter((n) => n.username.toLowerCase().includes(notifSearchQuery.toLowerCase()))
-                        .map((friend) => {
-                          const isOnline = friend.status === "ONLINE";
-
-                          return (
-                            <div
-                              key={friend.email}
-                              onClick={() => {
-                                const found = myFriends.find(f => f.email === friend.email);
-                                if (found) handleOpenChat(found);
-                              }}
-                              className={`flex items-center justify-between gap-3 p-2.5 rounded-[8px] cursor-pointer hover:bg-theme-muted transition-all duration-200 ${
-                                friend.isUnread ? 'bg-theme-muted border-2 border-theme-primary shadow-sm' : 'bg-theme-surface border-2 border-theme-dark'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                                  {friend.avatarConfig ? (
-                                    <div
-                                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
-                                      style={{ transform: 'scale(0.35) translateY(18px)' }}
-                                    >
-                                      <CustomAvatar config={friend.avatarConfig} state="idle" />
-                                    </div>
-                                  ) : (
-                                    <img src={friend.avatarUrl} alt={friend.username} className="w-full h-full object-cover" />
-                                  )}
-                                  <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-theme-dark z-10 ${isOnline ? 'bg-theme-safe' : 'bg-zinc-500'}`} />
-                                </div>
-                                <div className="flex flex-col min-w-0 flex-1">
-                                  <span className="font-pressstart text-[9px] text-theme-dark truncate">{friend.username}</span>
-                                  <span className="font-pixel text-[13px] text-theme-dark/70 truncate leading-tight">{friend.lastMessage}</span>
-                                </div>
-                              </div>
-                              <span className="font-pressstart text-[7px] text-theme-dark/60 shrink-0">{friend.timeAgo}</span>
-                            </div>
-                          );
-                        })
-                    )}
-                  </div>
-                </div>
               </div>
             )}
           </div>
 
-          <button
-            onClick={() => setShowFriendsModal(true)}
-            title="Friends"
-            className="h-8 sm:h-11 bg-theme-surface border-2 border-theme-dark px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
-          >
-            <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-theme-primary" viewBox="0 0 24 24">
-              <path d="M0 0h24v24H0z" fill="none" />
-              <path fill="currentColor" d="M3.5 8a5.5 5.5 0 1 1 8.596 4.547a9.005 9.005 0 0 1 5.9 8.18a.751.751 0 0 1-1.5.045a7.5 7.5 0 0 0-14.993 0a.75.75 0 0 1-1.499-.044a9.005 9.005 0 0 1 5.9-8.181A5.5 5.5 0 0 1 3.5 8M9 4a4 4 0 1 0 0 8a4 4 0 0 0 0-8m8.29 4q-.221 0-.434.03a.75.75 0 1 1-.212-1.484a4.53 4.53 0 0 1 3.38 8.097a6.69 6.69 0 0 1 3.956 6.107a.75.75 0 0 1-1.5 0a5.19 5.19 0 0 0-3.696-4.972l-.534-.16v-1.676l.41-.209A3.03 3.03 0 0 0 17.29 8" />
-            </svg>
-            <span className="font-pressstart text-[8px] sm:text-[12px] text-theme-dark">{myFriends.length}</span>
-          </button>
+          {/* FRIENDS BUTTON (badge = pending friend requests) */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => {
+                // jump straight to the requests tab when someone is waiting
+                setActiveFriendsTab(pendingRequestCount > 0 ? 'requests' : 'my-friends');
+                setShowFriendsModal(true);
+              }}
+              title={pendingRequestCount > 0 ? `Friends (${pendingRequestCount} new request${pendingRequestCount > 1 ? 's' : ''})` : 'Friends'}
+              className="h-8 sm:h-11 bg-theme-surface border-2 border-theme-dark px-1.5 sm:px-3 rounded-[8px] sm:rounded-[10px] flex items-center justify-center gap-1 sm:gap-2 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
+            >
+              <svg className="w-3.5 h-3.5 sm:w-6 sm:h-6 text-theme-primary" viewBox="0 0 24 24">
+                <path d="M0 0h24v24H0z" fill="none" />
+                <path fill="currentColor" d="M3.5 8a5.5 5.5 0 1 1 8.596 4.547a9.005 9.005 0 0 1 5.9 8.18a.751.751 0 0 1-1.5.045a7.5 7.5 0 0 0-14.993 0a.75.75 0 0 1-1.499-.044a9.005 9.005 0 0 1 5.9-8.181A5.5 5.5 0 0 1 3.5 8M9 4a4 4 0 1 0 0 8a4 4 0 0 0 0-8m8.29 4q-.221 0-.434.03a.75.75 0 1 1-.212-1.484a4.53 4.53 0 0 1 3.38 8.097a6.69 6.69 0 0 1 3.956 6.107a.75.75 0 0 1-1.5 0a5.19 5.19 0 0 0-3.696-4.972l-.534-.16v-1.676l.41-.209A3.03 3.03 0 0 0 17.29 8" />
+              </svg>
+              <span className="font-pressstart text-[8px] sm:text-[12px] text-theme-dark">{myFriends.length}</span>
+            </button>
+
+            {pendingRequestCount > 0 && (
+              <div className="absolute -top-1.5 -right-1.5 sm:-top-2 sm:-right-2 bg-theme-danger border-[1.5px] sm:border-2 border-theme-dark text-white font-pressstart text-[6px] sm:text-[9px] w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center z-20 pointer-events-none animate-pulse">
+                {pendingRequestCount}
+              </div>
+            )}
+          </div>
 
           {/* CLICKABLE STREAK BUTTON */}
           <button
@@ -606,283 +665,432 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
         </div>
       </header>
 
-      {/* LEAVE ROOM MODAL */}
-      {showLeaveRoomModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
-            <h3 className="font-pressstart text-[12px] text-theme-dark">Leave Room</h3>
-            <p className="font-pressstart text-[9px] text-theme-dark/80 leading-normal">
-              Are you sure you want to leave this study room?
-            </p>
-            <div className="flex gap-3 justify-center mt-2">
-              <button
-                onClick={handleLeaveRoom}
-                className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
-              >
-                Yes
-              </button>
-              <button
-                onClick={() => setShowLeaveRoomModal(false)}
-                className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* STREAK REWARDS MODAL */}
-      {showStreakModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden transition-colors duration-200">
-
-            <button
-              onClick={() => setShowStreakModal(false)}
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 text-theme-dark hover:text-theme-danger font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
-            >
-              ✕
-            </button>
-
-            <div className="flex flex-col items-center justify-center text-center gap-1 pt-1">
-              <h3 className="font-pressstart text-sm sm:text-[36px] text-theme-dark tracking-wide">
-                STREAK REWARDS
-              </h3>
-              <p className="font-pixel text-[7px] sm:text-[24px] text-theme-dark/70 px-4">
-                Stay consistent and earn awesome rewards!
-              </p>
-            </div>
-
-            <div className="relative flex items-center justify-between w-full my-1 min-h-[190px] sm:min-h-[220px]">
-              <button
-                disabled={streakPageIndex === 0}
-                onClick={() => setStreakPageIndex((prev) => Math.max(0, prev - 1))}
-                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
-                  streakPageIndex === 0 ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark' : 'cursor-pointer'
-                }`}
-              >
-                ◀
-              </button>
-
-              <div className="flex items-stretch justify-start sm:justify-center gap-2 sm:gap-3 flex-1 px-1 sm:px-2 overflow-x-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                {PAGES_TIERS[streakPageIndex].map((dayValue) => {
-                  const item = STREAK_REWARDS_DATA.find((r) => r.days === dayValue);
-                  if (!item) return null;
-
-                  const isClaimed = claimedStreakDays.includes(item.days);
-                  const canClaim = (playerData?.streakDays ?? 0) >= item.days && !isClaimed;
-                  const isLocked = !canClaim && !isClaimed;
-
-                  return (
-                    <div
-                      key={item.days}
-                      className={`w-28 sm:w-36 rounded-[12px] flex flex-col justify-between overflow-hidden shrink-0 border-[2px] sm:border-[2.5px] transition-all shadow-sm ${
-                        canClaim ? 'border-theme-primary bg-gradient-to-b from-theme-surface to-theme-muted' : 'border-theme-dark bg-theme-surface'
-                      }`}
-                    >
-                      <div className="p-1.5 sm:p-2 text-center pt-2">
-                        <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark uppercase block truncate">
-                          {item.text}
-                        </span>
-                      </div>
-
-                      <div className="flex flex-col items-center justify-center gap-1 p-1.5 sm:p-2 my-auto">
-                        <img
-                          src={`${baseUrl}${item.img}`}
-                          alt={item.valueText}
-                          className="w-20 h-20 sm:w-[120px] sm:h-[120px] object-contain"
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                        <span className="font-pixel text-[13px] sm:text-[15px] text-theme-dark text-center leading-tight">
-                          {item.valueText}
-                        </span>
-                      </div>
-
-                      <div className="w-full h-[2px] bg-theme-dark" />
-
-                      {isClaimed && (
-                        <div className="bg-[#C8DDB0] text-theme-safe p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
-                          <span>CLAIMED</span>
-                        </div>
-                      )}
-
-                      {canClaim && (
-                        <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
-                          <button
-                            onClick={() => handleClaimStreakReward(item)}
-                            className="w-full bg-theme-primary text-white border-[1.5px] sm:border-[2px] border-theme-dark py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:opacity-90 cursor-pointer transition-opacity uppercase"
-                          >
-                            CLAIM
-                          </button>
-                        </div>
-                      )}
-
-                      {isLocked && (
-                        <div className="bg-[#D8D0C4] text-[#8A786C] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
-                          <span>LOCKED</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+      {/* MESSAGES DROPDOWN (portal: always on top, click outside to close) */}
+      {showNotifModal && (
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z}`} onClick={() => setShowNotifModal(false)} />
+          <div
+            className={`fixed ${notifPos ? '' : 'inset-x-3 top-16'} ${OVERLAY_Z}`}
+            style={notifPos ? { top: notifPos.top, right: notifPos.right } : undefined}
+          >
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-3 sm:p-4 w-full sm:w-[360px] h-[70vh] sm:h-[420px] max-h-[500px] shadow-2xl flex flex-col gap-3 text-left transition-colors duration-200">
+              <div className="flex items-center justify-between pb-2 border-b-2 border-theme-dark/20 shrink-0">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-theme-primary" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="currentColor" fillRule="evenodd" d="M2.77 17.7c.155.065.32.095.48.095l.005-.005c.32 0 .64-.125.88-.365L6.56 15h8.19a2.755 2.755 0 0 0 2.75-2.75v-6.5A2.755 2.755 0 0 0 14.75 3h-10A2.755 2.755 0 0 0 2 5.75v10.795c0 .51.3.96.77 1.155M3.5 5.75c0-.69.56-1.25 1.25-1.25h10c.69 0 1.25.56 1.25 1.25v6.5c0 .69-.56 1.25-1.25 1.25H5.94L3.5 15.94zm16.365 15.68c.24.24.56.365.885.365v.005A1.245 1.245 0 0 0 22 20.55V10.255a2.755 2.755 0 0 0-2.75-2.75H19v1.5h.25c.69 0 1.25.56 1.25 1.25v9.69l-1.94-1.94h-6.81c-.69 0-1.25-.56-1.25-1.25V16.5H9v.255a2.755 2.755 0 0 0 2.75 2.75h6.19z" clipRule="evenodd" />
+                  </svg>
+                  <h3 className="font-pressstart text-[10px] sm:text-[12px] text-theme-dark">MESSAGES</h3>
+                </div>
+                <button onClick={() => setShowNotifModal(false)} className="text-theme-dark hover:text-theme-danger font-pressstart text-[12px] p-1 cursor-pointer">✕</button>
               </div>
 
-              <button
-                disabled={streakPageIndex === PAGES_TIERS.length - 1}
-                onClick={() => setStreakPageIndex((prev) => Math.min(PAGES_TIERS.length - 1, prev + 1))}
-                className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
-                  streakPageIndex === PAGES_TIERS.length - 1 ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark' : 'cursor-pointer'
-                }`}
-              >
-                ▶
-              </button>
-            </div>
-
-            <div className="flex flex-col items-center gap-1.5 pb-1">
-              <span className="font-pressstart text-[7px] sm:text-[9px] text-theme-dark/70 text-center">
-                Start a study session to claim the streak
-              </span>
-              <div className="flex items-center gap-2">
-                {PAGES_TIERS.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setStreakPageIndex(idx)}
-                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-theme-dark transition-colors cursor-pointer ${
-                      streakPageIndex === idx ? 'bg-theme-primary' : 'bg-theme-surface'
-                    }`}
-                  />
-                ))}
+              <div className="relative w-full shrink-0">
+                <input
+                  type="text"
+                  value={notifSearchQuery}
+                  onChange={(e) => setNotifSearchQuery(e.target.value)}
+                  placeholder="Search friends..."
+                  className="w-full bg-theme-surface border-2 border-theme-dark rounded-[8px] px-2.5 py-1.5 font-pressstart text-[8px] sm:text-[9px] text-theme-dark focus:outline-none placeholder-theme-dark/50 transition-colors"
+                />
               </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* LOGOUT MODAL */}
-      {showLogoutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
-            <h3 className="font-pressstart text-[14px] text-theme-dark">Sign Out</h3>
-            <p className="font-pressstart text-[10px] text-theme-dark/80 leading-normal">Are you sure you want to sign out?</p>
-            <div className="flex gap-3 justify-center mt-2">
-              <button
-                onClick={() => {
-                  localStorage.removeItem('active_user_email');
-                  navigate('/auth#login');
-                }}
-                className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
-              >
-                Yes
-              </button>
-              <button onClick={() => setShowLogoutModal(false)} className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FRIENDS MODAL */}
-      {showFriendsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 w-[720px] max-w-[95vw] h-[580px] max-h-[90vh] shadow-xl flex flex-col gap-4 text-left transition-colors duration-200">
-            <div className="flex items-center justify-between pb-3 shrink-0">
-              <div className="flex items-center gap-2">
-                <svg className="w-6 h-6 text-theme-primary" viewBox="0 0 24 24">
-                  <path d="M0 0h24v24H0z" fill="none" />
-                  <path fill="currentColor" d="M3.5 8a5.5 5.5 0 1 1 8.596 4.547a9.005 9.005 0 0 1 5.9 8.18a.751.751 0 0 1-1.5.045a7.5 7.5 0 0 0-14.993 0a.75.75 0 0 1-1.499-.044a9.005 9.005 0 0 1 5.9-8.181A5.5 5.5 0 0 1 3.5 8M9 4a4 4 0 1 0 0 8a4 4 0 0 0 0-8m8.29 4q-.221 0-.434.03a.75.75 0 1 1-.212-1.484a4.53 4.53 0 0 1 3.38 8.097a6.69 6.69 0 0 1 3.956 6.107a.75.75 0 0 1-1.5 0a5.19 5.19 0 0 0-3.696-4.972l-.534-.16v-1.676l.41-.209A3.03 3.03 0 0 0 17.29 8" />
-                </svg>
-                <h3 className="font-pressstart text-[14px] text-theme-dark">Friends</h3>
-              </div>
-              <button onClick={() => setShowFriendsModal(false)} className="text-theme-dark hover:text-theme-danger font-pressstart text-[14px] cursor-pointer">✕</button>
-            </div>
-
-            <div className="flex items-center gap-2 p-1.5 rounded-[8px] shrink-0">
-              {['my-friends', 'add-friends', 'requests'].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveFriendsTab(tab)}
-                  className={`flex-1 min-w-0 h-11 min-h-[44px] px-1 flex items-center justify-center text-center font-pressstart text-[8px] sm:text-[10px] leading-tight rounded-[6px] transition-all cursor-pointer ${
-                    activeFriendsTab === tab
-                      ? 'bg-theme-muted text-theme-primary border-2 border-transparent'
-                      : 'bg-theme-muted text-theme-dark border-2 border-theme-dark'
-                  }`}
-                >
-                  {tab.replace('-', ' ').toUpperCase()}
-                  {tab === 'requests' && requests.length > 0 && ` (${requests.length})`}
-                </button>
-              ))}
-            </div>
-
-            <div className="overflow-y-auto pr-1 flex-1 min-h-0">
-              {activeFriendsTab === 'my-friends' && (
-                <div className="flex flex-col gap-2.5">
-                  {myFriends.length === 0 ? (
-                    <div className="text-center font-pressstart text-[10px] text-theme-dark/60 py-6">No friends added yet.</div>
-                  ) : (
-                    myFriends.map((friend) => {
-                      const isRemoving = removingFriendId === friend.email;
-                      const avatarCfg = getFriendAvatarConfig(friend);
-                      const isOnline = friend.status ? friend.status !== "OFFLINE" : true;
+              <div className="overflow-y-auto pr-1 flex-1 min-h-0 flex flex-col gap-2">
+                {notifications.length === 0 ? (
+                  <p className="font-pressstart text-[8px] text-theme-dark/60 text-center py-6">No messages yet.</p>
+                ) : (
+                  notifications
+                    .filter((n) => n.username.toLowerCase().includes(notifSearchQuery.toLowerCase()))
+                    .map((friend) => {
+                      const isOnline = friend.status === "ONLINE";
 
                       return (
                         <div
                           key={friend.email}
-                          className={`flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-0 items-center bg-theme-surface border-2 border-theme-dark p-2.5 transition-all duration-300 ${
-                            isRemoving ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+                          onClick={() => {
+                            const found = myFriends.find(f => f.email === friend.email);
+                            if (found) handleOpenChat(found);
+                          }}
+                          className={`flex items-center justify-between gap-3 p-2.5 rounded-[8px] cursor-pointer hover:bg-theme-muted transition-all duration-200 ${
+                            friend.isUnread ? 'bg-theme-muted border-2 border-theme-primary shadow-sm' : 'bg-theme-surface border-2 border-theme-dark'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 w-full">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              {avatarCfg ? (
+                              {friend.avatarConfig ? (
                                 <div
                                   className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
                                   style={{ transform: 'scale(0.35) translateY(18px)' }}
                                 >
-                                  <CustomAvatar config={avatarCfg} state="idle" />
+                                  <CustomAvatar config={friend.avatarConfig} state="idle" />
                                 </div>
                               ) : (
-                                <img src={getAvatarUrl(friend)} alt={friend.username} className="w-full h-full object-cover" />
+                                <img src={friend.avatarUrl} alt={friend.username} className="w-full h-full object-cover" />
                               )}
                               <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-theme-dark z-10 ${isOnline ? 'bg-theme-safe' : 'bg-zinc-500'}`} />
                             </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-pressstart text-[10px] text-theme-dark truncate">{friend.username}</span>
-                              <span className="font-pressstart text-[8px] text-theme-dark/70">LVL {friend.level || 1}</span>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className={`font-pressstart text-[9px] text-theme-dark truncate ${friend.isUnread ? 'font-bold' : ''}`}>{friend.username}</span>
+                              <span className={`font-pixel text-[13px] truncate leading-tight ${friend.isUnread ? 'text-theme-dark' : 'text-theme-dark/70'}`}>{friend.lastMessage}</span>
                             </div>
                           </div>
-
-                          <div className="flex items-center justify-between w-full sm:contents">
-                            <span className={`font-pressstart text-[8px] ${isOnline ? 'text-theme-safe' : 'text-zinc-500'}`}>
-                              {isOnline ? 'ONLINE' : 'OFFLINE'}
-                            </span>
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button onClick={() => { setShowFriendsModal(false); handleOpenChat(friend); }} title="Message" className="p-1.5 text-theme-dark hover:text-theme-primary cursor-pointer">💬</button>
-                              <button onClick={() => { setPendingRemoveFriend(friend); setShowRemoveModal(true); }} title="Remove" className="p-1.5 text-theme-dark hover:text-theme-danger cursor-pointer">🗑️</button>
-                            </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {friend.isUnread && (
+                              <span className="w-2.5 h-2.5 rounded-full bg-theme-primary border border-theme-dark animate-pulse" title="New message" />
+                            )}
+                            <span className="font-pressstart text-[7px] text-theme-dark/60">{friend.timeAgo}</span>
                           </div>
                         </div>
                       );
                     })
-                  )}
-                </div>
-              )}
+                )}
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
-              {activeFriendsTab === 'add-friends' && (
-                <div className="flex flex-col gap-4">
-                  <input
-                    type="text"
-                    value={addSearchQuery}
-                    onChange={(e) => setAddSearchQuery(e.target.value)}
-                    placeholder="Search players..."
-                    className="w-full bg-theme-surface border-2 border-theme-dark rounded-[8px] px-3 py-2 font-pressstart text-[10px] text-theme-dark focus:outline-none placeholder-theme-dark/50"
-                  />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                    {addFriends.map((player) => {
-                      const avatarCfg = getFriendAvatarConfig(player);
-                      return (
-                        <div key={player.email} className="bg-theme-surface border-[2px] border-theme-dark p-2.5 flex flex-col gap-2">
-                          <div className="flex items-center justify-between gap-1.5 min-w-0">
-                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                              <div className="relative shrink-0 w-8 h-8 rounded-full border-[1.5px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
+      {/* LEAVE ROOM MODAL */}
+      {showLeaveRoomModal && (
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-4 bg-theme-dark/50`}>
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
+              <h3 className="font-pressstart text-[12px] text-theme-dark">Leave Room</h3>
+              <p className="font-pressstart text-[9px] text-theme-dark/80 leading-normal">
+                Are you sure you want to leave this study room?
+              </p>
+              <div className="flex gap-3 justify-center mt-2">
+                <button
+                  onClick={handleLeaveRoom}
+                  className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setShowLeaveRoomModal(false)}
+                  className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* STREAK REWARDS MODAL */}
+      {showStreakModal && (
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-3 sm:p-4 bg-theme-dark/50`}>
+            <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[16px] p-4 sm:p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-3 sm:gap-4 relative [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden transition-colors duration-200">
+
+              <button
+                onClick={() => setShowStreakModal(false)}
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 text-theme-dark hover:text-theme-danger font-pressstart text-[12px] sm:text-[14px] p-1 cursor-pointer z-10"
+              >
+                ✕
+              </button>
+
+              <div className="flex flex-col items-center justify-center text-center gap-1 pt-1">
+                <h3 className="font-pressstart text-sm sm:text-[36px] text-theme-dark tracking-wide">
+                  STREAK REWARDS
+                </h3>
+                <p className="font-pixel text-[7px] sm:text-[24px] text-theme-dark/70 px-4">
+                  Stay consistent and earn awesome rewards!
+                </p>
+              </div>
+
+              <div className="relative flex items-center justify-between w-full my-1 min-h-[190px] sm:min-h-[220px]">
+                <button
+                  disabled={streakPageIndex === 0}
+                  onClick={() => setStreakPageIndex((prev) => Math.max(0, prev - 1))}
+                  className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                    streakPageIndex === 0 ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark' : 'cursor-pointer'
+                  }`}
+                >
+                  ◀
+                </button>
+
+                <div className="flex items-stretch justify-start sm:justify-center gap-2 sm:gap-3 flex-1 px-1 sm:px-2 overflow-x-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  {PAGES_TIERS[streakPageIndex].map((dayValue) => {
+                    const item = STREAK_REWARDS_DATA.find((r) => r.days === dayValue);
+                    if (!item) return null;
+
+                    const isClaimed = claimedStreakDays.includes(item.days);
+                    const canClaim = (playerData?.streakDays ?? 0) >= item.days && !isClaimed;
+                    const isLocked = !canClaim && !isClaimed;
+
+                    return (
+                      <div
+                        key={item.days}
+                        className={`w-28 sm:w-36 rounded-[12px] flex flex-col justify-between overflow-hidden shrink-0 border-[2px] sm:border-[2.5px] transition-all shadow-sm ${
+                          canClaim ? 'border-theme-primary bg-gradient-to-b from-theme-surface to-theme-muted' : 'border-theme-dark bg-theme-surface'
+                        }`}
+                      >
+                        <div className="p-1.5 sm:p-2 text-center pt-2">
+                          <span className="font-pressstart text-[8px] sm:text-[10px] text-theme-dark uppercase block truncate">
+                            {item.text}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-col items-center justify-center gap-1 p-1.5 sm:p-2 my-auto">
+                          <img
+                            src={`${baseUrl}${item.img}`}
+                            alt={item.valueText}
+                            className="w-20 h-20 sm:w-[120px] sm:h-[120px] object-contain"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                          <span className="font-pixel text-[13px] sm:text-[15px] text-theme-dark text-center leading-tight">
+                            {item.valueText}
+                          </span>
+                        </div>
+
+                        <div className="w-full h-[2px] bg-theme-dark" />
+
+                        {isClaimed && (
+                          <div className="bg-[#C8DDB0] text-theme-safe p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                            <span>CLAIMED</span>
+                          </div>
+                        )}
+
+                        {canClaim && (
+                          <div className="p-2 sm:p-2.5 bg-transparent flex justify-center">
+                            <button
+                              onClick={() => handleClaimStreakReward(item)}
+                              className="w-full bg-theme-primary text-white border-[1.5px] sm:border-[2px] border-theme-dark py-1 font-pressstart text-[7px] sm:text-[8px] rounded-[6px] hover:opacity-90 cursor-pointer transition-opacity uppercase"
+                            >
+                              CLAIM
+                            </button>
+                          </div>
+                        )}
+
+                        {isLocked && (
+                          <div className="bg-[#D8D0C4] text-[#8A786C] p-3.5 sm:p-4 flex items-center justify-center gap-1 font-pressstart text-[6px] sm:text-[8px] font-bold">
+                            <span>LOCKED</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  disabled={streakPageIndex === PAGES_TIERS.length - 1}
+                  onClick={() => setStreakPageIndex((prev) => Math.min(PAGES_TIERS.length - 1, prev + 1))}
+                  className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
+                    streakPageIndex === PAGES_TIERS.length - 1 ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark' : 'cursor-pointer'
+                  }`}
+                >
+                  ▶
+                </button>
+              </div>
+
+              <div className="flex flex-col items-center gap-1.5 pb-1">
+                <span className="font-pressstart text-[7px] sm:text-[9px] text-theme-dark/70 text-center">
+                  Start a study session to claim the streak
+                </span>
+                <div className="flex items-center gap-2">
+                  {PAGES_TIERS.map((_, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setStreakPageIndex(idx)}
+                      className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border-[1.5px] border-theme-dark transition-colors cursor-pointer ${
+                        streakPageIndex === idx ? 'bg-theme-primary' : 'bg-theme-surface'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* LOGOUT MODAL */}
+      {showLogoutModal && (
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-4 bg-theme-dark/50`}>
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-4 text-center">
+              <h3 className="font-pressstart text-[14px] text-theme-dark">Sign Out</h3>
+              <p className="font-pressstart text-[10px] text-theme-dark/80 leading-normal">Are you sure you want to sign out?</p>
+              <div className="flex gap-3 justify-center mt-2">
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('active_user_email');
+                    navigate('/auth#login');
+                  }}
+                  className="bg-theme-danger text-white border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90"
+                >
+                  Yes
+                </button>
+                <button onClick={() => setShowLogoutModal(false)} className="bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* FRIENDS MODAL */}
+      {showFriendsModal && (
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-4 bg-theme-dark/50`}>
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-4 sm:p-6 w-[720px] max-w-[95vw] h-[580px] max-h-[90vh] shadow-xl flex flex-col gap-4 text-left transition-colors duration-200">
+              <div className="flex items-center justify-between pb-3 shrink-0">
+                <div className="flex items-center gap-2">
+                  <svg className="w-6 h-6 text-theme-primary" viewBox="0 0 24 24">
+                    <path d="M0 0h24v24H0z" fill="none" />
+                    <path fill="currentColor" d="M3.5 8a5.5 5.5 0 1 1 8.596 4.547a9.005 9.005 0 0 1 5.9 8.18a.751.751 0 0 1-1.5.045a7.5 7.5 0 0 0-14.993 0a.75.75 0 0 1-1.499-.044a9.005 9.005 0 0 1 5.9-8.181A5.5 5.5 0 0 1 3.5 8M9 4a4 4 0 1 0 0 8a4 4 0 0 0 0-8m8.29 4q-.221 0-.434.03a.75.75 0 1 1-.212-1.484a4.53 4.53 0 0 1 3.38 8.097a6.69 6.69 0 0 1 3.956 6.107a.75.75 0 0 1-1.5 0a5.19 5.19 0 0 0-3.696-4.972l-.534-.16v-1.676l.41-.209A3.03 3.03 0 0 0 17.29 8" />
+                  </svg>
+                  <h3 className="font-pressstart text-[14px] text-theme-dark">Friends</h3>
+                </div>
+                <button onClick={() => setShowFriendsModal(false)} className="text-theme-dark hover:text-theme-danger font-pressstart text-[14px] cursor-pointer">✕</button>
+              </div>
+
+              <div className="flex items-center gap-2 p-1.5 rounded-[8px] shrink-0">
+                {['my-friends', 'add-friends', 'requests'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveFriendsTab(tab)}
+                    className={`relative flex-1 min-w-0 h-11 min-h-[44px] px-1 flex items-center justify-center text-center font-pressstart text-[8px] sm:text-[10px] leading-tight rounded-[6px] transition-all cursor-pointer ${
+                      activeFriendsTab === tab
+                        ? 'bg-theme-muted text-theme-primary border-2 border-transparent'
+                        : 'bg-theme-muted text-theme-dark border-2 border-theme-dark'
+                    }`}
+                  >
+                    {tab.replace('-', ' ').toUpperCase()}
+                    {tab === 'requests' && requests.length > 0 && ` (${requests.length})`}
+                    {tab === 'requests' && requests.length > 0 && activeFriendsTab !== 'requests' && (
+                      <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-theme-danger border border-theme-dark animate-pulse" />
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="overflow-y-auto pr-1 flex-1 min-h-0">
+                {activeFriendsTab === 'my-friends' && (
+                  <div className="flex flex-col gap-2.5">
+                    {myFriends.length === 0 ? (
+                      <div className="text-center font-pressstart text-[10px] text-theme-dark/60 py-6">No friends added yet.</div>
+                    ) : (
+                      myFriends.map((friend) => {
+                        const isRemoving = removingFriendId === friend.email;
+                        const avatarCfg = getFriendAvatarConfig(friend);
+                        const isOnline = friend.status ? friend.status !== "OFFLINE" : true;
+                        const hasUnread = isUnread(friend.email);
+
+                        return (
+                          <div
+                            key={friend.email}
+                            className={`flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-0 items-center bg-theme-surface border-2 border-theme-dark p-2.5 transition-all duration-300 ${
+                              isRemoving ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 w-full">
+                              <div className="relative shrink-0 w-9 h-9 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
+                                {avatarCfg ? (
+                                  <div
+                                    className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
+                                    style={{ transform: 'scale(0.35) translateY(18px)' }}
+                                  >
+                                    <CustomAvatar config={avatarCfg} state="idle" />
+                                  </div>
+                                ) : (
+                                  <img src={getAvatarUrl(friend)} alt={friend.username} className="w-full h-full object-cover" />
+                                )}
+                                <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-theme-dark z-10 ${isOnline ? 'bg-theme-safe' : 'bg-zinc-500'}`} />
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-pressstart text-[10px] text-theme-dark truncate">{friend.username}</span>
+                                <span className="font-pressstart text-[8px] text-theme-dark/70">LVL {friend.level || 1}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between w-full sm:contents">
+                              <span className={`font-pressstart text-[8px] ${isOnline ? 'text-theme-safe' : 'text-zinc-500'}`}>
+                                {isOnline ? 'ONLINE' : 'OFFLINE'}
+                              </span>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => { setShowFriendsModal(false); handleOpenChat(friend); }}
+                                  title={hasUnread ? 'New message' : 'Message'}
+                                  className="relative p-1.5 text-theme-dark hover:text-theme-primary cursor-pointer"
+                                >
+                                  💬
+                                  {hasUnread && (
+                                    <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-theme-danger border border-theme-dark animate-pulse" />
+                                  )}
+                                </button>
+                                <button onClick={() => { setPendingRemoveFriend(friend); setShowRemoveModal(true); }} title="Remove" className="p-1.5 text-theme-dark hover:text-theme-danger cursor-pointer">🗑️</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {activeFriendsTab === 'add-friends' && (
+                  <div className="flex flex-col gap-4">
+                    <input
+                      type="text"
+                      value={addSearchQuery}
+                      onChange={(e) => setAddSearchQuery(e.target.value)}
+                      placeholder="Search players..."
+                      className="w-full bg-theme-surface border-2 border-theme-dark rounded-[8px] px-3 py-2 font-pressstart text-[10px] text-theme-dark focus:outline-none placeholder-theme-dark/50"
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {addFriends.map((player) => {
+                        const avatarCfg = getFriendAvatarConfig(player);
+                        return (
+                          <div key={player.email} className="bg-theme-surface border-[2px] border-theme-dark p-2.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-1.5 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                <div className="relative shrink-0 w-8 h-8 rounded-full border-[1.5px] border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
+                                  {avatarCfg ? (
+                                    <div
+                                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
+                                      style={{ transform: 'scale(0.3) translateY(18px)' }}
+                                    >
+                                      <CustomAvatar config={avatarCfg} state="idle" />
+                                    </div>
+                                  ) : (
+                                    <img src={getAvatarUrl(player)} alt={player.username} className="w-full h-full object-cover" />
+                                  )}
+                                </div>
+                                <div className="flex flex-col min-w-0 flex-1">
+                                  <span className="font-pressstart text-[9px] text-theme-dark break-words whitespace-normal leading-tight">{player.username}</span>
+                                  <span className="font-pressstart text-[7px] text-theme-dark/70">LVL {player.level || 1}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleRequestAddFriend(player.email)}
+                                disabled={player.requested}
+                                className={`px-2 py-1.5 rounded-[6px] font-pressstart text-[7px] border-[1.5px] border-theme-dark cursor-pointer transition-colors shrink-0 ${
+                                  player.requested ? 'bg-theme-muted text-theme-dark/50 cursor-not-allowed opacity-80' : 'bg-theme-primary text-white hover:opacity-90'
+                                }`}
+                              >
+                                {player.requested ? 'REQUESTED' : 'REQUEST'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {activeFriendsTab === 'requests' && (
+                  <div className="flex flex-col gap-2.5">
+                    {requests.length === 0 ? (
+                      <div className="text-center font-pressstart text-[10px] text-theme-dark/60 py-6">No friend requests.</div>
+                    ) : (
+                      requests.map((req) => {
+                        const avatarCfg = getFriendAvatarConfig(req.sender);
+                        return (
+                          <div key={req.id} className="flex items-center justify-between bg-theme-surface border-2 border-theme-dark p-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
                                 {avatarCfg ? (
                                   <div
                                     className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
@@ -891,190 +1099,151 @@ export default function Header({ onMobileToggle, onOpenKitsu, isRoomState: propI
                                     <CustomAvatar config={avatarCfg} state="idle" />
                                   </div>
                                 ) : (
-                                  <img src={getAvatarUrl(player)} alt={player.username} className="w-full h-full object-cover" />
+                                  <img src={getAvatarUrl(req.sender)} alt={req.sender.username} className="w-full h-full object-cover" />
                                 )}
                               </div>
-                              <div className="flex flex-col min-w-0 flex-1">
-                                <span className="font-pressstart text-[9px] text-theme-dark break-words whitespace-normal leading-tight">{player.username}</span>
-                                <span className="font-pressstart text-[7px] text-theme-dark/70">LVL {player.level || 1}</span>
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-pressstart text-[10px] text-theme-dark truncate">{req.sender.username}</span>
+                                <span className="font-pressstart text-[8px] text-theme-dark/70">LVL {req.sender.level || 1}</span>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleRequestAddFriend(player.email)}
-                              disabled={player.requested}
-                              className={`px-2 py-1.5 rounded-[6px] font-pressstart text-[7px] border-[1.5px] border-theme-dark cursor-pointer transition-colors shrink-0 ${
-                                player.requested ? 'bg-theme-muted text-theme-dark/50 cursor-not-allowed opacity-80' : 'bg-theme-primary text-white hover:opacity-90'
-                              }`}
-                            >
-                              {player.requested ? 'REQUESTED' : 'REQUEST'}
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="px-2.5 py-1 bg-theme-safe text-white font-pressstart text-[8px] rounded border border-theme-dark cursor-pointer">ACCEPT</button>
+                              <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="px-2.5 py-1 bg-theme-danger text-white font-pressstart text-[8px] rounded border border-theme-dark cursor-pointer">REJECT</button>
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
-                </div>
-              )}
-
-              {activeFriendsTab === 'requests' && (
-                <div className="flex flex-col gap-2.5">
-                  {requests.length === 0 ? (
-                    <div className="text-center font-pressstart text-[10px] text-theme-dark/60 py-6">No friend requests.</div>
-                  ) : (
-                    requests.map((req) => {
-                      const avatarCfg = getFriendAvatarConfig(req.sender);
-                      return (
-                        <div key={req.id} className="flex items-center justify-between bg-theme-surface border-2 border-theme-dark p-2.5">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                              {avatarCfg ? (
-                                <div
-                                  className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
-                                  style={{ transform: 'scale(0.3) translateY(18px)' }}
-                                >
-                                  <CustomAvatar config={avatarCfg} state="idle" />
-                                </div>
-                              ) : (
-                                <img src={getAvatarUrl(req.sender)} alt={req.sender.username} className="w-full h-full object-cover" />
-                              )}
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-pressstart text-[10px] text-theme-dark truncate">{req.sender.username}</span>
-                              <span className="font-pressstart text-[8px] text-theme-dark/70">LVL {req.sender.level || 1}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button onClick={() => handleFriendRequestAction(req.id, 'ACCEPT')} className="px-2.5 py-1 bg-theme-safe text-white font-pressstart text-[8px] rounded border border-theme-dark cursor-pointer">ACCEPT</button>
-                            <button onClick={() => handleFriendRequestAction(req.id, 'REJECT')} className="px-2.5 py-1 bg-theme-danger text-white font-pressstart text-[8px] rounded border border-theme-dark cursor-pointer">REJECT</button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       {/* CHAT MODAL */}
       {showChatModal && currentChatFriend && (
-        <div className="fixed bottom-4 right-4 z-50 p-0">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[10px] max-w-md w-80 sm:w-96 shadow-xl flex flex-col overflow-hidden relative transition-colors duration-200">
-            <div className="flex items-center justify-between p-3 bg-theme-muted border-b-2 border-theme-dark">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
-                  {getFriendAvatarConfig(currentChatFriend) ? (
-                    <div
-                      className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
-                      style={{ transform: 'scale(0.3) translateY(18px)' }}
-                    >
-                      <CustomAvatar config={getFriendAvatarConfig(currentChatFriend)} state="idle" />
+        <Portal>
+          <div className={`fixed bottom-4 right-4 ${OVERLAY_Z} p-0`}>
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[10px] max-w-md w-80 sm:w-96 shadow-xl flex flex-col overflow-hidden relative transition-colors duration-200">
+              <div className="flex items-center justify-between p-3 bg-theme-muted border-b-2 border-theme-dark">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="relative shrink-0 w-8 h-8 rounded-full border-2 border-theme-dark bg-theme-muted overflow-hidden flex items-center justify-center">
+                    {getFriendAvatarConfig(currentChatFriend) ? (
+                      <div
+                        className="absolute flex items-start justify-center pointer-events-none w-[120px] h-[120px]"
+                        style={{ transform: 'scale(0.3) translateY(18px)' }}
+                      >
+                        <CustomAvatar config={getFriendAvatarConfig(currentChatFriend)} state="idle" />
+                      </div>
+                    ) : (
+                      <img src={getAvatarUrl(currentChatFriend)} alt="PFP" className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                  <span className="font-pressstart text-[11px] text-theme-dark truncate">{currentChatFriend.username}</span>
+                </div>
+                <button onClick={() => setShowChatModal(false)} className="text-theme-dark font-pressstart text-[12px] cursor-pointer">✕</button>
+              </div>
+
+              <div className="p-3 flex flex-col gap-3 relative">
+                <div className="relative">
+                  <div
+                    ref={chatMessagesContainerRef}
+                    onScroll={handleChatScroll}
+                    className="h-48 overflow-y-auto p-3 flex flex-col gap-2"
+                  >
+                    <div className="text-center font-pressstart text-[8px] text-theme-dark/60 py-2">
+                      Start of conversation with {currentChatFriend.username}
                     </div>
-                  ) : (
-                    <img src={getAvatarUrl(currentChatFriend)} alt="PFP" className="w-full h-full object-cover" />
+                    {(chatHistory[currentChatFriend.email] || []).map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`px-2.5 py-1.5 font-pixel text-[15px] max-w-[80%] break-words rounded-[6px] border-[1.5px] border-theme-dark ${
+                          msg.sender === 'me' ? 'self-end bg-theme-muted text-theme-dark' : 'self-start bg-theme-primary text-white'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    ))}
+                  </div>
+
+                  {showScrollBottomBtn && (
+                    <button
+                      onClick={scrollToBottom}
+                      className="absolute bottom-2 right-2 bg-theme-primary text-white border-2 border-theme-dark p-1.5 rounded-full shadow-md hover:opacity-90 cursor-pointer transition-opacity duration-200 z-10"
+                      title="Scroll to bottom"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
                   )}
                 </div>
-                <span className="font-pressstart text-[11px] text-theme-dark truncate">{currentChatFriend.username}</span>
-              </div>
-              <button onClick={() => setShowChatModal(false)} className="text-theme-dark font-pressstart text-[12px] cursor-pointer">✕</button>
-            </div>
 
-            <div className="p-3 flex flex-col gap-3 relative">
-              <div className="relative">
-                <div
-                  ref={chatMessagesContainerRef}
-                  onScroll={handleChatScroll}
-                  className="h-48 overflow-y-auto p-3 flex flex-col gap-2"
-                >
-                  <div className="text-center font-pressstart text-[8px] text-theme-dark/60 py-2">
-                    Start of conversation with {currentChatFriend.username}
+                {showEmojiPicker && (
+                  <div className="absolute bottom-16 left-3 z-50 shadow-2xl">
+                    <EmojiPicker
+                      onEmojiClick={handleEmojiSelect}
+                      width={320}
+                      height={380}
+                    />
                   </div>
-                  {(chatHistory[currentChatFriend.email] || []).map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`px-2.5 py-1.5 font-pixel text-[15px] max-w-[80%] break-words rounded-[6px] border-[1.5px] border-theme-dark ${
-                        msg.sender === 'me' ? 'self-end bg-theme-muted text-theme-dark' : 'self-start bg-theme-primary text-white'
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  ))}
-                </div>
+                )}
 
-                {showScrollBottomBtn && (
+                <form onSubmit={handleSendChatMessage} className="flex gap-2 items-center">
+                  <div className="flex-1 flex items-center bg-theme-surface border-2 border-theme-dark rounded-[8px] px-2 py-1">
+                    <input
+                      ref={chatInputRef}
+                      type="text"
+                      value={chatInputText}
+                      onChange={(e) => setChatInputText(e.target.value)}
+                      placeholder="Type a message..."
+                      className="flex-1 bg-transparent font-pixel text-[15px] text-theme-dark focus:outline-none min-w-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                      className="text-sm cursor-pointer hover:scale-110 transition active:scale-95 ml-1 select-none shrink-0"
+                      title="Add Emoji"
+                    >
+                      😀
+                    </button>
+                  </div>
                   <button
-                    onClick={scrollToBottom}
-                    className="absolute bottom-2 right-2 bg-theme-primary text-white border-2 border-theme-dark p-1.5 rounded-full shadow-md hover:opacity-90 cursor-pointer transition-opacity duration-200 z-10"
-                    title="Scroll to bottom"
+                    type="submit"
+                    className="bg-theme-primary text-white border-2 border-theme-dark px-3 py-2 rounded-[8px] font-pressstart hover:opacity-90 cursor-pointer shrink-0 flex items-center justify-center"
+                    aria-label="Send"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M0 0h24v24H0z" fill="none" />
+                      <path d="M3 20v-6l8-2l-8-2V4l19 8z" />
                     </svg>
                   </button>
-                )}
+                </form>
               </div>
-
-              {showEmojiPicker && (
-                <div className="absolute bottom-16 left-3 z-50 shadow-2xl">
-                  <EmojiPicker
-                    onEmojiClick={handleEmojiSelect}
-                    width={320}
-                    height={380}
-                  />
-                </div>
-              )}
-
-              <form onSubmit={handleSendChatMessage} className="flex gap-2 items-center">
-                <div className="flex-1 flex items-center bg-theme-surface border-2 border-theme-dark rounded-[8px] px-2 py-1">
-                  <input
-                    ref={chatInputRef}
-                    type="text"
-                    value={chatInputText}
-                    onChange={(e) => setChatInputText(e.target.value)}
-                    placeholder="Type a message..."
-                    className="flex-1 bg-transparent font-pixel text-[15px] text-theme-dark focus:outline-none min-w-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="text-sm cursor-pointer hover:scale-110 transition active:scale-95 ml-1 select-none shrink-0"
-                    title="Add Emoji"
-                  >
-                    😀
-                  </button>
-                </div>
-                <button
-                  type="submit"
-                  className="bg-theme-primary text-white border-2 border-theme-dark px-3 py-2 rounded-[8px] font-pressstart hover:opacity-90 cursor-pointer shrink-0 flex items-center justify-center"
-                  aria-label="Send"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M0 0h24v24H0z" fill="none" />
-                    <path d="M3 20v-6l8-2l-8-2V4l19 8z" />
-                  </svg>
-                </button>
-              </form>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       {/* REMOVE FRIEND MODAL */}
       {showRemoveModal && pendingRemoveFriend && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/50">
-          <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-3 text-center items-center">
-            <h3 className="font-pressstart text-[12px] text-theme-dark">Remove Friend?</h3>
-            <p className="font-pressstart text-[9px] text-theme-dark/80 leading-relaxed">
-              Are you sure you want to remove <span className="text-theme-primary">{pendingRemoveFriend.username}</span> from your friends list?
-            </p>
-            <div className="flex gap-3 justify-center mt-2 w-full">
-              <button onClick={() => setShowRemoveModal(false)} className="flex-1 bg-theme-muted text-theme-dark border-2 border-theme-dark py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80">Cancel</button>
-              <button onClick={handleConfirmRemoveFriend} className="flex-1 bg-theme-danger text-white border-2 border-theme-dark py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90">Remove</button>
+        <Portal>
+          <div className={`fixed inset-0 ${OVERLAY_Z} flex items-center justify-center p-4 bg-theme-dark/50`}>
+            <div className="bg-theme-surface border-2 border-theme-dark rounded-[12px] p-6 max-w-sm w-full shadow-xl flex flex-col gap-3 text-center items-center">
+              <h3 className="font-pressstart text-[12px] text-theme-dark">Remove Friend?</h3>
+              <p className="font-pressstart text-[9px] text-theme-dark/80 leading-relaxed">
+                Are you sure you want to remove <span className="text-theme-primary">{pendingRemoveFriend.username}</span> from your friends list?
+              </p>
+              <div className="flex gap-3 justify-center mt-2 w-full">
+                <button onClick={() => setShowRemoveModal(false)} className="flex-1 bg-theme-muted text-theme-dark border-2 border-theme-dark py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-80">Cancel</button>
+                <button onClick={handleConfirmRemoveFriend} className="flex-1 bg-theme-danger text-white border-2 border-theme-dark py-2 rounded-[8px] font-pressstart text-[10px] cursor-pointer hover:opacity-90">Remove</button>
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
     </>
   );

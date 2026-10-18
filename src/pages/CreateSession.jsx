@@ -6,11 +6,12 @@ export default function CreateSession() {
   const { playerData } = usePlayer();
 
   // --- AI RECOMMENDATION STATE ---
+  // FIX: start with sensible defaults instead of zeros, so the card never shows 0m / 0m / 0
   const [recommendedData, setRecommendedData] = useState({
     techniqueName: 'Pomodoro',
-    sessions: 0,
-    focus: 0,
-    break: 0,
+    sessions: 4,
+    focus: 25,
+    break: 5,
   });
   const [aiRationale, setAiRationale] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
@@ -25,6 +26,9 @@ export default function CreateSession() {
   const [validationResult, setValidationResult] = useState(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+
+  // Error modal (replaces the browser alert)
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Fetch AI Study Recommendation based on user study history and current session inputs when entering Step 3
   useEffect(() => {
@@ -44,13 +48,18 @@ export default function CreateSession() {
           const data = await response.json();
           if (data.success) {
             setAiRationale(data.recommendation || "Keep your momentum going with balanced intervals!");
-            
+
             setRecommendedData({
               techniqueName: data.techniqueName || 'Pomodoro',
               focus: data.focus || 25,
               break: data.break || 5,
               sessions: data.sessions || 4
             });
+          } else {
+            // FIX: handle success:false so a backend hiccup never leaves 0m
+            console.warn('Recommendation failed:', data.error);
+            setAiRationale("Keep your momentum going with balanced intervals!");
+            setRecommendedData({ techniqueName: 'Pomodoro', focus: 25, break: 5, sessions: 4 });
           }
         } catch (err) {
           console.error("Failed to fetch AI study recommendation:", err);
@@ -171,7 +180,7 @@ export default function CreateSession() {
   // --- STEP NAVIGATION ---
   const handleStep1Continue = () => {
     if (!selectedWorkType) {
-      alert('Please select a work type before continuing.');
+      setErrorMessage('Please select a work type before continuing.');
       return;
     }
     setCurrentStep(2);
@@ -180,7 +189,7 @@ export default function CreateSession() {
   const handleStep2Continue = async () => {
     const validTasks = draftTasks.filter((t) => t.trim() !== '');
     if (validTasks.length === 0) {
-      alert('Please add at least one task for this session.');
+      setErrorMessage('Please add at least one task for this session.');
       return;
     }
 
@@ -204,7 +213,9 @@ export default function CreateSession() {
 
       if (data.success) {
         setValidationResult(data);
-        if (data.status === 'Aligned') {
+        // Warn when the average is not Aligned OR any single task is not Aligned
+        const hasBadTask = (data.misalignedTasks || []).length > 0;
+        if (data.status === 'Aligned' && !hasBadTask) {
           setCurrentStep(3);
         } else {
           setShowValidationModal(true);
@@ -466,8 +477,9 @@ export default function CreateSession() {
                         : ''
                     }`}
                   >
-                    <div className="font-pressstart text-[20px] sm:text-[28px] leading-snug tracking-wide level-up-gradient bg-clip-text text-transparent">
-                      RECOMMENDED STUDY TECHNIQUE
+                    {/* FIX: show the actual technique name as the title */}
+                    <div className="font-pressstart text-[20px] sm:text-[28px] leading-snug tracking-wide level-up-gradient bg-clip-text text-transparent uppercase">
+                      {isLoadingAI ? 'ANALYZING...' : recommendedData.techniqueName}
                     </div>
 
                     {isLoadingAI ? (
@@ -711,18 +723,25 @@ export default function CreateSession() {
         <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-md w-full flex flex-col gap-4 shadow-xl text-center dark:bg-zinc-900">
             <h3 className="font-pressstart text-[11px] text-theme-primary uppercase">
-              {validationResult.status === 'Not Aligned' ? '⚠️ TASK MISMATCH' : '🔍 NEEDS REVIEW'}
+              {validationResult.status === 'Not Aligned' || (validationResult.misalignedTasks || []).length > 0 ? '⚠️ TASK MISMATCH' : '🔍 NEEDS REVIEW'}
             </h3>
             <p className="font-pressstart text-[9px] text-theme-dark leading-relaxed">
               Your tasks might not fully match the selected category (<span className="text-theme-primary uppercase">{selectedWorkType}</span>). Match Score: <span className="text-theme-primary">{(validationResult.averageScore * 100).toFixed(0)}%</span>
             </p>
             <div className="flex flex-col gap-2 text-left bg-theme-muted p-3 rounded-[8px] border border-theme-dark/20 dark:bg-zinc-800">
               {validationResult.taskBreakdown.map((item, idx) => (
-                <div key={idx} className="flex justify-between font-pressstart text-[8px] text-theme-dark">
-                  <span className="truncate max-w-[200px]">"{item.task}"</span>
-                  <span className={item.status === 'Aligned' ? 'text-green-600' : 'text-amber-600'}>
-                    {item.status}
-                  </span>
+                <div key={idx} className="flex flex-col gap-0.5">
+                  <div className="flex justify-between font-pressstart text-[8px] text-theme-dark">
+                    <span className="truncate max-w-[200px]">"{item.task}"</span>
+                    <span className={item.status === 'Aligned' ? 'text-green-600' : 'text-amber-600'}>
+                      {item.status}
+                    </span>
+                  </div>
+                  {item.suggestedCategory && (
+                    <span className="font-pixel text-[14px] text-theme-dark/70">
+                      Looks more like: <span className="uppercase text-theme-primary">{item.suggestedCategory}</span>
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -743,6 +762,23 @@ export default function CreateSession() {
                 CONTINUE ANYWAY
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ERROR MODAL (replaces alert) */}
+      {errorMessage && (
+        <div className="fixed inset-0 bg-theme-dark/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-theme-surface border-[3px] border-theme-dark rounded-[12px] p-6 max-w-sm w-full flex flex-col gap-4 shadow-xl text-center dark:bg-zinc-900">
+            <h3 className="font-pressstart text-[11px] text-theme-primary uppercase">OOPS!</h3>
+            <p className="font-pixel text-[18px] text-theme-dark">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => setErrorMessage('')}
+              className="font-pressstart text-[9px] text-theme-white bg-theme-primary border-[2px] border-theme-dark py-2.5 cursor-pointer hover:opacity-90"
+            >
+              OK
+            </button>
           </div>
         </div>
       )}

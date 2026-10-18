@@ -24,15 +24,10 @@ const LEVEL_REWARDS_DATA = [
   { level: 10, label: "Lvl. 10", img: "media/xp_focused.png", text: "Budding Blossom: Keep your momentum going!" },
   { level: 15, label: "Lvl. 15", img: "media/xp_commited.png", text: "Focused Scholar: Your consistency is paying off." },
   { level: 20, label: "Lvl. 20", img: "media/xp_dedicated.png", text: "Cozy Sage: Unlocks +1 Streak Freeze Slot (Max 3)!" },
-  { level: 25, label: "Lvl. 25", img: "media/xp_achiever.png", text: "Master of Flow: Your dedication is shining through!" },
-  { level: 30, label: "Lvl. 30", img: "media/xp_advanced.png", text: "Arch-Scholar: Your focus skills are leveling up!" },
-  { level: 40, label: "Lvl. 40", img: "media/xp_expert.png", text: "Sequoia Guardian: Your consistency is impressive!" },
-  { level: 50, label: "Lvl. 50", img: "media/xp_mastery.png", text: "Golden Sequoia: You've reached the top!" },
 ];
 
 const LEVEL_PAGES_TIERS = [
-  [1, 5, 10, 15, 20],
-  [25, 30, 40, 50],
+  [1, 5, 10, 15, 20]
 ];
 
 // FEEDBACK RATING EMOJIS
@@ -573,7 +568,7 @@ export default function Sidebar({
 
               <button
                 disabled={levelPageIndex === LEVEL_PAGES_TIERS.length - 1}
-                onClick={() => setLevelPageIndex((prev) => Math.min(LEVEL_PAGES_TIERS.length - 1, prev + 1))}
+                onClick={() => setLevelPageIndex((prev) => Math.max(LEVEL_PAGES_TIERS.length - 1, prev + 1))}
                 className={`p-1 sm:px-2 sm:py-4 font-pressstart text-sm sm:text-lg text-theme-dark hover:text-theme-primary hover:scale-110 active:scale-95 shrink-0 z-10 transition-all ${
                   levelPageIndex === LEVEL_PAGES_TIERS.length - 1
                     ? 'opacity-20 cursor-not-allowed hover:scale-100 hover:text-theme-dark'
