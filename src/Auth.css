@@ -1,0 +1,362 @@
+/* ============================================================
+   Auth.css — StudyCircle login / sign up / reset design
+   Ported from studycircle-full.html. Every class is prefixed
+   with "sc-" so nothing collides with Tailwind or other pages.
+   Requires the "Press Start 2P" and "VT323" Google fonts
+   (already loaded in your project).
+   ============================================================ */
+
+.sc-auth {
+  --surface: #FBF2E3;
+  --dark: #3D2013;
+  --primary: #E6751B;
+  --muted: #F3E3C8;
+  --safe: #6B8A4F;
+  --card: #482A1D;
+  --danger: #A94A4A;
+  --scan: repeating-linear-gradient(180deg, rgba(61, 32, 19, .08) 0 1px, transparent 1px 5px);
+
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: #f3f4f6;
+  color: var(--dark);
+  font-family: "VT323", monospace;
+  -webkit-font-smoothing: antialiased;
+  box-sizing: border-box;
+}
+.sc-auth *, .sc-auth *::before, .sc-auth *::after { box-sizing: inherit; }
+.sc-auth a { color: inherit; text-decoration: none; }
+.sc-auth [hidden] { display: none !important; }
+.sc-auth a:focus-visible, .sc-auth button:focus-visible { outline: 3px solid var(--primary); outline-offset: 3px; }
+
+/* ---------- shared buttons ---------- */
+.sc-btn {
+  display: block; text-align: center; cursor: pointer;
+  font: 12px "Press Start 2P", monospace;
+  color: var(--dark); background: var(--muted);
+  border: 2px solid var(--dark); border-radius: 999px;
+  padding: 12px 22px; box-shadow: 4px 4px 0 var(--dark);
+  transition: .15s;
+}
+.sc-btn:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--dark); }
+.sc-btn.g { background: var(--safe); color: var(--surface); }
+
+/* ---------- header ---------- */
+.sc-hd {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  background: var(--surface) var(--scan);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.sc-hd-in {
+  max-width: 1152px; margin: 0 auto; padding: 14px 16px;
+  display: grid; grid-template-columns: 1fr auto 1fr;
+  align-items: center; gap: 12px;
+}
+.sc-logo { display: flex; align-items: center; gap: 8px; justify-self: start; font: 15px "Press Start 2P", monospace; }
+.sc-logo img { height: 40px; width: auto; display: block; }
+.sc-nav { grid-column: 2; grid-row: 1; display: flex; gap: 24px; font: 12px "Press Start 2P", monospace; }
+.sc-nav a:hover { color: var(--primary); }
+.sc-actions { grid-column: 3; grid-row: 1; justify-self: end; display: flex; gap: 10px; }
+
+.sc-actions .sc-btn {
+  border-width: 3px; background: #fdf6e8; color: #3a1f14;
+  box-shadow: 3px 3px 0 #ecd3b2; padding: 10px 16px;
+}
+.sc-actions .sc-btn.p { background: #E87339; color: #FFF6E8; box-shadow: 3px 3px 0 #C4531C; }
+.sc-actions .sc-btn:hover { background: #f6d9c2; transform: translate(1px, 1px); box-shadow: 2px 2px 0 #ecd3b2; }
+.sc-actions .sc-btn.p:hover { background: #F59A66; box-shadow: 2px 2px 0 #C4531C; }
+
+@media (max-width: 760px) {
+  .sc-hd-in { grid-template-columns: 1fr auto; }
+  .sc-actions { grid-column: 2; }
+  .sc-nav {
+    grid-column: 1 / -1; grid-row: 2; width: 100%; justify-content: center;
+    border-top: 2px dashed var(--dark); padding-top: 8px; font-size: 8px;
+  }
+  .sc-logo span { display: none; }
+  .sc-logo img { height: 32px; }
+  .sc-btn { font-size: 8px; padding: 9px 12px; }
+  .sc-actions .sc-btn { padding: 9px 12px; }
+}
+
+/* ---------- page + card ---------- */
+.sc-au {
+  position: relative; min-height: 100vh; background: var(--surface);
+  padding: 92px 24px 24px; display: flex; justify-content: center; align-items: center;
+}
+.sc-au::before { content: ""; position: absolute; inset: 0; background: var(--scan); pointer-events: none; }
+.sc-card {
+  position: relative; z-index: 2; width: 100%; max-width: 448px;
+  background: var(--surface); border: 4px solid var(--dark); border-radius: 24px;
+  padding: 24px; box-shadow: 0 4px 8px rgba(0, 0, 0, .15);
+}
+
+.sc-tabs {
+  display: flex; border: 2px solid var(--dark); border-radius: 12px;
+  padding: 4px; margin-bottom: 24px; font: 15px "Press Start 2P", monospace;
+}
+.sc-tabs button {
+  flex: 1; padding: 8px; background: none; border: 2px solid transparent;
+  font: inherit; color: var(--dark); cursor: pointer;
+}
+.sc-tabs button:hover { color: var(--primary); }
+.sc-tabs button.on { background: var(--safe); color: #fff; border-color: var(--dark); border-radius: 8px; }
+
+/* ---------- forms ---------- */
+.sc-form { display: flex; flex-direction: column; gap: 16px; }
+.sc-form h2 { margin: 0; font: 20px "Press Start 2P", monospace; }
+.sc-form .sc-sub-text { margin: 0; font-size: 20px; line-height: 1.1; }
+
+.sc-field { display: flex; flex-direction: column; gap: 4px; }
+.sc-field label { font: 10px "Press Start 2P", monospace; }
+.sc-pw { position: relative; }
+.sc-input {
+  width: 100%; border: 2px solid var(--dark); border-radius: 0;
+  background: var(--muted); padding: 8px; font: 20px "VT323", monospace; color: var(--dark);
+  transition: border-color .15s;
+}
+.sc-input.has-eye { padding-right: 40px; }
+.sc-input:focus-visible { outline: 3px solid var(--primary); outline-offset: 1px; }
+.sc-input.bad { border-color: var(--danger); }
+.sc-eye {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: 0; padding: 0; color: var(--dark); cursor: pointer; display: flex;
+}
+.sc-eye:hover { color: var(--primary); }
+
+.sc-err { margin: 2px 0 0; font-size: 18px; line-height: 1; color: var(--danger); }
+.sc-err.g { color: var(--dark); font-size: 16px; }
+.sc-terms { margin: 0; font-size: 16px; line-height: 1.1; }
+
+.sc-sub {
+  font: 16px "Press Start 2P", monospace; color: var(--surface); background: var(--primary);
+  border: 4px solid var(--dark); border-radius: 999px; padding: 12px; cursor: pointer;
+  box-shadow: 4px 4px 0 var(--dark); transition: .15s;
+}
+.sc-sub:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--dark); }
+
+.sc-ctr { text-align: center; }
+.sc-link {
+  font: 11px "Press Start 2P", monospace; color: var(--dark);
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.sc-link:hover { text-decoration: underline; }
+
+.sc-or { display: flex; align-items: center; gap: 8px; font: 8px "Press Start 2P", monospace; }
+.sc-or::before, .sc-or::after { content: ""; flex: 1; border-top: 2px solid var(--dark); }
+
+.sc-gbtn {
+  font: 11px "Press Start 2P", monospace; color: var(--dark); background: var(--surface);
+  border: 2px solid var(--dark); border-radius: 999px; padding: 10px 16px;
+  display: flex; justify-content: center; align-items: center; gap: 12px; cursor: pointer;
+  box-shadow: 4px 4px 0 var(--dark); transition: .15s;
+}
+.sc-gbtn:hover { background: var(--muted); }
+
+.sc-tx {
+  color: var(--primary); text-decoration: underline; background: none; border: 0;
+  padding: 0; font: inherit; cursor: pointer; display: inline;
+}
+.sc-tx:hover { opacity: .8; }
+
+/* ---------- generic modal (google / admin / suspended) ---------- */
+.sc-md {
+  position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(61, 32, 19, .65);
+}
+.sc-md.lgm { z-index: 70; background: rgba(61, 32, 19, .72); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.sc-mb {
+  background: var(--surface); border: 4px solid var(--dark); border-radius: 24px; padding: 24px;
+  width: 100%; max-width: 448px; max-height: 85vh; overflow: auto;
+  display: flex; flex-direction: column; gap: 16px; font-size: 20px; line-height: 1.1;
+}
+.sc-mb h3 { margin: 0; font: 16px/1.3 "Press Start 2P", monospace; }
+.sc-mb h3.danger { color: var(--danger); text-transform: uppercase; }
+.sc-mb p { margin: 0; }
+.sc-mb .sc-row { display: flex; gap: 8px; justify-content: flex-end; }
+.sc-mb .sc-row.center { justify-content: center; }
+.sc-mb label.sc-check { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.sc-mb input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; margin-top: 3px; flex: none; cursor: pointer; }
+.sc-mbtn {
+  font: 13px "Press Start 2P", monospace; border: 2px solid var(--dark); border-radius: 999px;
+  padding: 8px 14px; background: var(--muted); color: var(--dark); cursor: pointer;
+}
+.sc-mbtn.pr { background: var(--primary); color: var(--surface); box-shadow: 3px 3px 0 var(--dark); }
+.sc-mbtn.full { width: 100%; padding: 12px; }
+.sc-box { background: var(--muted); border: 2px solid var(--dark); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.sc-box.accent { background: rgba(230, 117, 27, .1); border-color: var(--primary); }
+.sc-box .big { font-size: 24px; color: var(--primary); line-height: 1; }
+.sc-box .red { color: var(--danger); }
+.sc-gprofile { display: flex; align-items: center; gap: 12px; }
+.sc-gprofile img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--dark); }
+.sc-gprofile small { font-size: 18px; }
+.sc-note { font-size: 17px; line-height: 1.05; }
+
+/* ---------- Terms & Privacy modals ---------- */
+.sc-lg {
+  width: 100%; max-width: 540px; max-height: min(88vh, 700px); display: flex; flex-direction: column;
+  background: var(--surface); border: 4px solid var(--dark); border-radius: 24px;
+  box-shadow: 8px 8px 0 var(--dark); overflow: hidden; animation: sc-lgIn .24s cubic-bezier(.2, .9, .3, 1.2);
+}
+@keyframes sc-lgIn { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
+.sc-lg-h { flex: none; display: flex; align-items: center; gap: 14px; padding: 16px 18px; background: var(--primary); border-bottom: 4px solid var(--dark); }
+.sc-lg-i {
+  flex: none; width: 44px; height: 44px; display: grid; place-items: center;
+  background: var(--surface); color: var(--dark); border: 3px solid var(--dark); border-radius: 12px; box-shadow: 3px 3px 0 var(--dark);
+}
+.sc-lg-t { flex: 1; min-width: 0; }
+.sc-lg-t small { display: block; margin-bottom: 6px; font: 8px "Press Start 2P", monospace; letter-spacing: .5px; color: #FFE9CF; opacity: .95; }
+.sc-lg-t h3 { margin: 0; font: 15px/1.3 "Press Start 2P", monospace; color: #FFF6E8; text-shadow: 2px 2px 0 var(--dark); }
+.sc-lg-x {
+  flex: none; width: 38px; height: 38px; display: grid; place-items: center; padding: 0;
+  background: var(--surface); color: var(--dark); border: 3px solid var(--dark); border-radius: 12px;
+  cursor: pointer; box-shadow: 3px 3px 0 var(--dark); transition: .12s;
+}
+.sc-lg-x:hover { background: var(--muted); transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--dark); }
+.sc-lg-b { flex: 1; min-height: 0; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; background: var(--surface) var(--scan); }
+.sc-lg-b::-webkit-scrollbar { width: 12px; }
+.sc-lg-b::-webkit-scrollbar-track { background: var(--muted); border-left: 2px solid var(--dark); }
+.sc-lg-b::-webkit-scrollbar-thumb { background: var(--dark); border: 3px solid var(--muted); border-radius: 8px; }
+.sc-lg-in { margin: 0; padding: 12px 14px; font-size: 21px; line-height: 1.1; background: var(--muted); border: 2px dashed var(--dark); border-radius: 14px; }
+.sc-lg-s { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; background: #FFF9EE; border: 2px solid var(--dark); border-radius: 14px; box-shadow: 3px 3px 0 rgba(61, 32, 19, .22); }
+.sc-lg-n {
+  flex: none; width: 32px; height: 32px; display: grid; place-items: center; background: var(--safe); color: #fff;
+  border: 2px solid var(--dark); border-radius: 9px; font: 12px "Press Start 2P", monospace; box-shadow: 2px 2px 0 var(--dark);
+}
+.sc-lg-s h4 { margin: 2px 0 6px; font: 11px/1.4 "Press Start 2P", monospace; color: var(--dark); }
+.sc-lg-s p { margin: 0; font-size: 20px; line-height: 1.1; }
+.sc-lg-f { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; background: var(--muted); border-top: 4px solid var(--dark); }
+.sc-lg-f span { font-size: 19px; line-height: 1.1; }
+.sc-lg-ok {
+  font: 12px "Press Start 2P", monospace; color: #FFF6E8; background: var(--primary); border: 3px solid var(--dark);
+  border-radius: 999px; padding: 11px 18px; cursor: pointer; box-shadow: 4px 4px 0 var(--dark); transition: .12s; margin-left: auto;
+}
+.sc-lg-ok:hover { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--dark); }
+@media (max-width: 480px) {
+  .sc-lg-t h3 { font-size: 12px; }
+  .sc-lg-i { width: 38px; height: 38px; }
+  .sc-lg-f span { display: none; }
+  .sc-lg-ok { width: 100%; }
+}
+
+/* ---------- Confirm Registration modal ---------- */
+.sc-cr { max-width: 480px; }
+.sc-cr .sc-lg-f { justify-content: flex-end; }
+
+/* account summary card */
+.sc-cr-sum {
+  background: #FFF9EE; border: 2px solid var(--dark); border-radius: 14px;
+  box-shadow: 3px 3px 0 rgba(61, 32, 19, .22); overflow: hidden;
+}
+.sc-cr-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px;
+}
+.sc-cr-row + .sc-cr-row { border-top: 2px dashed rgba(61, 32, 19, .35); }
+.sc-cr-k { flex: none; font: 9px "Press Start 2P", monospace; color: var(--primary); }
+.sc-cr-v {
+  min-width: 0; text-align: right; font-size: 22px; line-height: 1;
+  overflow-wrap: anywhere; color: var(--dark);
+}
+
+/* custom checkbox card */
+.sc-cr-check {
+  position: relative; display: flex; gap: 12px; align-items: flex-start; cursor: pointer;
+  padding: 12px 14px; background: var(--muted); border: 2px solid var(--dark); border-radius: 14px;
+  transition: background .15s, box-shadow .15s;
+}
+.sc-cr-check:hover { background: #efdcbc; }
+.sc-cr-check.on { background: #E9F0DC; box-shadow: 3px 3px 0 var(--safe); }
+.sc-cr-check.bad { border-color: var(--danger); animation: sc-shake .35s; }
+.sc-cr-check input {
+  position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none;
+}
+.sc-cr-box {
+  flex: none; width: 24px; height: 24px; margin-top: 1px; display: grid; place-items: center;
+  background: var(--surface); color: transparent; border: 3px solid var(--dark); border-radius: 7px;
+  box-shadow: 2px 2px 0 var(--dark); transition: .12s;
+}
+.sc-cr-check.on .sc-cr-box { background: var(--safe); color: #fff; }
+.sc-cr-check input:focus-visible + .sc-cr-box { outline: 3px solid var(--primary); outline-offset: 2px; }
+.sc-cr-txt { font-size: 20px; line-height: 1.1; }
+.sc-cr-err { margin: -4px 0 0; }
+@keyframes sc-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+/* footer buttons — both share the row equally so they are always the same size */
+.sc-cr .sc-lg-f { justify-content: stretch; flex-wrap: nowrap; gap: 12px; }
+
+.sc-cr-cancel,
+.sc-cr .sc-lg-ok {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-left: 0;
+  text-align: center;
+  white-space: nowrap;
+  font: 11px "Press Start 2P", monospace;
+  padding: 12px 10px;
+  border: 3px solid var(--dark);
+  border-radius: 999px;
+  box-shadow: 4px 4px 0 var(--dark);
+  cursor: pointer;
+  transition: .12s;
+}
+
+.sc-cr-cancel { color: var(--dark); background: var(--surface); }
+.sc-cr-cancel:hover { background: #f6d9c2; transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--dark); }
+.sc-lg-ok.dim { background: #E8A878; }   /* looks "not ready" until the box is ticked, still clickable */
+
+@media (max-width: 480px) {
+  .sc-cr .sc-lg-f { flex-direction: column-reverse; }
+  .sc-cr-cancel, .sc-cr .sc-lg-ok { flex: none; width: 100%; }
+  .sc-cr-v { font-size: 20px; }
+}
+
+/* ---------- toasts ---------- */
+.sc-toasts { position: fixed; top: 112px; right: 24px; z-index: 80; display: flex; flex-direction: column; gap: 12px; pointer-events: none; }
+.sc-toast {
+  background: var(--surface); border: 4px solid var(--dark); box-shadow: 4px 4px 0 var(--dark); padding: 16px; max-width: 320px;
+  font: 12px/1.4 "Press Start 2P", monospace; color: var(--card); display: flex; gap: 12px; align-items: center; pointer-events: auto;
+}
+.sc-toast svg { flex: none; width: 24px; height: 24px; }
+
+/* ---------- footer ---------- */
+.sc-ft {
+  background: var(--card) repeating-linear-gradient(180deg, rgba(61, 32, 19, .25) 0 1px, transparent 1px 5px);
+  color: var(--surface); border-top: 4px solid var(--dark); padding: 0 clamp(24px, 5vw, 48px);
+}
+.sc-ft-j { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 40px 0; border-bottom: 1px solid rgba(225, 111, 55, .15); flex-wrap: wrap; }
+.sc-ft-l { display: flex; gap: 24px; align-items: center; }
+.sc-ft-l img { height: 96px; width: auto; display: block; flex: none; }
+.sc-ft-e { font: 12px "Press Start 2P", monospace; color: var(--primary); letter-spacing: .1em; }
+.sc-ft-j h3 { margin: 8px 0; font: clamp(14px, 2.4vw, 24px) "Press Start 2P", monospace; color: var(--muted); }
+.sc-ft-j p { margin: 0; font-size: 20px; line-height: 1; }
+.sc-ft-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 40px; padding: 40px clamp(0px, 4vw, 64px); }
+.sc-ft-a { grid-column: span 2; display: flex; flex-direction: column; gap: 16px; }
+.sc-ft-a p { margin: 0; font-size: 20px; line-height: 1.2; }
+.sc-ft-brand { display: flex; align-items: center; gap: 12px; }
+.sc-ft-brand img { height: 32px; width: auto; display: block; }
+.sc-ft-g h4 { margin: 0 0 16px; font: 12px "Press Start 2P", monospace; color: var(--primary); letter-spacing: .1em; }
+.sc-ft-g nav { display: flex; flex-direction: column; gap: 8px; }
+.sc-ft-g nav a, .sc-ft-g nav button {
+  font-size: 24px; line-height: 1; width: fit-content; transition: .15s; color: inherit;
+  background: none; border: 0; padding: 0; text-align: left; cursor: pointer;
+}
+.sc-ft-g nav button { font-family: "VT323", monospace; }
+.sc-ft-g nav a:hover, .sc-ft-g nav button:hover { transform: translateX(4px); }
+.sc-ft-cp {
+  border-top: 1px solid rgba(225, 111, 55, .15); padding: 16px 0; display: flex; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; font: 11px "Press Start 2P", monospace; color: #B6AAA5;
+}
+@media (max-width: 760px) { .sc-ft-a { grid-column: auto; } .sc-ft-l img { height: 64px; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-auth * { transition: none !important; }
+  .sc-lg { animation: none; }
+  .sc-cr-check.bad { animation: none; }
+}

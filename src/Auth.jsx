@@ -4,6 +4,11 @@ import { useGoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 import { useLoading } from './context/LoadingContext';
 import { usePlayer } from './context/PlayerContext';
+import './Auth.css';
+
+// FIX: your old URLs were "http://https://studycircle-03.onrender.com/..." (invalid).
+// One constant now, used everywhere. Swap to http://localhost:5000 for local dev.
+const API_URL = 'http://127.0.0.1:5000';
 
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_+\-\[\]\\\/]).{8,}$/;
 const studentIdRegex = /^[a-zA-Z]\d{8}$/;
@@ -11,22 +16,214 @@ const umakEmailRegex = /^[a-zA-Z0-9._%+-]+@umak\.edu\.ph$/i;
 const defaultGuideText =
   'Create a strong password using 8 or more characters, including uppercase and lowercase letters, a number, and a special character.';
 
+const safeKey = (email) => email.replace(/[^a-zA-Z0-9]/g, '_');
+
+/* ------------------------------------------------------------------ */
+/* Small presentational pieces (defined OUTSIDE Auth so inputs keep    */
+/* focus while typing)                                                  */
+/* ------------------------------------------------------------------ */
+
+function EyeIcon({ open }) {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5">
+      {open ? (
+        <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
+      ) : (
+        <>
+          <path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path d="M2.5 12C3.7 7.9 7.5 5 12 5s8.3 2.9 9.5 7c-1.2 4.1-5 7-9.5 7s-8.3-2.9-9.5-7z" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94z" />
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+    </svg>
+  );
+}
+
+/** Text / email field with optional error line */
+function Field({ id, label, type = 'text', value, onChange, placeholder, error, invalid }) {
+  return (
+    <div className="sc-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="sc-pw">
+        <input
+          id={id}
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete="off"
+          className={`sc-input${invalid ?? error ? ' bad' : ''}`}
+        />
+      </div>
+      {error && <p className="sc-err">✘ {error}</p>}
+    </div>
+  );
+}
+
+/** Password field with show/hide eye. `children` renders under the input (error / hint). */
+function PasswordField({ id, label, value, onChange, show, onToggle, invalid, children }) {
+  return (
+    <div className="sc-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="sc-pw">
+        <input
+          id={id}
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={onChange}
+          placeholder="........"
+          autoComplete="off"
+          className={`sc-input has-eye${invalid ? ' bad' : ''}`}
+        />
+        <button type="button" className="sc-eye" onClick={onToggle} aria-label="Show or hide password">
+          <EyeIcon open={show} />
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function OrDivider() {
+  return <div className="sc-or">OR</div>;
+}
+
+function GoogleButton({ onClick, children }) {
+  return (
+    <button type="button" className="sc-gbtn" onClick={onClick}>
+      <GoogleIcon />
+      <span>{children}</span>
+    </button>
+  );
+}
+
+const LEGAL_ICONS = {
+  terms: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M14 2v5h5M9 12h7M9 16h7" />
+    </svg>
+  ),
+  privacy: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+      <path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" />
+      <path d="M8.5 12l2.5 2.5 4.5-5" />
+    </svg>
+  ),
+};
+
+const LEGAL_CONTENT = {
+  terms: {
+    title: 'Terms of Service',
+    intro: 'By using StudyCircle, you agree to follow our community guidelines and code of conduct.',
+    sections: [
+      ['Account Responsibility', 'You are responsible for all activity under your username.'],
+      ['Respectful Behavior', 'Be supportive to fellow study circle members.'],
+      ['Age Limit', 'You must be at least 18 years old to register an account.'],
+    ],
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    intro: 'We value your personal privacy and process data responsibly.',
+    sections: [
+      ['Data Collection', 'We collect your email address and username for authentication.'],
+      ['Data Usage', 'Your study data is used strictly to power your StudyCircle dashboard and rewards.'],
+      ['Security', 'We do not sell your personal data to third-party services.'],
+    ],
+  },
+};
+
+function LegalModal({ kind, onClose }) {
+  const c = LEGAL_CONTENT[kind];
+  return (
+    <div
+      className="sc-md lgm"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="sc-lg">
+        <div className="sc-lg-h">
+          <span className="sc-lg-i" aria-hidden="true">{LEGAL_ICONS[kind]}</span>
+          <div className="sc-lg-t">
+            <small>STUDYCIRCLE ★ LEGAL</small>
+            <h3>{c.title}</h3>
+          </div>
+          <button type="button" className="sc-lg-x" onClick={onClose} aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="square">
+              <path d="M5 5l14 14M19 5L5 19" />
+            </svg>
+          </button>
+        </div>
+        <div className="sc-lg-b">
+          <p className="sc-lg-in">{c.intro}</p>
+          {c.sections.map(([h, p], i) => (
+            <div className="sc-lg-s" key={h}>
+              <span className="sc-lg-n">{i + 1}</span>
+              <div>
+                <h4>{h}</h4>
+                <p>{p}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="sc-lg-f">
+          <span>Thanks for being part of the circle! ★</span>
+          <button type="button" className="sc-lg-ok" onClick={onClose}>I UNDERSTAND</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The "I'm 18+ and agree to Terms / Privacy" checkbox row, used by the Google modal */
+function ConsentCheck({ checked, onChange, error, onOpenTerms, onOpenPrivacy }) {
+  return (
+    <div className="sc-field">
+      <label className="sc-check">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <span>
+          You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
+          <button type="button" className="sc-tx" onClick={onOpenTerms}>Terms of Service</button>{' '}
+          and{' '}
+          <button type="button" className="sc-tx" onClick={onOpenPrivacy}>Privacy Policy</button>.
+        </span>
+      </label>
+      {error && <p className="sc-err">✘ {error}</p>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Main component                                                       */
+/* ------------------------------------------------------------------ */
+
 export default function Auth() {
   const location = useLocation();
   const navigate = useNavigate();
   const { startSimulatedLoad } = useLoading();
   const { setPlayerData } = usePlayer();
 
-  // Active View State: 'login' | 'signup' | 'reset'
+  // 'login' | 'signup' | 'reset'
   const [activeView, setActiveView] = useState('login');
 
-  // Login Form States
+  // Login
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [loginError, setLoginError] = useState('');
 
-  // Suspended Account States
+  // Suspended account
   const [showSuspendedModal, setShowSuspendedModal] = useState(false);
   const [suspendedUserData, setSuspendedUserData] = useState(null);
 
@@ -36,16 +233,14 @@ export default function Auth() {
   const [adminConfirmPassword, setAdminConfirmPassword] = useState('');
   const [adminPwErr, setAdminPwErr] = useState('');
 
-  // Sign Up Form States
+  // Sign up
   const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupStudentId, setSignupStudentId] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupConfirmPassword, setSignupConfirmPassword] = useState('');
-
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showSignupConfirmPassword, setShowSignupConfirmPassword] = useState(false);
-
   const [signupUsernameErr, setSignupUsernameErr] = useState('');
   const [signupEmailErr, setSignupEmailErr] = useState('');
   const [signupStudentIdErr, setSignupStudentIdErr] = useState('');
@@ -53,12 +248,12 @@ export default function Auth() {
   const [signupConfirmPasswordErr, setSignupConfirmPasswordErr] = useState(defaultGuideText);
   const [isConfirmPasswordCustomError, setIsConfirmPasswordCustomError] = useState(false);
 
-  // Sign Up Terms Consent Modal States
+  // Sign up consent modal
   const [signupConsentPending, setSignupConsentPending] = useState(false);
   const [signupAgeTermsChecked, setSignupAgeTermsChecked] = useState(false);
   const [signupTermsErr, setSignupTermsErr] = useState('');
 
-  // Google OAuth Modal/Prompt States
+  // Google OAuth
   const [googleUserPending, setGoogleUserPending] = useState(null);
   const [googleUsernameInput, setGoogleUsernameInput] = useState('');
   const [googleUsernameErr, setGoogleUsernameErr] = useState('');
@@ -67,42 +262,36 @@ export default function Auth() {
   const [googleStudentId, setGoogleStudentId] = useState('');
   const [googleStudentIdErr, setGoogleStudentIdErr] = useState('');
 
-  // Legal Content Modal States
-  const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  // Legal modals: null | 'terms' | 'privacy'
+  const [legalModal, setLegalModal] = useState(null);
 
-  // Reset Password Form States
+  // Reset password
   const [resetEmail, setResetEmail] = useState('');
   const [resetError, setResetError] = useState('');
 
-  // Toasts State
+  // Toasts
   const [toasts, setToasts] = useState([]);
 
   const triggerToast = (message) => {
-    const id = Date.now();
+    const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000);
   };
 
   useEffect(() => {
-    if (location.hash === '#signup') {
-      setActiveView('signup');
-    } else if (location.hash === '#login') {
-      setActiveView('login');
-    }
+    if (location.hash === '#signup') setActiveView('signup');
+    else if (location.hash === '#login') setActiveView('login');
   }, [location.hash]);
 
   useEffect(() => {
-  const raw = sessionStorage.getItem('suspended_notice');
-  if (!raw) return;
-  sessionStorage.removeItem('suspended_notice');
-  try {
-    setSuspendedUserData(JSON.parse(raw));
-    setShowSuspendedModal(true);
-  } catch (e) {}
-}, []);
+    const raw = sessionStorage.getItem('suspended_notice');
+    if (!raw) return;
+    sessionStorage.removeItem('suspended_notice');
+    try {
+      setSuspendedUserData(JSON.parse(raw));
+      setShowSuspendedModal(true);
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     if (localStorage.getItem('passwordChangedSuccess') === 'true') {
@@ -121,40 +310,28 @@ export default function Auth() {
     setSignupPasswordErr('');
     setSignupConfirmPasswordErr(defaultGuideText);
     setIsConfirmPasswordCustomError(false);
+    window.scrollTo({ top: 0, left: 0 });
   };
 
-  // Live Validation Functions
+  /* ---------------- live validation ---------------- */
   const validateUsername = (val = signupUsername) => {
-    const trimmed = val.trim();
-    if (trimmed === '') {
-      setSignupUsernameErr("Username field can't be empty.");
-      return false;
-    }
+    if (val.trim() === '') { setSignupUsernameErr("Username field can't be empty."); return false; }
     setSignupUsernameErr('');
     return true;
   };
 
   const validateEmail = (val = signupEmail) => {
-    const trimmed = val.trim();
-    if (trimmed === '') {
-      setSignupEmailErr("Email field can't be empty.");
-      return false;
-    }
-    if (!umakEmailRegex.test(trimmed)) {
-      setSignupEmailErr('You must use a valid @umak.edu.ph email address.');
-      return false;
-    }
+    const t = val.trim();
+    if (t === '') { setSignupEmailErr("Email field can't be empty."); return false; }
+    if (!umakEmailRegex.test(t)) { setSignupEmailErr('You must use a valid @umak.edu.ph email address.'); return false; }
     setSignupEmailErr('');
     return true;
   };
 
   const validateStudentId = (val = signupStudentId) => {
-    const trimmed = val.trim();
-    if (trimmed === '') {
-      setSignupStudentIdErr("Student ID field can't be empty.");
-      return false;
-    }
-    if (!studentIdRegex.test(trimmed)) {
+    const t = val.trim();
+    if (t === '') { setSignupStudentIdErr("Student ID field can't be empty."); return false; }
+    if (!studentIdRegex.test(t)) {
       setSignupStudentIdErr('Student ID must start with 1 letter followed by exactly 8 numbers (e.g., A12345678).');
       return false;
     }
@@ -163,14 +340,9 @@ export default function Auth() {
   };
 
   const validatePassword = (val = signupPassword) => {
-    if (val === '') {
-      setSignupPasswordErr("Password field can't be empty.");
-      return false;
-    }
+    if (val === '') { setSignupPasswordErr("Password field can't be empty."); return false; }
     if (!passwordRegex.test(val)) {
-      setSignupPasswordErr(
-        'Password must contain at least 8 characters, an uppercase letter, a lowercase letter, a number, and a special character.'
-      );
+      setSignupPasswordErr('Password must contain at least 8 characters, an uppercase letter, a lowercase letter, a number, and a special character.');
       return false;
     }
     setSignupPasswordErr('');
@@ -193,7 +365,31 @@ export default function Auth() {
     return true;
   };
 
-  // Google OAuth Handlers
+  /* ---------------- shared: save user + update player ---------------- */
+  const persistUser = (user, { saveAssets = false } = {}) => {
+    localStorage.setItem('active_user_email', user.email);
+    localStorage.setItem(`user_${user.email}`, JSON.stringify(user));
+
+    if (saveAssets) {
+      const k = safeKey(user.email);
+      if (user.avatarConfig) localStorage.setItem(`user_avatar_config_${k}`, JSON.stringify(user.avatarConfig));
+      if (user.roomConfig) localStorage.setItem(`user_furniture_config_${k}`, JSON.stringify(user.roomConfig));
+      if (user.unlockedItems) localStorage.setItem(`user_unlocked_assets_${k}`, JSON.stringify(user.unlockedItems));
+    }
+
+    setPlayerData((prev) => ({
+      ...prev,
+      username: user.username,
+      email: user.email,
+      coins: user.coins ?? prev.coins,
+      streakDays: user.streak ?? prev.streakDays,
+      avatarConfig: user.avatarConfig || prev.avatarConfig,
+      roomConfig: user.roomConfig || prev.roomConfig,
+      unlockedItems: user.unlockedItems || prev.unlockedItems,
+    }));
+  };
+
+  /* ---------------- Google OAuth ---------------- */
   const handleGoogleSuccess = async (credentialResponse) => {
     let decoded;
     if (credentialResponse.credential) {
@@ -209,11 +405,12 @@ export default function Auth() {
 
     if (!umakEmailRegex.test(decoded.email)) {
       setLoginError('✘ You must sign in with a valid @umak.edu.ph email.');
+      switchView('login');
       return;
     }
 
     try {
-      const response = await fetch('http://https://studycircle-03.onrender.com/api/google-signup', {
+      const response = await fetch(`${API_URL}/api/google-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: decoded.email, google_id: decoded.sub || decoded.id }),
@@ -236,30 +433,14 @@ export default function Auth() {
       }
 
       if (data.user) {
-        localStorage.setItem('active_user_email', data.user.email);
-        localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
-
-        setPlayerData((prev) => ({
-          ...prev,
-          username: data.user.username,
-          email: data.user.email,
-          coins: data.user.coins ?? prev.coins,
-          streakDays: data.user.streak ?? prev.streakDays,
-          avatarConfig: data.user.avatarConfig || prev.avatarConfig,
-          roomConfig: data.user.roomConfig || prev.roomConfig,
-          unlockedItems: data.user.unlockedItems || prev.unlockedItems,
-        }));
-
-        startSimulatedLoad('Setting Up Profile...', 2000, () => {
-          navigate('/dashboard');
-        }, false);
+        persistUser(data.user);
+        startSimulatedLoad('Setting Up Profile...', 2000, () => navigate('/dashboard'), false);
         return;
       }
 
       if (data.needs_username) {
         setGoogleUserPending(decoded);
-        const suggestedUsername = (decoded.name || 'user').toLowerCase().replace(/\s+/g, '_');
-        setGoogleUsernameInput(suggestedUsername);
+        setGoogleUsernameInput((decoded.name || 'user').toLowerCase().replace(/\s+/g, '_'));
         setGoogleStudentId('');
         setGoogleStudentIdErr('');
         setGoogleAgeTermsChecked(false);
@@ -277,16 +458,21 @@ export default function Auth() {
     onError: () => setLoginError('Google sign in failed. Please try again.'),
   });
 
+  const closeGoogleModal = () => {
+    setGoogleUserPending(null);
+    setGoogleStudentId('');
+    setGoogleStudentIdErr('');
+    setGoogleAgeTermsChecked(false);
+    setGoogleTermsErr('');
+  };
+
   const handleGoogleUsernameSubmit = async (e) => {
     e.preventDefault();
     const trimmedUser = googleUsernameInput.trim();
     const trimmedStudentId = googleStudentId.trim();
     const usernameRegex = /^[a-zA-Z0-9_-]{1,20}$/;
 
-    if (!trimmedUser) {
-      setGoogleUsernameErr("Username field can't be empty.");
-      return;
-    }
+    if (!trimmedUser) { setGoogleUsernameErr("Username field can't be empty."); return; }
     if (!usernameRegex.test(trimmedUser)) {
       setGoogleUsernameErr('Username must be 1 to 20 characters and contain only letters, numbers, hyphens, or underscores.');
       return;
@@ -301,7 +487,7 @@ export default function Auth() {
     }
 
     try {
-      const response = await fetch('http://https://studycircle-03.onrender.com/api/google-signup', {
+      const response = await fetch(`${API_URL}/api/google-signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -314,53 +500,22 @@ export default function Auth() {
       const data = await response.json();
 
       if (!response.ok) {
-        if (data.field === 'student_id') {
-          setGoogleStudentIdErr(data.error);
-        } else {
-          setGoogleUsernameErr(data.error || 'Google sign in failed.');
-        }
+        if (data.field === 'student_id') setGoogleStudentIdErr(data.error);
+        else setGoogleUsernameErr(data.error || 'Google sign in failed.');
         return;
       }
 
-      if (data.user) {
-        localStorage.setItem('active_user_email', data.user.email);
-        localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
-
-        if (data.user.avatarConfig) {
-          localStorage.setItem(`user_avatar_config_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.avatarConfig));
-        }
-        if (data.user.roomConfig) {
-          localStorage.setItem(`user_furniture_config_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.roomConfig));
-        }
-        if (data.user.unlockedItems) {
-          localStorage.setItem(`user_unlocked_assets_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.unlockedItems));
-        }
-
-        setPlayerData((prev) => ({
-          ...prev,
-          username: data.user.username,
-          email: data.user.email,
-          coins: data.user.coins ?? prev.coins,
-          streakDays: data.user.streak ?? prev.streakDays,
-          avatarConfig: data.user.avatarConfig || prev.avatarConfig,
-          roomConfig: data.user.roomConfig || prev.roomConfig,
-          unlockedItems: data.user.unlockedItems || prev.unlockedItems,
-        }));
-      }
+      if (data.user) persistUser(data.user, { saveAssets: true });
 
       setGoogleUserPending(null);
-
-      startSimulatedLoad('Setting Up Profile...', 2000, () => {
-        navigate('/dashboard');
-      }, false);
-
+      startSimulatedLoad('Setting Up Profile...', 2000, () => navigate('/dashboard'), false);
     } catch (err) {
       console.error(err);
       setGoogleUsernameErr('Unable to connect to Flask server.');
     }
   };
 
-  // Submit Handlers
+  /* ---------------- login ---------------- */
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -373,9 +528,9 @@ export default function Auth() {
       return;
     }
 
-    // Professor / IT admin login. Checked first; if the email isn't an admin, we fall through to student login.
+    // Professor / IT admin login first; falls through to student login if not an admin.
     try {
-      const adminRes = await fetch('http://https://studycircle-03.onrender.com/api/itadmin/login', {
+      const adminRes = await fetch(`${API_URL}/api/itadmin/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailVal, password: passwordVal }),
@@ -398,9 +553,7 @@ export default function Auth() {
           return;
         }
 
-        startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
-          navigate('/itadmin/dashboard');
-        }, false);
+        startSimulatedLoad('Signing In as IT Admin...', 1500, () => navigate('/itadmin/dashboard'), false);
         return;
       }
     } catch (err) {
@@ -408,14 +561,13 @@ export default function Auth() {
     }
 
     try {
-      const response = await fetch('http://https://studycircle-03.onrender.com/api/login', {
+      const response = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailVal, password: passwordVal }),
       });
       const data = await response.json();
 
-      // Check for real suspension flag from backend
       if (data.suspended || data.is_suspended) {
         setSuspendedUserData({
           email: emailVal,
@@ -431,35 +583,9 @@ export default function Auth() {
         return;
       }
 
-      if (data.user) {
-        localStorage.setItem('active_user_email', data.user.email);
-        localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
+      if (data.user) persistUser(data.user, { saveAssets: true });
 
-        if (data.user.avatarConfig) {
-          localStorage.setItem(`user_avatar_config_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.avatarConfig));
-        }
-        if (data.user.roomConfig) {
-          localStorage.setItem(`user_furniture_config_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.roomConfig));
-        }
-        if (data.user.unlockedItems) {
-          localStorage.setItem(`user_unlocked_assets_${data.user.email.replace(/[^a-zA-Z0-9]/g, '_')}`, JSON.stringify(data.user.unlockedItems));
-        }
-
-        setPlayerData((prev) => ({
-          ...prev,
-          username: data.user.username,
-          email: data.user.email,
-          coins: data.user.coins ?? prev.coins,
-          streakDays: data.user.streak ?? prev.streakDays,
-          avatarConfig: data.user.avatarConfig || prev.avatarConfig,
-          roomConfig: data.user.roomConfig || prev.roomConfig,
-          unlockedItems: data.user.unlockedItems || prev.unlockedItems,
-        }));
-      }
-
-      startSimulatedLoad('Signing In...', 2000, () => {
-        navigate('/dashboard');
-      }, false);
+      startSimulatedLoad('Signing In...', 2000, () => navigate('/dashboard'), false);
     } catch (err) {
       console.error(err);
       setLoginError('✘ Unable to connect to Flask server.');
@@ -479,12 +605,9 @@ export default function Auth() {
     }
 
     try {
-      const res = await fetch('http://https://studycircle-03.onrender.com/api/itadmin/change-password', {
+      const res = await fetch(`${API_URL}/api/itadmin/change-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminPending.token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminPending.token}` },
         body: JSON.stringify({ old_password: loginPassword, new_password: adminNewPassword }),
       });
       const data = await res.json();
@@ -500,21 +623,15 @@ export default function Auth() {
       setAdminConfirmPassword('');
       setLoginPassword('');
 
-      startSimulatedLoad('Signing In as IT Admin...', 1500, () => {
-        navigate('/itadmin/dashboard');
-      }, false);
+      startSimulatedLoad('Signing In as IT Admin...', 1500, () => navigate('/itadmin/dashboard'), false);
     } catch (err) {
       setAdminPwErr('Unable to connect to server.');
     }
   };
 
+  /* ---------------- sign up ---------------- */
   const handleSignupSubmit = (e) => {
     e.preventDefault();
-
-    setSignupUsernameErr('');
-    setSignupEmailErr('');
-    setSignupStudentIdErr('');
-    setSignupPasswordErr('');
 
     const isUserValid = validateUsername();
     const isEmailValid = validateEmail();
@@ -538,7 +655,7 @@ export default function Auth() {
     }
 
     try {
-      const response = await fetch('http://https://studycircle-03.onrender.com/api/signup', {
+      const response = await fetch(`${API_URL}/api/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -552,23 +669,16 @@ export default function Auth() {
 
       if (!response.ok) {
         setSignupConsentPending(false);
-
-        if (data.field === 'email') {
-          setSignupEmailErr(data.error);
-        } else if (data.field === 'username') {
-          setSignupUsernameErr(data.error);
-        } else if (data.field === 'student_id') {
-          setSignupStudentIdErr(data.error);
-        } else {
-          setSignupTermsErr(data.error || 'Signup failed.');
-        }
+        if (data.field === 'email') setSignupEmailErr(data.error);
+        else if (data.field === 'username') setSignupUsernameErr(data.error);
+        else if (data.field === 'student_id') setSignupStudentIdErr(data.error);
+        else setSignupTermsErr(data.error || 'Signup failed.');
         return;
       }
 
       if (data.user) {
         localStorage.setItem('active_user_email', data.user.email);
         localStorage.setItem(`user_${data.user.email}`, JSON.stringify(data.user));
-
         setPlayerData((prev) => ({
           ...prev,
           username: data.user.username,
@@ -586,11 +696,7 @@ export default function Auth() {
       setSignupConsentPending(false);
 
       triggerToast('Account created successfully!');
-
-      startSimulatedLoad('Setting Up Profile...', 1500, () => {
-        navigate('/dashboard');
-      }, false);
-
+      startSimulatedLoad('Setting Up Profile...', 1500, () => navigate('/dashboard'), false);
     } catch (err) {
       console.error(err);
       setSignupConsentPending(false);
@@ -598,6 +704,7 @@ export default function Auth() {
     }
   };
 
+  /* ---------------- reset password ---------------- */
   const handleResetSubmit = async (e) => {
     e.preventDefault();
     const trimmedEmail = resetEmail.trim();
@@ -608,7 +715,7 @@ export default function Auth() {
     }
 
     try {
-      const response = await fetch('http://https://studycircle-03.onrender.com/api/forgot-password', {
+      const response = await fetch(`${API_URL}/api/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmedEmail }),
@@ -630,872 +737,494 @@ export default function Auth() {
     }
   };
 
+  /* ================================================================== */
+  /* RENDER                                                              */
+  /* ================================================================== */
   return (
-    <div className="bg-gray-100 dark:bg-zinc-900 antialiased scroll-smooth min-h-screen flex flex-col justify-between transition-colors duration-200">
-      {/* HEADER SECTION */}
-      <header
-        className="fixed top-0 left-0 w-full z-50 bg-theme-surface border-b-2 border-theme-dark"
-        style={{
-          backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.08) 1px, transparent 1px)',
-          backgroundSize: '100% 5px',
-        }}
-      >
-        <div className="max-w-6xl mx-auto px-4 py-3 md:py-4 flex flex-wrap items-center justify-between gap-2 md:gap-4">
-          <Link to="/" className="flex items-center gap-2 no-underline">
-            <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-8 sm:h-9 md:h-10 w-auto block" />
-            <span className="font-pressstart text-[11px] md:text-[15px] text-theme-dark hidden sm:block">
-              StudyCircle
-            </span>
+    <div className="sc-auth">
+      {/* ---------- HEADER ---------- */}
+      <header className="sc-hd">
+        <div className="sc-hd-in">
+          <Link to="/" className="sc-logo">
+            <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+            <span>StudyCircle</span>
           </Link>
 
-          <div className="flex items-center gap-2 sm:gap-3 order-2 md:order-3">
-            <button
-              onClick={() => switchView('login')}
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark bg-theme-muted border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
-            >
-              LOGIN
-            </button>
-            <button
-              onClick={() => switchView('signup')}
-              className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-surface bg-theme-primary border-2 border-theme-dark px-2 py-1.5 sm:px-3 sm:py-2 md:px-4 md:py-2.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
-            >
-              SIGN UP
-            </button>
-          </div>
-
-          <nav className="w-full md:w-auto flex justify-center gap-4 sm:gap-5 md:gap-6 order-3 md:order-2 pt-2 md:pt-0 border-t-2 border-dashed border-[#4A2E21] md:border-none">
-            <Link to="/" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">
-              Home
-            </Link>
-            <Link to="/#section-2" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">
-              Features
-            </Link>
-            <Link to="/#section-3" className="font-pressstart text-[6px] sm:text-[8px] md:text-[12px] text-theme-dark hover:text-theme-primary no-underline transition-colors">
-              FAQs
-            </Link>
+          <nav className="sc-nav">
+            <Link to="/">Home</Link>
+            <Link to="/#section-2">Features</Link>
+            <Link to="/#section-3">FAQs</Link>
           </nav>
+
+          <div className="sc-actions">
+            <button type="button" className="sc-btn" onClick={() => switchView('login')}>LOGIN</button>
+            <button type="button" className="sc-btn p" onClick={() => switchView('signup')}>SIGN UP</button>
+          </div>
         </div>
       </header>
 
-      {/* HERO & FORM SECTION */}
-      <section id="hero-and-showcase" className="relative w-full min-h-screen bg-theme-surface pt-15 md:pt-20 flex flex-col items-center overflow-hidden">
-        <div
-          className="absolute inset-0 w-full h-full pointer-events-none z-0"
-          style={{
-            backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.08) 1px, transparent 1px)',
-            backgroundSize: '100% 5px',
-          }}
-        />
+      {/* ---------- AUTH CARD ---------- */}
+      <section className="sc-au">
+        <div className="sc-card">
+          {activeView !== 'reset' && (
+            <div className="sc-tabs">
+              <button type="button" className={activeView === 'login' ? 'on' : ''} onClick={() => switchView('login')}>LOGIN</button>
+              <button type="button" className={activeView === 'signup' ? 'on' : ''} onClick={() => switchView('signup')}>SIGN UP</button>
+            </div>
+          )}
 
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[100vh] sm:h-[110vh] z-0 pointer-events-none">
-          <div
-            className="absolute left-[20%] sm:left-[25%] md:left-[90%] top-[10%] sm:top-[8%] w-[250px] h-[250px] sm:w-[450px] sm:h-[600px] rounded-full pointer-events-none opacity-50 filter blur-3xl mix-blend-screen"
-            style={{ background: 'radial-gradient(circle, rgba(253, 146, 62, 0.45) 0%, rgba(253, 146, 62, 0) 70%)' }}
-          />
-          <div
-            className="absolute right-[20%] sm:right-[25%] md:right-[90%] top-[52%] sm:top-[54%] w-[250px] h-[250px] sm:w-[450px] sm:h-[600px] rounded-full pointer-events-none opacity-50 filter blur-3xl mix-blend-screen"
-            style={{ background: 'radial-gradient(circle, rgba(253, 146, 62, 0.45) 0%, rgba(253, 146, 62, 0) 70%)' }}
-          />
+          {/* LOGIN */}
+          {activeView === 'login' && (
+            <form onSubmit={handleLoginSubmit} className="sc-form" noValidate>
+              <h2>Welcome back!</h2>
+              <p className="sc-sub-text">Pick up right where you left off.</p>
 
-          <img
-            src="media/calendar_feature.png"
-            alt="Checklist"
-            className="absolute animate-checklist-appear drop-shadow-2xl z-10 w-28 sm:w-64 md:w-80 lg:w-[350px] left-[2%] sm:left-[-4%] md:left-[-2%] lg:left-[-3%] top-[13%] sm:top-[12%] md:top-[15%]"
-          />
-          <img
-            src="media/study_feature.png"
-            alt="Pomodoro"
-            className="absolute animate-pomodoro-appear drop-shadow-2xl z-10 w-28 sm:w-64 md:w-80 lg:w-[350px] right-[2%] sm:right-[-4%] md:right-[-2%] lg:right-[-3%] top-[90%] sm:top-[57%] md:top-[60%] lg:top-[55%]"
-          />
-        </div>
+              <Field
+                id="le"
+                label="EMAIL"
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="you@umak.edu.ph"
+                invalid={!!loginError}
+              />
 
-        <div className="relative z-10 max-w-6xl w-full px-6 flex flex-col items-center justify-center pt-12 md:pt-20 pb-30">
-          <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-md">
-            {activeView !== 'reset' && (
-              <div id="modal-tabs" className="flex border-2 border-theme-dark rounded-xl p-1 bg-transparent mb-6 font-pressstart text-[15px] sm:text-[15px] leading-4">
-                <button
-                  type="button"
-                  onClick={() => switchView('login')}
-                  className={`flex-1 py-2 text-center transition-all duration-150 cursor-pointer ${
-                    activeView === 'login'
-                      ? 'text-white bg-theme-safe rounded-lg border-2 border-theme-dark'
-                      : 'text-theme-dark hover:text-theme-primary'
-                  }`}
-                >
-                  LOGIN
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchView('signup')}
-                  className={`flex-1 py-2 text-center transition-all duration-150 cursor-pointer ${
-                    activeView === 'signup'
-                      ? 'text-white bg-theme-safe rounded-lg border-2 border-theme-dark'
-                      : 'text-theme-dark hover:text-theme-primary'
-                  }`}
-                >
-                  SIGN UP
-                </button>
+              <PasswordField
+                id="lp"
+                label="PASSWORD"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                show={showLoginPassword}
+                onToggle={() => setShowLoginPassword((s) => !s)}
+                invalid={!!loginError}
+              >
+                {loginError && <p className="sc-err">{loginError}</p>}
+              </PasswordField>
+
+              <button type="submit" className="sc-sub">LOGIN</button>
+
+              <div className="sc-ctr">
+                <button type="button" className="sc-link" onClick={() => switchView('reset')}>Forgot Password?</button>
               </div>
-            )}
 
-            {/* LOGIN FORM */}
-            {activeView === 'login' && (
-              <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
-                <h2 className="font-pressstart text-xl text-theme-dark">Welcome back!</h2>
-                <p className="font-pixel text-lg text-theme-dark">Pick up right where you left off.</p>
+              <OrDivider />
+              <GoogleButton onClick={() => googleLoginTrigger()}>SIGN IN WITH GOOGLE</GoogleButton>
+            </form>
+          )}
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
-                  <input
-                    type="email"
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="you@umak.edu.ph"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                </div>
+          {/* SIGN UP */}
+          {activeView === 'signup' && (
+            <form onSubmit={handleSignupSubmit} className="sc-form" noValidate>
+              <h2>Join the circle!</h2>
+              <p className="sc-sub-text">Create your StudyCircle account now.</p>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showLoginPassword ? 'text' : 'password'}
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        loginError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showLoginPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  {loginError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">{loginError}</p>}
-                </div>
+              <Field
+                id="su"
+                label="USERNAME"
+                value={signupUsername}
+                onChange={(e) => { setSignupUsername(e.target.value); validateUsername(e.target.value); }}
+                placeholder="acorn_hero"
+                error={signupUsernameErr}
+              />
 
-                <button
-                  type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-2 transition-all duration-150 retro-shadow cursor-pointer"
-                >
-                  LOGIN
-                </button>
+              <Field
+                id="se"
+                label="EMAIL"
+                type="email"
+                value={signupEmail}
+                onChange={(e) => { setSignupEmail(e.target.value); validateEmail(e.target.value); }}
+                placeholder="you@umak.edu.ph"
+                error={signupEmailErr}
+              />
 
-                <div className="text-center mt-1">
-                  <button
-                    type="button"
-                    onClick={() => switchView('reset')}
-                    className="font-pressstart text-[11px] text-theme-dark hover:underline decoration-2 transition-all duration-150 bg-transparent border-none p-0 cursor-pointer"
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
+              <Field
+                id="ss"
+                label="STUDENT ID"
+                value={signupStudentId}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9);
+                  setSignupStudentId(val);
+                  validateStudentId(val);
+                }}
+                placeholder="A12345678"
+                error={signupStudentIdErr}
+              />
 
-                <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 border-t-2 border-theme-dark" />
-                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
-                  <div className="flex-1 border-t-2 border-theme-dark" />
-                </div>
+              <PasswordField
+                id="sp"
+                label="PASSWORD"
+                value={signupPassword}
+                onChange={(e) => {
+                  setSignupPassword(e.target.value);
+                  validatePassword(e.target.value);
+                  if (signupConfirmPassword !== '') validateConfirmPassword(signupConfirmPassword, e.target.value);
+                }}
+                show={showSignupPassword}
+                onToggle={() => setShowSignupPassword((s) => !s)}
+                invalid={!!signupPasswordErr}
+              >
+                {signupPasswordErr && <p className="sc-err">✘ {signupPasswordErr}</p>}
+              </PasswordField>
 
-                <button
-                  type="button"
-                  onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>SIGN IN WITH GOOGLE</span>
-                </button>
-              </form>
-            )}
-
-            {/* SIGN UP FORM */}
-            {activeView === 'signup' && (
-              <form onSubmit={handleSignupSubmit} className="flex flex-col gap-4">
-                <h2 className="font-pressstart text-xl text-theme-dark">Join the circle!</h2>
-                <p className="font-pixel text-lg text-theme-dark">Create your StudyCircle account now.</p>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">USERNAME</label>
-                  <input
-                    type="text"
-                    value={signupUsername}
-                    onChange={(e) => {
-                      setSignupUsername(e.target.value);
-                      validateUsername(e.target.value);
-                    }}
-                    placeholder="acorn_hero"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      signupUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {signupUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupUsernameErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
-                  <input
-                    type="email"
-                    value={signupEmail}
-                    onChange={(e) => {
-                      setSignupEmail(e.target.value);
-                      validateEmail(e.target.value);
-                    }}
-                    placeholder="you@umak.edu.ph"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      signupEmailErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {signupEmailErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupEmailErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">STUDENT ID</label>
-                  <input
-                    type="text"
-                    value={signupStudentId}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9);
-                      setSignupStudentId(val);
-                      validateStudentId(val);
-                    }}
-                    placeholder="A12345678"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                      signupStudentIdErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {signupStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupStudentIdErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showSignupPassword ? 'text' : 'password'}
-                      value={signupPassword}
-                      onChange={(e) => {
-                        setSignupPassword(e.target.value);
-                        validatePassword(e.target.value);
-                        if (signupConfirmPassword !== '') validateConfirmPassword(signupConfirmPassword, e.target.value);
-                      }}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        signupPasswordErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupPassword(!showSignupPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showSignupPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  {signupPasswordErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A] mt-0.5">✘ {signupPasswordErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">CONFIRM PASSWORD</label>
-                  <div className="relative w-full">
-                    <input
-                      type={showSignupConfirmPassword ? 'text' : 'password'}
-                      value={signupConfirmPassword}
-                      onChange={(e) => {
-                        setSignupConfirmPassword(e.target.value);
-                        validateConfirmPassword(e.target.value, signupPassword);
-                      }}
-                      placeholder="........"
-                      className={`border-2 bg-theme-muted p-2 pr-10 font-pixel text-lg outline-none w-full transition-colors duration-150 ${
-                        isConfirmPasswordCustomError ? 'border-[#A94A4A]' : 'border-theme-dark'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSignupConfirmPassword(!showSignupConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-theme-dark hover:text-theme-primary bg-transparent border-none p-0 cursor-pointer flex items-center justify-center focus:outline-none"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        {showSignupConfirmPassword ? (
-                          <path strokeLinecap="square" strokeLinejoin="square" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.243L9.88 9.88" />
-                        ) : (
-                          <>
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="square" strokeLinejoin="square" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </>
-                        )}
-                      </svg>
-                    </button>
-                  </div>
-                  <p
-                    className={`font-pixel leading-tight mt-1 transition-colors duration-150 ${
-                      isConfirmPasswordCustomError ? 'text-[#A94A4A] text-[15px] sm:text-[15px]' : 'text-theme-dark text-[15px] sm:text-[15px]'
-                    }`}
-                  >
-                    {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
-                  </p>
-                </div>
-
-                <p className="font-pixel text-[15px] sm:text-[15px] text-theme-dark leading-4">
-                  By clicking Sign Up or continuing with Google, you agree to StudyCircle's{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowTermsModal(true)}
-                    className="text-theme-primary underline cursor-pointer hover:opacity-80 inline"
-                  >
-                    Terms & Conditions
-                  </button>{' '}
-                  and{' '}
-                  <button
-                    type="button"
-                    onClick={() => setShowPrivacyModal(true)}
-                    className="text-theme-primary underline cursor-pointer hover:opacity-80 inline"
-                  >
-                    Privacy Policy
-                  </button>.
+              <PasswordField
+                id="sc"
+                label="CONFIRM PASSWORD"
+                value={signupConfirmPassword}
+                onChange={(e) => {
+                  setSignupConfirmPassword(e.target.value);
+                  validateConfirmPassword(e.target.value, signupPassword);
+                }}
+                show={showSignupConfirmPassword}
+                onToggle={() => setShowSignupConfirmPassword((s) => !s)}
+                invalid={isConfirmPasswordCustomError}
+              >
+                <p className={`sc-err${isConfirmPasswordCustomError ? '' : ' g'}`}>
+                  {isConfirmPasswordCustomError ? `✘ ${signupConfirmPasswordErr}` : signupConfirmPasswordErr}
                 </p>
+              </PasswordField>
 
-                <button
-                  type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-1 transition-all duration-150 retro-shadow cursor-pointer"
-                >
-                  SIGN UP
-                </button>
+              <p className="sc-terms">
+                By clicking Sign Up or continuing with Google, you agree to StudyCircle’s{' '}
+                <button type="button" className="sc-tx" onClick={() => setLegalModal('terms')}>Terms &amp; Conditions</button>{' '}
+                and{' '}
+                <button type="button" className="sc-tx" onClick={() => setLegalModal('privacy')}>Privacy Policy</button>.
+              </p>
 
-                <div className="flex items-center gap-2 my-1">
-                  <div className="flex-1 border-t-2 border-theme-dark" />
-                  <span className="font-pressstart text-[8px] text-theme-dark">OR</span>
-                  <div className="flex-1 border-t-2 border-theme-dark" />
-                </div>
+              <button type="submit" className="sc-sub">SIGN UP</button>
 
-                <button
-                  type="button"
-                  onClick={() => googleLoginTrigger()}
-                  className="font-pressstart text-[10px] sm:text-[11px] text-theme-dark bg-theme-surface border-2 border-theme-dark py-2.5 px-4 flex items-center justify-center gap-3 transition-all duration-150 retro-shadow cursor-pointer hover:bg-theme-muted"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  <span>SIGN UP WITH GOOGLE</span>
-                </button>
-              </form>
-            )}
+              <OrDivider />
+              <GoogleButton onClick={() => googleLoginTrigger()}>SIGN UP WITH GOOGLE</GoogleButton>
+            </form>
+          )}
 
-            {/* RESET PASSWORD FORM */}
-            {activeView === 'reset' && (
-              <form onSubmit={handleResetSubmit} className="flex flex-col gap-4">
-                <div className="mb-1">
-                  <button
-                    type="button"
-                    onClick={() => switchView('login')}
-                    className="font-pressstart text-[11px] text-theme-dark hover:underline flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
-                  >
-                    ← Back to login page
-                  </button>
-                </div>
+          {/* RESET PASSWORD */}
+          {activeView === 'reset' && (
+            <form onSubmit={handleResetSubmit} className="sc-form" noValidate>
+              <div>
+                <button type="button" className="sc-link" onClick={() => switchView('login')}>← Back to login page</button>
+              </div>
 
-                <h2 className="font-pressstart text-xl text-theme-dark mt-2">Reset Password</h2>
-                <p className="font-pixel text-lg text-theme-dark">We'll send a password reset link to your email.</p>
+              <h2>Reset Password</h2>
+              <p className="sc-sub-text">We’ll send a password reset link to your email.</p>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">EMAIL</label>
+              <div className="sc-field">
+                <label htmlFor="re">EMAIL</label>
+                <div className="sc-pw">
                   <input
+                    id="re"
                     type="email"
                     value={resetEmail}
                     onChange={(e) => setResetEmail(e.target.value)}
                     placeholder="you@umak.edu.ph"
-                    className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
-                  />
-                  {resetError && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-primary mt-0.5">{resetError}</p>}
-                </div>
-
-                <button
-                  type="submit"
-                  className="font-pressstart text-theme-surface bg-theme-primary border-4 border-theme-dark py-3 mt-4 transition-all duration-150 retro-shadow cursor-pointer"
-                >
-                  SEND RESET LINK
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-
-        {/* SUSPENDED ACCOUNT MODAL */}
-        {showSuspendedModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center gap-3">
-                <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" className="w-6 h-6 sm:w-7 sm:h-7 text-theme-danger shrink-0">
-                  <path d="M0 0h24v24H0z" fill="none" />
-                  <g fill="currentColor">
-                    <path d="M12 6a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1m0 10a1 1 0 1 0 0 2a1 1 0 0 0 0-2" />
-                    <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10s10-4.477 10-10S17.523 2 12 2M4 12a8 8 0 1 0 16 0a8 8 0 0 0-16 0" clipRule="evenodd" />
-                  </g>
-                </svg>
-                <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-danger uppercase">
-                  ACCOUNT SUSPENDED
-                </h3>
-              </div>
-
-              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
-                Your StudyCircle account has been suspended due to a violation of community guidelines.
-              </p>
-
-              {suspendedUserData && (
-                <div className="bg-theme-muted p-3 border-2 border-theme-dark rounded-xl flex flex-col gap-1">
-                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark">ACCOUNT: {suspendedUserData.email}</span>
-                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-danger">Reason: {suspendedUserData.reason}</span>
-                </div>
-              )}
-
-              {suspendedUserData && suspendedUserData.liftUntil && (
-                <div className="bg-theme-primary/10 border-2 border-theme-primary p-3 rounded-xl flex flex-col gap-2">
-                  <span className="font-pixel text-[15px] sm:text-[18px] text-theme-dark">
-                    Suspension Duration / Expiration:
-                  </span>
-                  <span className="font-pixel text-[18px] sm:text-[24px] text-theme-primary leading-5">
-                    {suspendedUserData.liftUntil}
-                  </span>
-                </div>
-              )}
-
-              <p className="font-pixel text-[14px] sm:text-[16px] leading-4 text-theme-dark">
-                If you believe this is a mistake, please contact support at <span className="text-theme-primary">support@studycircle.app</span>.
-              </p>
-
-              <div className="flex justify-end mt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSuspendedModal(false);
-                    setLoginPassword('');
-                    setSuspendedUserData(null);
-                  }}
-                  className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-5 py-2.5 cursor-pointer retro-shadow hover:opacity-90 w-full text-center"
-                >
-                  UNDERSTOOD
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ADMIN FIRST-LOGIN PASSWORD CHANGE MODAL */}
-        {adminPending && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
-              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Set a New Password</h3>
-              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
-                Welcome, {adminPending.admin.fullName}! You're using a temporary password. Please set your own before continuing.
-              </p>
-
-              <form onSubmit={handleAdminPasswordChange} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">NEW PASSWORD</label>
-                  <input
-                    type="password"
-                    value={adminNewPassword}
-                    onChange={(e) => { setAdminNewPassword(e.target.value); setAdminPwErr(''); }}
-                    className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
+                    autoComplete="off"
+                    className={`sc-input${resetError ? ' bad' : ''}`}
                   />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">CONFIRM PASSWORD</label>
-                  <input
-                    type="password"
-                    value={adminConfirmPassword}
-                    onChange={(e) => { setAdminConfirmPassword(e.target.value); setAdminPwErr(''); }}
-                    className="border-2 border-theme-dark bg-theme-muted p-2 font-pixel text-lg outline-none w-full"
-                  />
-                </div>
-                {adminPwErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {adminPwErr}</p>}
-
-                <button
-                  type="submit"
-                  className="font-pressstart text-[12px] bg-theme-primary text-theme-surface border-2 border-theme-dark px-5 py-2.5 cursor-pointer retro-shadow mt-2"
-                >
-                  SAVE & CONTINUE
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* MANUAL SIGNUP CONFIRMATION MODAL */}
-        {signupConsentPending && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Confirm Registration</h3>
-
-              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
-                You are almost ready to start learning with StudyCircle! Please confirm your agreement to continue.
-              </p>
-
-              <form onSubmit={handleConfirmSignupConsent} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1 mt-1">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={signupAgeTermsChecked}
-                      onChange={(e) => {
-                        setSignupAgeTermsChecked(e.target.checked);
-                        if (e.target.checked) setSignupTermsErr('');
-                      }}
-                      className="mt-1 accent-theme-primary cursor-pointer w-4 h-4 shrink-0"
-                    />
-                    <span className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark leading-4">
-                      You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowTermsModal(true)}
-                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
-                      >
-                        Terms of Service
-                      </button>{' '}
-                      and{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowPrivacyModal(true)}
-                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
-                      >
-                        Privacy Policy
-                      </button>.
-                    </span>
-                  </label>
-                  {signupTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {signupTermsErr}</p>}
-                </div>
-
-                <div className="flex gap-2 justify-end mt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSignupConsentPending(false);
-                      setSignupAgeTermsChecked(false);
-                      setSignupTermsErr('');
-                    }}
-                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-muted border-2 border-theme-dark px-3 py-2 text-theme-dark cursor-pointer"
-                  >
-                    CANCEL
-                  </button>
-                  <button
-                    type="submit"
-                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
-                  >
-                    COMPLETE SIGNUP
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* GOOGLE USERNAME MODAL */}
-        {googleUserPending && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-theme-dark/60 backdrop-blur-sm">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center gap-3">
-                {googleUserPending.picture && (
-                  <img src={googleUserPending.picture} alt="Google Avatar" className="w-10 h-10 rounded-full border-2 border-theme-dark" />
-                )}
-                <div>
-                  <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark">Choose Username</h3>
-                  <p className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark">{googleUserPending.email}</p>
-                </div>
+                {resetError && <p className="sc-err">{resetError}</p>}
               </div>
 
-              <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark">
-                Welcome to StudyCircle! Please pick a unique username to complete setting up your account.
-              </p>
-
-              <form onSubmit={handleGoogleUsernameSubmit} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">USERNAME</label>
-                  <input
-                    type="text"
-                    value={googleUsernameInput}
-                    onChange={(e) => {
-                      setGoogleUsernameInput(e.target.value);
-                      setGoogleUsernameErr('');
-                    }}
-                    placeholder="acorn_hero"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full ${
-                      googleUsernameErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  <p className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark mt-1">
-                    Usernames can be changed at any time. They must be 1 to 20 characters, containing only letters a to z, numbers 0 to 9, hyphens, or underscores.
-                  </p>
-                  {googleUsernameErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleUsernameErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="font-pressstart text-[10px] text-theme-dark">STUDENT ID</label>
-                  <input
-                    type="text"
-                    value={googleStudentId}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9);
-                      setGoogleStudentId(val);
-                      setGoogleStudentIdErr('');
-                    }}
-                    placeholder="A12345678"
-                    className={`border-2 bg-theme-muted p-2 font-pixel text-lg outline-none w-full ${
-                      googleStudentIdErr ? 'border-[#A94A4A]' : 'border-theme-dark'
-                    }`}
-                  />
-                  {googleStudentIdErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleStudentIdErr}</p>}
-                </div>
-
-                <div className="flex flex-col gap-1 mt-1">
-                  <label className="flex items-start gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={googleAgeTermsChecked}
-                      onChange={(e) => {
-                        setGoogleAgeTermsChecked(e.target.checked);
-                        if (e.target.checked) setGoogleTermsErr('');
-                      }}
-                      className="mt-1 accent-theme-primary cursor-pointer w-4 h-4 shrink-0"
-                    />
-                    <span className="font-pixel text-[15px] sm:text-[15px] leading-4 text-theme-dark leading-4">
-                      You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowTermsModal(true)}
-                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
-                      >
-                        Terms of Service
-                      </button>{' '}
-                      and{' '}
-                      <button
-                        type="button"
-                        onClick={() => setShowPrivacyModal(true)}
-                        className="text-theme-primary underline font-bold cursor-pointer hover:opacity-80 inline"
-                      >
-                        Privacy Policy
-                      </button>.
-                    </span>
-                  </label>
-                  {googleTermsErr && <p className="font-pixel text-[15px] sm:text-[18px] leading-4 text-[#A94A4A]">✘ {googleTermsErr}</p>}
-                </div>
-
-                <div className="flex gap-2 justify-center mt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGoogleUserPending(null);
-                      setGoogleStudentId('');
-                      setGoogleStudentIdErr('');
-                      setGoogleAgeTermsChecked(false);
-                      setGoogleTermsErr('');
-                    }}
-                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-muted text-theme-dark border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
-                  >
-                    CANCEL
-                  </button>
-                  <button
-                    type="submit"
-                    className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 cursor-pointer retro-shadow"
-                  >
-                    COMPLETE
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* TERMS OF SERVICE MODAL */}
-        {showTermsModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
-              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Terms of Service</h3>
-              <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">
-                <p>By using StudyCircle, you agree to follow our community guidelines and code of conduct.</p>
-                <p>1. Account Responsibility: You are responsible for all activity under your username.</p>
-                <p>2. Respectful Behavior: Be supportive to fellow study circle members.</p>
-                <p>3. Age Limit: You must be at least 18 years old to register an account.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowTermsModal(false)}
-                className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 self-end cursor-pointer retro-shadow mt-2"
-              >
-                CLOSE
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* PRIVACY POLICY MODAL */}
-        {showPrivacyModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-theme-dark/70 backdrop-blur-xs">
-            <div className="bg-theme-surface border-4 border-theme-dark rounded-3xl p-6 w-full max-w-lg shadow-2xl flex flex-col gap-4 max-h-[80vh]">
-              <h3 className="font-pressstart text-[15px] sm:text-[18px] leading-4 text-theme-dark border-b-2 border-theme-dark pb-2">Privacy Policy</h3>
-              <div className="font-pixel text-[15px] sm:text-[18px] leading-4 text-theme-dark overflow-y-auto flex flex-col gap-2 pr-2">
-                <p>We value your personal privacy and process data responsibly.</p>
-                <p>1. Data Collection: We collect your email address and username for authentication.</p>
-                <p>2. Data Usage: Your study data is used strictly to power your StudyCircle dashboard and rewards.</p>
-                <p>3. Security: We do not sell your personal data to third-party services.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPrivacyModal(false)}
-                className="font-pressstart text-[15px] sm:text-[15px] leading-4 bg-theme-primary text-theme-surface border-2 border-theme-dark px-4 py-2 self-end cursor-pointer retro-shadow mt-2"
-              >
-                CLOSE
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TOASTS CONTAINER */}
-        <div id="toast-container" className="fixed top-28 right-6 z-50 pointer-events-none flex flex-col gap-3">
-          {toasts.map((toast) => (
-            <div
-              key={toast.id}
-              className="bg-theme-surface border-4 border-theme-dark p-4 flex flex-col gap-2 relative shadow-md transition-all duration-300 max-w-xs retro-shadow pointer-events-auto opacity-100 translate-y-0 rounded-none! overflow-hidden"
-              style={{ boxShadow: '4px 4px 0px #3D2013' }}
-            >
-              <div className="flex items-center gap-3 pr-2">
-                <svg className="w-6 h-6 flex-shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" strokeLinecap="square" strokeLinejoin="square" />
-                </svg>
-                <span className="font-pressstart text-[12px] text-[#482A1D] whitespace-normal break-words leading-4 tracking-wide">{toast.message}</span>
-              </div>
-              <div className="w-full bg-transparent h-1.5 flex justify-center mt-auto overflow-hidden">
-                <div className="w-full h-full bg-theme-safe animate-progress-center"></div>
-              </div>
-            </div>
-          ))}
+              <button type="submit" className="sc-sub">SEND RESET LINK</button>
+            </form>
+          )}
         </div>
       </section>
 
-      {/* FOOTER SECTION */}
-      <footer
-        className="text-theme-surface border-t-4 border-theme-dark"
-        style={{
-          backgroundColor: '#482A1D',
-          backgroundImage: 'linear-gradient(rgba(61, 32, 19, 0.25) 1px, transparent 1px)',
-          backgroundSize: '100% 5px',
-        }}
-      >
-        <div className="w-full px-6 md:px-12">
-          <div className="flex flex-row items-center justify-between gap-4 w-full border-b border-[#E16F37]/10 pb-8 py-5 sm:py-8 md:py-10 select-none">
-            <div className="flex items-center gap-3 sm:gap-5 md:gap-6">
-              <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-10 w-auto sm:h-16 md:h-20 lg:h-24 block shrink-0" />
-              <div className="flex flex-col gap-1 sm:gap-2">
-                <div className="flex items-center gap-1">
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary">&#9733;</span>
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">JOIN THE CIRCLE</span>
-                  <span className="font-pressstart text-[8px] sm:text-[10px] md:text-[12px] text-theme-primary">&#9733;</span>
-                </div>
-                <h3 className="font-pressstart text-[11px] sm:text-lg md:text-[24px] text-theme-muted leading-none">Kitsu is waiting.</h3>
-                <p className="font-pixel text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-none select-none">Level up your learning with AI-powered study adventures.</p>
+      {/* ---------- SUSPENDED MODAL ---------- */}
+      {showSuspendedModal && (
+        <div className="sc-md">
+          <div className="sc-mb">
+            <h3 className="danger">ACCOUNT SUSPENDED</h3>
+            <p>Your StudyCircle account has been suspended due to a violation of community guidelines.</p>
+
+            {suspendedUserData && (
+              <div className="sc-box">
+                <span>ACCOUNT: {suspendedUserData.email}</span>
+                <span className="red">Reason: {suspendedUserData.reason}</span>
+              </div>
+            )}
+
+            {suspendedUserData?.liftUntil && (
+              <div className="sc-box accent">
+                <span>Suspension Duration / Expiration:</span>
+                <span className="big">{suspendedUserData.liftUntil}</span>
+              </div>
+            )}
+
+            <p className="sc-note">
+              If you believe this is a mistake, please contact support at{' '}
+              <span style={{ color: 'var(--primary)' }}>support@studycircle.app</span>.
+            </p>
+
+            <button
+              type="button"
+              className="sc-mbtn pr full"
+              onClick={() => {
+                setShowSuspendedModal(false);
+                setLoginPassword('');
+                setSuspendedUserData(null);
+              }}
+            >
+              UNDERSTOOD
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- ADMIN FIRST-LOGIN PASSWORD MODAL ---------- */}
+      {adminPending && (
+        <div className="sc-md">
+          <div className="sc-mb">
+            <h3>Set a New Password</h3>
+            <p>
+              Welcome, {adminPending.admin.fullName}! You’re using a temporary password. Please set your own before continuing.
+            </p>
+
+            <form onSubmit={handleAdminPasswordChange} className="sc-form" style={{ gap: 12 }} noValidate>
+              <Field
+                id="an"
+                label="NEW PASSWORD"
+                type="password"
+                value={adminNewPassword}
+                onChange={(e) => { setAdminNewPassword(e.target.value); setAdminPwErr(''); }}
+              />
+              <Field
+                id="ac"
+                label="CONFIRM PASSWORD"
+                type="password"
+                value={adminConfirmPassword}
+                onChange={(e) => { setAdminConfirmPassword(e.target.value); setAdminPwErr(''); }}
+              />
+              {adminPwErr && <p className="sc-err">✘ {adminPwErr}</p>}
+              <button type="submit" className="sc-mbtn pr full">SAVE &amp; CONTINUE</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- SIGN UP CONFIRMATION MODAL ---------- */}
+      {signupConsentPending && (
+        <div className="sc-md" role="dialog" aria-modal="true" aria-labelledby="sc-cr-title">
+          <form className="sc-lg sc-cr" onSubmit={handleConfirmSignupConsent} noValidate>
+            {/* header */}
+            <div className="sc-lg-h">
+              <span className="sc-lg-i" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                  <path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" />
+                  <path d="M8.5 12l2.5 2.5 4.5-5" />
+                </svg>
+              </span>
+              <div className="sc-lg-t">
+                <small>STUDYCIRCLE ★ ALMOST THERE</small>
+                <h3 id="sc-cr-title">Confirm Registration</h3>
               </div>
             </div>
-            <div className="shrink-0">
+
+            {/* body */}
+            <div className="sc-lg-b">
+              <p className="sc-lg-in">
+                You are almost ready to start learning with StudyCircle! Please confirm your details and agreement to continue.
+              </p>
+
+              <div className="sc-cr-sum">
+                <div className="sc-cr-row">
+                  <span className="sc-cr-k">USERNAME</span>
+                  <span className="sc-cr-v">{signupUsername.trim()}</span>
+                </div>
+                <div className="sc-cr-row">
+                  <span className="sc-cr-k">EMAIL</span>
+                  <span className="sc-cr-v">{signupEmail.trim()}</span>
+                </div>
+                <div className="sc-cr-row">
+                  <span className="sc-cr-k">STUDENT ID</span>
+                  <span className="sc-cr-v">{signupStudentId.trim().toUpperCase()}</span>
+                </div>
+              </div>
+
+              <label className={`sc-cr-check${signupAgeTermsChecked ? ' on' : ''}${signupTermsErr ? ' bad' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={signupAgeTermsChecked}
+                  onChange={(e) => {
+                    setSignupAgeTermsChecked(e.target.checked);
+                    if (e.target.checked) setSignupTermsErr('');
+                  }}
+                />
+                <span className="sc-cr-box" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="square">
+                    <path d="M5 12.5l4.5 4.5L19 7.5" />
+                  </svg>
+                </span>
+                <span className="sc-cr-txt">
+                  You confirm that you are at least 18 years old, and that you have read and agree to our{' '}
+                  <button type="button" className="sc-tx" onClick={() => setLegalModal('terms')}>Terms of Service</button>{' '}
+                  and{' '}
+                  <button type="button" className="sc-tx" onClick={() => setLegalModal('privacy')}>Privacy Policy</button>.
+                </span>
+              </label>
+              {signupTermsErr && <p className="sc-err sc-cr-err">✘ {signupTermsErr}</p>}
+            </div>
+
+            {/* footer */}
+            <div className="sc-lg-f">
               <button
-                onClick={() => switchView('signup')}
-                className="font-pressstart text-[7px] sm:text-[10px] md:text-[12px] text-theme-surface bg-theme-safe border-[2px] md:border-2 border-theme-dark px-3 py-2 sm:px-5 sm:py-3 md:px-6 md:py-3.5 block text-center transition-all duration-150 retro-shadow cursor-pointer"
+                type="button"
+                className="sc-cr-cancel"
+                onClick={() => {
+                  setSignupConsentPending(false);
+                  setSignupAgeTermsChecked(false);
+                  setSignupTermsErr('');
+                }}
               >
-                JOIN NOW!
+                CANCEL
+              </button>
+              <button type="submit" className={`sc-lg-ok${signupAgeTermsChecked ? '' : ' dim'}`}>
+                COMPLETE SIGNUP
               </button>
             </div>
-          </div>
+          </form>
+        </div>
+      )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-8 py-5 sm:py-8 md:py-10 px-4 sm:px-10 md:px-16">
-            <div className="flex flex-col gap-4 lg:col-span-4">
-              <div className="flex items-center gap-3">
-                <img src="media/kitsu_logo.png" alt="Kitsu Logo" className="h-8 w-auto block select-none" />
-                <span className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">StudyCircle</span>
+      {/* ---------- GOOGLE USERNAME MODAL ---------- */}
+      {googleUserPending && (
+        <div className="sc-md">
+          <div className="sc-mb">
+            <div className="sc-gprofile">
+              {googleUserPending.picture && <img src={googleUserPending.picture} alt="Google Avatar" />}
+              <div>
+                <h3>Choose Username</h3>
+                <small>{googleUserPending.email}</small>
               </div>
-              <p className="font-pixel text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-[1.2] select-none">
-                Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pixel-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
-              </p>
-              <div className="flex items-center gap-2 mt-2 select-none">
-                <img src="media/coin_logo.png" alt="Coin Logo" className="w-[31px] h-[31px] object-contain block" />
-                <span className="font-pixel text-[15px] sm:text-[20px] md:text-[20px] text-theme-surface leading-none select-none">12,000+ students leveling up today</span>
-              </div>
             </div>
 
-            <div className="flex flex-col gap-4 lg:col-span-2 lg:col-start-7">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">PRODUCT</h4>
-              <nav className="flex flex-col gap-2">
-                <Link to="/#section-2" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Features</Link>
-                <Link to="/#section-3" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">FAQs</Link>
-                <Link to="/" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Learn Now!</Link>
-                <button onClick={() => switchView('login')} className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit text-left cursor-pointer">Login</button>
-              </nav>
-            </div>
+            <p>Welcome to StudyCircle! Please pick a unique username to complete setting up your account.</p>
 
-            <div className="flex flex-col gap-4 lg:col-span-2">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">COMMUNITY</h4>
-              <nav className="flex flex-col gap-2">
-                <a href="https://discord.com" target="_blank" rel="noopener noreferrer" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Discord</a>
-                <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Facebook</a>
-                <a href="https://reddit.com" target="_blank" rel="noopener noreferrer" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Reddit</a>
-              </nav>
-            </div>
-
-            <div className="flex flex-col gap-4 lg:col-span-2">
-              <h4 className="font-pressstart text-[10px] sm:text-[10px] md:text-[12px] text-theme-primary tracking-wider uppercase">COMPANY</h4>
-              <nav className="flex flex-col gap-2">
-                <Link to="/#about" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">About</Link>
-                <button onClick={() => setShowPrivacyModal(true)} className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit text-left cursor-pointer">Privacy</button>
-                <button onClick={() => setShowTermsModal(true)} className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit text-left cursor-pointer">Terms</button>
-                <Link to="/#contact" className="font-pixel text-[15px] sm:text-[20px] md:text-[24px] text-theme-surface leading-none select-none transition-all duration-150 hover:translate-x-1 inline-block w-fit">Contact</Link>
-              </nav>
-            </div>
-          </div>
-
-          <div className="w-full border-b border-[#E16F37]/10 select-none pb-4"></div>
-
-          <div className="w-full py-3 sm:py-4">
-            <div className="flex flex-col md:flex-row items-center justify-between select-none">
-              <div className="flex items-center gap-2">
-                <img src="media/sparkle_icon.png" alt="Sparkle" className="h-3.5 w-auto object-contain block shrink-0 animate-pulse" />
-                <p className="font-pressstart text-[5px] sm:text-[10px] md:text-[12px] text-[#B6AAA5] tracking-wide leading-none">
-                  © 2026 StudyCircle · Brewed with chamomile
+            <form onSubmit={handleGoogleUsernameSubmit} className="sc-form" style={{ gap: 12 }} noValidate>
+              <div className="sc-field">
+                <label htmlFor="gu">USERNAME</label>
+                <div className="sc-pw">
+                  <input
+                    id="gu"
+                    type="text"
+                    value={googleUsernameInput}
+                    onChange={(e) => { setGoogleUsernameInput(e.target.value); setGoogleUsernameErr(''); }}
+                    placeholder="acorn_hero"
+                    autoComplete="off"
+                    className={`sc-input${googleUsernameErr ? ' bad' : ''}`}
+                  />
+                </div>
+                <p className="sc-note">
+                  Usernames can be changed at any time. They must be 1 to 20 characters, containing only letters a to z, numbers 0 to 9, hyphens, or underscores.
                 </p>
+                {googleUsernameErr && <p className="sc-err">✘ {googleUsernameErr}</p>}
               </div>
-              <div className="flex items-center">
-                <p className="font-pressstart text-[5px] sm:text-[10px] md:text-[12px] text-[#B6AAA5] tracking-wide leading-none">
-                  V1.0 · All rights reserved
-                </p>
+
+              <Field
+                id="gs"
+                label="STUDENT ID"
+                value={googleStudentId}
+                onChange={(e) => {
+                  setGoogleStudentId(e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9));
+                  setGoogleStudentIdErr('');
+                }}
+                placeholder="A12345678"
+                error={googleStudentIdErr}
+              />
+
+              <ConsentCheck
+                checked={googleAgeTermsChecked}
+                onChange={(v) => { setGoogleAgeTermsChecked(v); if (v) setGoogleTermsErr(''); }}
+                error={googleTermsErr}
+                onOpenTerms={() => setLegalModal('terms')}
+                onOpenPrivacy={() => setLegalModal('privacy')}
+              />
+
+              <div className="sc-row center">
+                <button type="button" className="sc-mbtn" onClick={closeGoogleModal}>CANCEL</button>
+                <button type="submit" className="sc-mbtn pr">COMPLETE</button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- TERMS / PRIVACY (always on top) ---------- */}
+      {legalModal && <LegalModal kind={legalModal} onClose={() => setLegalModal(null)} />}
+
+      {/* ---------- TOASTS ---------- */}
+      <div className="sc-toasts" aria-live="polite">
+        {toasts.map((t) => (
+          <div className="sc-toast" key={t.id}>
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M20 6L9 17L4 12" stroke="#788D55" strokeWidth="4" />
+            </svg>
+            <span>{t.message}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* ---------- FOOTER ---------- */}
+      <footer className="sc-ft">
+        <div className="sc-ft-j">
+          <div className="sc-ft-l">
+            <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+            <div>
+              <div className="sc-ft-e">★ JOIN THE CIRCLE ★</div>
+              <h3>Kitsu is waiting.</h3>
+              <p>Level up your learning with AI-powered study adventures.</p>
             </div>
           </div>
+          <button type="button" className="sc-btn g" onClick={() => switchView('signup')}>JOIN NOW!</button>
+        </div>
+
+        <div className="sc-ft-g">
+          <div className="sc-ft-a">
+            <div className="sc-ft-brand">
+              <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+              <span className="sc-ft-e">STUDYCIRCLE</span>
+            </div>
+            <p>
+              Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pixel-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
+            </p>
+            <p style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img src="media/coin_logo.png" alt="Coin Logo" style={{ width: 31, height: 31, objectFit: 'contain' }} />
+              12,000+ students leveling up today
+            </p>
+          </div>
+
+          <div>
+            <h4>PRODUCT</h4>
+            <nav>
+              <Link to="/#section-2">Features</Link>
+              <Link to="/#section-3">FAQs</Link>
+              <Link to="/">Learn Now!</Link>
+              <button type="button" onClick={() => switchView('login')}>Login</button>
+            </nav>
+          </div>
+
+          <div>
+            <h4>COMMUNITY</h4>
+            <nav>
+              <a href="https://discord.com" target="_blank" rel="noopener noreferrer">Discord</a>
+              <a href="https://facebook.com" target="_blank" rel="noopener noreferrer">Facebook</a>
+              <a href="https://reddit.com" target="_blank" rel="noopener noreferrer">Reddit</a>
+            </nav>
+          </div>
+
+          <div>
+            <h4>COMPANY</h4>
+            <nav>
+              <Link to="/#about">About</Link>
+              <button type="button" onClick={() => setLegalModal('privacy')}>Privacy</button>
+              <button type="button" onClick={() => setLegalModal('terms')}>Terms</button>
+              <Link to="/#contact">Contact</Link>
+            </nav>
+          </div>
+        </div>
+
+        <div className="sc-ft-cp">
+          <span>✦ © 2026 StudyCircle · Brewed with chamomile</span>
+          <span>V1.0 · All rights reserved</span>
         </div>
       </footer>
     </div>
