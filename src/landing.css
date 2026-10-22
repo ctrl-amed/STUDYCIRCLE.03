@@ -201,3 +201,4 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 }
 .sc .cs{cursor:grab;user-select:none;-webkit-user-select:none}
 .sc .cs.dragging{cursor:grabbing}
+.sc h1.t .grad{background:linear-gradient(180deg,#FD923E 0%,#E6751B 35%,#3D2013 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
