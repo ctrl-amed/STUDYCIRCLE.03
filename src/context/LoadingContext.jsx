@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import './Loading.css';
-console.log('NEW LOADER FILE LOADED');
 
 const TIPS = [
   'Tip: short breaks help you focus longer.',
@@ -35,7 +34,7 @@ export function LoadingProvider({ children }) {
   // Signup-style flows ("Setting Up Profile...") get the signup wording; everything else is login.
   const isSignup = /setting up|creating/i.test(statusText);
   const steps = isSignup ? STEPS_SIGNUP : STEPS_LOGIN;
-  const title = isSignup ? 'Setting up your account' : 'HELLO TEST';
+  const title = isSignup ? 'Setting up your account' : 'Logging you in';
 
   const showLoading = useCallback((status = 'Loading...') => {
     clearTimeout(leaveTimerRef.current);
