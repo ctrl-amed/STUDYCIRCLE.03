@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
-
+ 
 /* StudyCircle landing page styles. Everything is scoped under .sc so it cannot clash with Tailwind or other pages. */
 .sc{--surface:#FBF2E3;--dark:#3D2013;--primary:#E6751B;--muted:#F3E3C8;--safe:#6B8A4F;--card:#482A1D;--sc:repeating-linear-gradient(180deg,rgba(61,32,19,.08) 0 1px,transparent 1px 5px);
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -205,3 +205,72 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 .sc .cs{cursor:grab;user-select:none;-webkit-user-select:none}
 .sc .cs.dragging{cursor:grabbing}
 .sc h1.t .grad{background:linear-gradient(180deg,#FD923E 0%,#E6751B 35%,#3D2013 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+ 
+/* ---- Landing updates (match studycircle-full v42) ---- */
+@media(max-width:760px){
+.sc .hd .auth{grid-column:2}
+}
+.sc .grad,
+.sc h1.t .grad{background:linear-gradient(90deg,#FD923E 0%,#E6751B 35%,#C4531C 65%,#3D2013 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sc .av b{overflow:hidden}
+.sc .av b svg{width:100%;height:100%;display:block}
+.sc .fl{z-index:1}
+@media(max-width:1099px){
+.sc .fl{display:none}
+}
+.sc .rm{flex:0 0 auto;height:auto;aspect-ratio:auto}
+.sc .rm:before{content:"";display:block;padding-top:62.5%}
+.sc .rm>svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
+@media(max-width:640px){
+.sc .tag{gap:6px;padding:5px 9px 5px 5px;border-width:2px;border-radius:12px}
+.sc .tag .ti{width:24px;height:24px;border-width:2px}
+.sc .tag .ti svg{width:12px;height:12px}
+.sc .tag b{font-size:7px}
+.sc .tag small{font-size:14px}
+.sc .tag.t1{left:4%;top:8%}
+.sc .tag.t2{right:3%;top:7%}
+.sc .tag.t3{left:2%;bottom:13%}
+}
+@media(max-width:640px){
+.sc .tag .ti{display:none}
+.sc .tag{padding:4px 8px;border-radius:10px;gap:0;box-shadow:2px 2px 0 #ecd3b2,0 5px 10px rgba(61,32,19,.25)}
+.sc .tag b{font-size:7px;line-height:1.3}
+.sc .tag small{font-size:13px;margin-top:1px}
+.sc .tag:before{width:7px;height:7px}
+.sc .tag.t1{left:3%;top:5%}
+.sc .tag.t2{right:3%;top:5%}
+.sc .tag.t3{left:3%;bottom:5%}
+}
+@media(max-width:480px){
+.sc .tag b{font-size:6px}
+.sc .tag small{font-size:11px}
+.sc .tag{padding:3px 6px}
+.sc .tag.t3{left:2%;right:auto;bottom:3%}
+.sc .tag.t3 b{white-space:nowrap}
+}
+@media(prefers-reduced-motion:reduce){
+.sc .tag{animation:none}
+}
+.sc .cw::before,.sc .cw::after{content:"";position:absolute;top:0;bottom:40px;width:12%;z-index:3;pointer-events:none}
+.sc .ck .bar,.sc .pm .bar{display:flex;align-items:center;gap:8px;padding:9px 10px;font:10px "Press Start 2P",monospace}
+@media(max-width:1099px){
+.sc .ck{left:auto;right:2%;width:min(240px,32vw)}
+.sc .pm{right:auto;left:2%;width:min(240px,32vw)}
+}
+.sc .lv i{will-change:transform,opacity;-webkit-backface-visibility:hidden}
+@media(prefers-reduced-motion:reduce){
+.sc .fl{animation:none;transform:rotate(var(--r))}
+}
+@media(max-width:760px){
+.sc .hd{grid-template-columns:1fr auto}
+.sc .hd nav{grid-column:1/-1;grid-row:2;order:3;width:100%;justify-content:center;border-top:2px dashed var(--dark);padding-top:8px;font-size:8px}
+.sc .logo span{display:none}
+.sc .btn{font-size:8px;padding:9px 12px}
+.sc .ck,.sc .pm{width:110px;font-size:6px}
+.sc .ck{top:12%;right:1%}
+.sc .pm{top:62%;left:1%}
+.sc .ck li{font-size:5px;padding:3px}
+.sc .fg .a{grid-column:auto}
+.sc .hero{padding-top:130px}
+}
+ 
