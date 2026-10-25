@@ -257,7 +257,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 .sc .ck{left:auto;right:2%;width:min(240px,32vw)}
 .sc .pm{right:auto;left:2%;width:min(240px,32vw)}
 }
-.sc .lv i{will-change:transform,opacity;-webkit-backface-visibility:hidden}
+.sc .lv i{will-change:transform,opacity;-webkit-backface-visibility:hidden;backface-visibility:hidden}
 @media(prefers-reduced-motion:reduce){
 .sc .fl{animation:none;transform:rotate(var(--r))}
 }
