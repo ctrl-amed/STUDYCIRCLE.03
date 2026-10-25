@@ -279,9 +279,10 @@ export default function Auth() {
   };
 
   useEffect(() => {
-    if (location.hash === '#signup') setActiveView('signup');
-    else if (location.hash === '#login') setActiveView('login');
-  }, [location.hash]);
+  if (location.hash === '#signup') setActiveView('signup');
+  else if (location.hash === '#login') setActiveView('login');
+  window.scrollTo({ top: 0, left: 0 });
+}, [location.hash]);
 
   useEffect(() => {
     const raw = sessionStorage.getItem('suspended_notice');
@@ -746,7 +747,7 @@ export default function Auth() {
       <header className="sc-hd">
         <div className="sc-hd-in">
           <Link to="/" className="sc-logo">
-            <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+            <img src="/media/kitsu_logo.png" alt="Kitsu Logo" />
             <span>StudyCircle</span>
           </Link>
 
@@ -765,7 +766,7 @@ export default function Auth() {
 
       {/* ---------- AUTH CARD ---------- */}
       <section className="sc-au">
-        <div className="sc-card">
+        <div className={`sc-card${activeView === 'reset' ? ' rs' : ''}`}>
           {activeView !== 'reset' && (
             <div className="sc-tabs">
               <button type="button" className={activeView === 'login' ? 'on' : ''} onClick={() => switchView('login')}>LOGIN</button>
@@ -899,31 +900,46 @@ export default function Auth() {
 
           {/* RESET PASSWORD */}
           {activeView === 'reset' && (
-            <form onSubmit={handleResetSubmit} className="sc-form" noValidate>
-              <div>
-                <button type="button" className="sc-link" onClick={() => switchView('login')}>← Back to login page</button>
-              </div>
-
-              <h2>Reset Password</h2>
-              <p className="sc-sub-text">We’ll send a password reset link to your email.</p>
-
-              <div className="sc-field">
-                <label htmlFor="re">EMAIL</label>
-                <div className="sc-pw">
-                  <input
-                    id="re"
-                    type="email"
-                    value={resetEmail}
-                    onChange={(e) => setResetEmail(e.target.value)}
-                    placeholder="you@umak.edu.ph"
-                    autoComplete="off"
-                    className={`sc-input${resetError ? ' bad' : ''}`}
-                  />
+            <form onSubmit={handleResetSubmit} className="sc-rs" noValidate>
+              <div className="sc-lg-h">
+                <span className="sc-lg-i" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+                    <rect x="3" y="5" width="18" height="14" />
+                    <path d="M3 7l9 6 9-6" />
+                  </svg>
+                </span>
+                <div className="sc-lg-t">
+                  <small>STUDYCIRCLE ★ ACCOUNT</small>
+                  <h3>Reset Password</h3>
                 </div>
-                {resetError && <p className="sc-err">{resetError}</p>}
               </div>
 
-              <button type="submit" className="sc-sub">SEND RESET LINK</button>
+              <div className="sc-lg-b">
+                <p className="sc-lg-in">We’ll send a password reset link to your UMak email.</p>
+
+                <div className="sc-field">
+                  <label htmlFor="re">EMAIL</label>
+                  <div className="sc-pw">
+                    <input
+                      id="re"
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="you@umak.edu.ph"
+                      autoComplete="off"
+                      className={`sc-input${resetError ? ' bad' : ''}`}
+                    />
+                  </div>
+                  {resetError && <p className="sc-err">{resetError}</p>}
+                </div>
+
+                <button type="submit" className="sc-sub">SEND RESET LINK</button>
+              </div>
+
+              <div className="sc-lg-f">
+                <span>Remembered it?</span>
+                <button type="button" className="sc-link" onClick={() => switchView('login')}>← Back to login</button>
+              </div>
             </form>
           )}
         </div>
@@ -1167,7 +1183,7 @@ export default function Auth() {
       <footer className="sc-ft">
         <div className="sc-ft-j">
           <div className="sc-ft-l">
-            <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+            <img src="/media/kitsu_logo.png" alt="Kitsu Logo" />
             <div>
               <div className="sc-ft-e">★ JOIN THE CIRCLE ★</div>
               <h3>Kitsu is waiting.</h3>
@@ -1180,14 +1196,14 @@ export default function Auth() {
         <div className="sc-ft-g">
           <div className="sc-ft-a">
             <div className="sc-ft-brand">
-              <img src="media/kitsu_logo.png" alt="Kitsu Logo" />
+              <img src="/media/kitsu_logo.png" alt="Kitsu Logo" />
               <span className="sc-ft-e">STUDYCIRCLE</span>
             </div>
             <p>
               Turn studying into an adventure with StudyCircle! Upload your notes, let AI create personalized quizzes, join cozy pixel-art study rooms, and level up with XP, badges, and exciting rewards as you learn.
             </p>
             <p style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src="media/coin_logo.png" alt="Coin Logo" style={{ width: 31, height: 31, objectFit: 'contain' }} />
+              <img src="/media/coin_logo.png" alt="Coin Logo" style={{ width: 31, height: 31, objectFit: 'contain' }} />
               12,000+ students leveling up today
             </p>
           </div>

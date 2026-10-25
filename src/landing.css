@@ -301,3 +301,7 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 .sc .lg-ok:hover{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--dark)}
 @media(max-width:480px){.sc .lg-t h3{font-size:12px}.sc .lg-i{width:38px;height:38px}.sc .lg-f span{display:none}.sc .lg-ok{width:100%}}
 @media(prefers-reduced-motion:reduce){.sc .lg{animation:none}}
+/* ---- Contact modal extras ---- */
+.sc .lg-n.ic{background:var(--primary)}
+.sc .lg-n.ic svg{display:block}
+.sc a.lg-ok{text-decoration:none}

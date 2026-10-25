@@ -71,7 +71,7 @@ function makeLeaves() {
 }
 
 /* ------------------------------------------------------------------ */
-/* About / Terms / Privacy modals (same content as the HTML version)   */
+/* About / Contact / Terms / Privacy modals                            */
 /* ------------------------------------------------------------------ */
 const LEGAL_ICONS = {
   about: (
@@ -79,6 +79,12 @@ const LEGAL_ICONS = {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 11v6" />
       <path d="M12 7.5v.5" />
+    </>
+  ),
+  contact: (
+    <>
+      <rect x="3" y="5" width="18" height="14" />
+      <path d="M3 7l9 6 9-6" />
     </>
   ),
   terms: (
@@ -95,6 +101,33 @@ const LEGAL_ICONS = {
   )
 };
 
+// small icons used in place of the numbers (Contact modal)
+const SEC_ICONS = {
+  mail: (
+    <>
+      <rect x="3" y="5" width="18" height="14" />
+      <path d="M3 7l9 6 9-6" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5M12 17v.5" />
+    </>
+  ),
+  people: (
+    <>
+      <path d="M16 11a3 3 0 100-6 3 3 0 000 6zM8 11a3 3 0 100-6 3 3 0 000 6zM2 20c0-3 3-5 6-5s6 2 6 5M14 15c3 0 8 1 8 5" />
+    </>
+  )
+};
+
 const LEGAL = {
   about: {
     tag: 'ABOUT',
@@ -106,6 +139,19 @@ const LEGAL = {
       ['Study smarter', 'Upload your notes and Kitsu turns them into summaries, flashcards, and pre and post tests. Each session gets a suggested technique that fits your task and time.'],
       ['Stay motivated', 'Earn XP, coins, badges, and streaks, then spend them on animals, outfits, and room decorations.'],
       ['Made to be calm', 'No pressure, no clutter. Just a warm room, a friend or two, and a plan for the next hour.']
+    ]
+  },
+  contact: {
+    tag: 'CONTACT',
+    title: 'Contact Us',
+    intro: 'Questions, feedback, or something not working? We would love to hear from you.',
+    ok: 'EMAIL US',
+    href: 'mailto:studycircle@gmail.com?subject=StudyCircle%20question',
+    sections: [
+      ['Email us', 'studycircle@gmail.com. Send us questions, ideas, or bug reports.', 'mail'],
+      ['Reply time', 'We read every message and reply as soon as we can.', 'clock'],
+      ['Account help', 'For login problems, try Forgot Password on the login page first. If it still fails, email us with your username and student ID.', 'help'],
+      ['Community', 'Join the conversation on Discord, Facebook, or Reddit using the links in the footer.', 'people']
     ]
   },
   terms: {
@@ -176,9 +222,17 @@ function LegalModal({ kind, onClose }) {
         </div>
         <div className="lg-b">
           <p className="lg-in">{d.intro}</p>
-          {d.sections.map(([h, p], k) => (
+          {d.sections.map(([h, p, ic], k) => (
             <div className="lg-s" key={h}>
-              <span className="lg-n">{k + 1}</span>
+              <span className={`lg-n${ic ? ' ic' : ''}`}>
+                {ic ? (
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    {SEC_ICONS[ic]}
+                  </svg>
+                ) : (
+                  k + 1
+                )}
+              </span>
               <div>
                 <h4>{h}</h4>
                 <p>{p}</p>
@@ -188,7 +242,11 @@ function LegalModal({ kind, onClose }) {
         </div>
         <div className="lg-f">
           <span>Thanks for being part of the circle! ★</span>
-          <button type="button" className="lg-ok" ref={okRef} onClick={onClose}>{d.ok}</button>
+          {d.href ? (
+            <a className="lg-ok" href={d.href} ref={okRef}>{d.ok}</a>
+          ) : (
+            <button type="button" className="lg-ok" ref={okRef} onClick={onClose}>{d.ok}</button>
+          )}
         </div>
       </div>
     </div>
@@ -341,7 +399,7 @@ export default function App() {
   const [leaves] = useState(makeLeaves);
   const { hash } = useLocation();
 
-  // About / Terms / Privacy modal: null = closed, otherwise 'about' | 'terms' | 'privacy'
+  // About / Contact / Terms / Privacy modal: null = closed, otherwise 'about' | 'contact' | 'terms' | 'privacy'
   const [legal, setLegal] = useState(null);
   const closeLegal = useCallback(() => setLegal(null), []);
   const openLegal = (kind) => (e) => { e.preventDefault(); setLegal(kind); };
@@ -719,7 +777,7 @@ export default function App() {
             <nav>
               <a href="#section-2" onClick={(e) => { e.preventDefault(); goFeatures(); }}>Features</a>
               <a href="#section-3" onClick={(e) => { e.preventDefault(); goFaqs(); }}>FAQs</a>
-              <a href="#learn">Learn Now!</a>
+              <Link to="/auth#signup">Learn Now!</Link>
               <Link to="/auth#login">Login</Link>
             </nav>
           </div>
@@ -737,7 +795,7 @@ export default function App() {
               <a href="#about" onClick={openLegal('about')}>About</a>
               <a href="#privacy" onClick={openLegal('privacy')}>Privacy</a>
               <a href="#terms" onClick={openLegal('terms')}>Terms</a>
-              <a href="#contact">Contact</a>
+              <a href="#contact" onClick={openLegal('contact')}>Contact</a>
             </nav>
           </div>
         </div>
@@ -747,7 +805,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* ABOUT / TERMS / PRIVACY MODAL */}
+      {/* ABOUT / CONTACT / TERMS / PRIVACY MODAL */}
       {legal && <LegalModal kind={legal} onClose={closeLegal} />}
     </div>
   );

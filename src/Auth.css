@@ -361,3 +361,66 @@
   .sc-lg { animation: none; }
   .sc-cr-check.bad { animation: none; }
 }
+
+/* ---------- Change Password page ---------- */
+.sc-cp { max-width: 480px; max-height: none; }
+.sc-cp .sc-lg-b { overflow: visible; }
+.sc-cp .sc-lg-f { justify-content: space-between; }
+
+/* strength meter */
+.sc-cp-meter { display: flex; gap: 6px; }
+.sc-cp-meter i {
+  flex: 1; height: 10px; border: 2px solid var(--dark); border-radius: 999px;
+  background: var(--surface); transition: background .2s;
+}
+.sc-cp-meter[data-l="1"] i:nth-child(-n+1) { background: #D9473A; }
+.sc-cp-meter[data-l="2"] i:nth-child(-n+2) { background: #E87339; }
+.sc-cp-meter[data-l="3"] i:nth-child(-n+3) { background: #F5C73B; }
+.sc-cp-meter[data-l="4"] i:nth-child(-n+4) { background: var(--safe); }
+.sc-cp-ml { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font: 19px/1 "VT323", monospace; color: #7a5a48; }
+.sc-cp-ml b { font-weight: 400; color: var(--dark); }
+
+/* requirements checklist */
+.sc-cp-req {
+  list-style: none; margin: 0; padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px;
+  background: #FFF9EE; border: 2px solid var(--dark); border-radius: 14px; box-shadow: 3px 3px 0 rgba(61, 32, 19, .22);
+}
+.sc-cp-req li { display: flex; align-items: center; gap: 8px; font: 19px/1.1 "VT323", monospace; color: #7a5a48; transition: color .15s; }
+.sc-cp-req li i {
+  position: relative; flex: none; width: 18px; height: 18px; border: 2px solid var(--dark);
+  border-radius: 50%; background: var(--surface); transition: background .15s;
+}
+.sc-cp-req li.ok { color: var(--dark); }
+.sc-cp-req li.ok i { background: var(--safe); }
+.sc-cp-req li.ok i::after {
+  content: ""; position: absolute; left: 4px; top: 0; width: 4px; height: 8px;
+  border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg);
+}
+.sc-cp-req li.bad { color: var(--danger); }
+
+/* match line, alert, states */
+.sc-cp-match { margin: 2px 0 0; font: 19px/1 "VT323", monospace; }
+.sc-cp-match.ok { color: var(--safe); }
+.sc-cp-match.bad { color: var(--danger); }
+.sc-cp-alert {
+  padding: 10px 12px; border: 2px solid var(--danger); border-radius: 12px;
+  background: rgba(169, 74, 74, .08); color: var(--danger); font-size: 19px; line-height: 1.1;
+}
+.sc-cp-state { margin: 0; font-size: 21px; line-height: 1.15; }
+.sc-cp-btn { display: block; text-align: center; text-decoration: none; }
+.sc-sub:disabled { opacity: .7; cursor: wait; }
+.sc-sub:disabled:hover { transform: none; box-shadow: 4px 4px 0 var(--dark); }
+
+@media (max-width: 480px) {
+  .sc-cp-req { grid-template-columns: 1fr; }
+  .sc-cp .sc-lg-f { flex-direction: column; align-items: stretch; text-align: center; }
+}
+
+/* ---------- Reset Password card (login page) ---------- */
+.sc-card.rs { padding: 0; overflow: hidden; box-shadow: 8px 8px 0 var(--dark); }
+.sc-rs { display: flex; flex-direction: column; }
+.sc-rs .sc-lg-b { display: flex; flex-direction: column; gap: 16px; }
+.sc-rs .sc-lg-f { justify-content: space-between; }
+@media (max-width: 480px) {
+  .sc-rs .sc-lg-f { flex-direction: column; align-items: stretch; text-align: center; }
+}
