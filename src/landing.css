@@ -273,4 +273,31 @@ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:en
 .sc .fg .a{grid-column:auto}
 .sc .hero{padding-top:130px}
 }
- 
+
+/* ---- About / Terms / Privacy modals (match studycircle-full v42) ---- */
+.sc .md{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(61,32,19,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.sc .lg{width:100%;max-width:540px;max-height:min(88vh,700px);display:flex;flex-direction:column;background:var(--surface);border:4px solid var(--dark);border-radius:24px;box-shadow:8px 8px 0 var(--dark);overflow:hidden;animation:lgIn .24s cubic-bezier(.2,.9,.3,1.2)}
+@keyframes lgIn{from{opacity:0;transform:translateY(18px) scale(.96)}to{opacity:1;transform:none}}
+.sc .lg-h{flex:none;display:flex;align-items:center;gap:14px;padding:16px 18px;background:var(--primary);border-bottom:4px solid var(--dark)}
+.sc .lg-i{flex:none;width:44px;height:44px;display:grid;place-items:center;background:var(--surface);color:var(--dark);border:3px solid var(--dark);border-radius:12px;box-shadow:3px 3px 0 var(--dark)}
+.sc .lg-t{flex:1;min-width:0}
+.sc .lg-t small{display:block;margin-bottom:6px;font:8px "Press Start 2P",monospace;letter-spacing:.5px;color:#FFE9CF;opacity:.95}
+.sc .lg-t h3{margin:0;font:15px/1.3 "Press Start 2P",monospace;color:#FFF6E8;text-shadow:2px 2px 0 var(--dark)}
+.sc .lg-x{flex:none;width:38px;height:38px;display:grid;place-items:center;padding:0;background:var(--surface);color:var(--dark);border:3px solid var(--dark);border-radius:12px;cursor:pointer;box-shadow:3px 3px 0 var(--dark);transition:.12s}
+.sc .lg-x:hover{background:var(--muted);transform:translate(1px,1px);box-shadow:2px 2px 0 var(--dark)}
+.sc .lg-x:focus-visible,.sc .lg-ok:focus-visible{outline:3px solid var(--dark);outline-offset:2px}
+.sc .lg-b{flex:1;min-height:0;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px;background:var(--surface) var(--sc)}
+.sc .lg-b::-webkit-scrollbar{width:12px}
+.sc .lg-b::-webkit-scrollbar-track{background:var(--muted);border-left:2px solid var(--dark)}
+.sc .lg-b::-webkit-scrollbar-thumb{background:var(--dark);border:3px solid var(--muted);border-radius:8px}
+.sc .lg-in{margin:0;padding:12px 14px;font-size:21px;line-height:1.1;background:var(--muted);border:2px dashed var(--dark);border-radius:14px}
+.sc .lg-s{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;background:#FFF9EE;border:2px solid var(--dark);border-radius:14px;box-shadow:3px 3px 0 rgba(61,32,19,.22)}
+.sc .lg-n{flex:none;width:32px;height:32px;display:grid;place-items:center;background:var(--safe);color:#fff;border:2px solid var(--dark);border-radius:9px;font:12px "Press Start 2P",monospace;box-shadow:2px 2px 0 var(--dark)}
+.sc .lg-s h4{margin:2px 0 6px;font:11px/1.4 "Press Start 2P",monospace;color:var(--dark)}
+.sc .lg-s p{margin:0;font-size:20px;line-height:1.1}
+.sc .lg-f{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;background:var(--muted);border-top:4px solid var(--dark)}
+.sc .lg-f span{font-size:19px;line-height:1.1}
+.sc .lg-ok{display:flex;align-items:center;justify-content:center;line-height:1;margin-left:auto;padding:14px 18px 10px;font:12px "Press Start 2P",monospace;color:#FFF6E8;background:var(--primary);border:3px solid var(--dark);border-radius:999px;cursor:pointer;box-shadow:4px 4px 0 var(--dark);transition:.12s}
+.sc .lg-ok:hover{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--dark)}
+@media(max-width:480px){.sc .lg-t h3{font-size:12px}.sc .lg-i{width:38px;height:38px}.sc .lg-f span{display:none}.sc .lg-ok{width:100%}}
+@media(prefers-reduced-motion:reduce){.sc .lg{animation:none}}

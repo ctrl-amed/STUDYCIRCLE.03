@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import './landing.css';
 
@@ -68,6 +68,131 @@ function makeLeaves() {
     }
     return s;
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* About / Terms / Privacy modals (same content as the HTML version)   */
+/* ------------------------------------------------------------------ */
+const LEGAL_ICONS = {
+  about: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v6" />
+      <path d="M12 7.5v.5" />
+    </>
+  ),
+  terms: (
+    <>
+      <path d="M6 2h9l4 4v16H6z" />
+      <path d="M14 2v5h5M9 12h7M9 16h7" />
+    </>
+  ),
+  privacy: (
+    <>
+      <path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z" />
+      <path d="M8.5 12l2.5 2.5 4.5-5" />
+    </>
+  )
+};
+
+const LEGAL = {
+  about: {
+    tag: 'ABOUT',
+    title: 'About StudyCircle',
+    intro: 'StudyCircle is a cozy, AI-powered study room where you learn together with friends, guided by Kitsu the fox.',
+    ok: 'GOT IT',
+    sections: [
+      ['Study together', 'Join or create pixel-art study rooms, share a checklist and a Pomodoro timer, and see who is focusing with you.'],
+      ['Study smarter', 'Upload your notes and Kitsu turns them into summaries, flashcards, and pre and post tests. Each session gets a suggested technique that fits your task and time.'],
+      ['Stay motivated', 'Earn XP, coins, badges, and streaks, then spend them on animals, outfits, and room decorations.'],
+      ['Made to be calm', 'No pressure, no clutter. Just a warm room, a friend or two, and a plan for the next hour.']
+    ]
+  },
+  terms: {
+    tag: 'LEGAL',
+    title: 'Terms of Service',
+    intro: 'By using StudyCircle, you agree to follow our community guidelines and code of conduct.',
+    ok: 'I UNDERSTAND',
+    sections: [
+      ['Account Responsibility', 'You are responsible for all activity under your username.'],
+      ['Respectful Behavior', 'Be supportive to fellow study circle members.'],
+      ['Age Limit', 'You must be at least 18 years old to register an account.']
+    ]
+  },
+  privacy: {
+    tag: 'LEGAL',
+    title: 'Privacy Policy',
+    intro: 'We value your personal privacy and process data responsibly.',
+    ok: 'I UNDERSTAND',
+    sections: [
+      ['Data Collection', 'We collect your email address and username for authentication.'],
+      ['Data Usage', 'Your study data is used strictly to power your StudyCircle dashboard and rewards.'],
+      ['Security', 'We do not sell your personal data to third-party services.']
+    ]
+  }
+};
+
+function LegalModal({ kind, onClose }) {
+  const d = LEGAL[kind];
+  const okRef = useRef(null);
+
+  // Esc closes it, page scroll is locked while open, focus goes to the main button
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const prevOverflow = document.body.style.overflow;
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    okRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="lg-title"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="lg">
+        <div className="lg-h">
+          <span className="lg-i" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round">
+              {LEGAL_ICONS[kind]}
+            </svg>
+          </span>
+          <div className="lg-t">
+            <small>STUDYCIRCLE ★ {d.tag}</small>
+            <h3 id="lg-title">{d.title}</h3>
+          </div>
+          <button type="button" className="lg-x" onClick={onClose} aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="square">
+              <path d="M5 5l14 14M19 5L5 19" />
+            </svg>
+          </button>
+        </div>
+        <div className="lg-b">
+          <p className="lg-in">{d.intro}</p>
+          {d.sections.map(([h, p], k) => (
+            <div className="lg-s" key={h}>
+              <span className="lg-n">{k + 1}</span>
+              <div>
+                <h4>{h}</h4>
+                <p>{p}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="lg-f">
+          <span>Thanks for being part of the circle! ★</span>
+          <button type="button" className="lg-ok" ref={okRef} onClick={onClose}>{d.ok}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // Endless, snapping feature carousel (3 copies of the list so there is always a card on both sides)
@@ -215,6 +340,11 @@ function Carousel() {
 export default function App() {
   const [leaves] = useState(makeLeaves);
   const { hash } = useLocation();
+
+  // About / Terms / Privacy modal: null = closed, otherwise 'about' | 'terms' | 'privacy'
+  const [legal, setLegal] = useState(null);
+  const closeLegal = useCallback(() => setLegal(null), []);
+  const openLegal = (kind) => (e) => { e.preventDefault(); setLegal(kind); };
 
   // smooth anchor scrolling that leaves room for the fixed header
   useEffect(() => {
@@ -604,9 +734,9 @@ export default function App() {
           <div>
             <h4>COMPANY</h4>
             <nav>
-              <a href="#about">About</a>
-              <a href="#privacy">Privacy</a>
-              <a href="#terms">Terms</a>
+              <a href="#about" onClick={openLegal('about')}>About</a>
+              <a href="#privacy" onClick={openLegal('privacy')}>Privacy</a>
+              <a href="#terms" onClick={openLegal('terms')}>Terms</a>
               <a href="#contact">Contact</a>
             </nav>
           </div>
@@ -616,6 +746,9 @@ export default function App() {
           <span>V1.0 · All rights reserved</span>
         </div>
       </footer>
+
+      {/* ABOUT / TERMS / PRIVACY MODAL */}
+      {legal && <LegalModal kind={legal} onClose={closeLegal} />}
     </div>
   );
 }
